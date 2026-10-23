@@ -1,0 +1,12 @@
+# Runtime artifacts created next to the scripts
+state.json
+queue/
+processing/
+done/
+logs/
+.lock
+.*.tmp
+.DS_Store
+
+# Personal TODO list (local only)
+TODO.md
