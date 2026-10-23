@@ -33,6 +33,7 @@ python3 encoding.py status          # Fortschritt
 python3 encoding.py skip 4          # Datei dauerhaft ausblenden (bis sich der Name ändert)
 python3 encoding.py skipped         # ausgeblendete Dateien anzeigen
 python3 encoding.py unskip 2        # wieder freigeben
+python3 encoding.py version         # installierte Version anzeigen
 zsh status.sh                       # Live-Anzeige
 ```
 

@@ -41,7 +41,10 @@ Beispiele
     python3 encoding.py skipped               # ausgeblendete Dateien anzeigen
     python3 encoding.py unskip 2              # Nr. 2 aus "skipped" wieder freigeben
     python3 encoding.py status
+    python3 encoding.py version
 """
+
+__version__ = "1.0.0"
 
 import json
 import os
@@ -444,6 +447,9 @@ def main():
         print(__doc__)
         return
     cmd, rest = args[0], args[1:]
+    if cmd in ("version", "--version", "-V"):
+        print(f"encoding.py v{__version__}")
+        return
     for d in (QUEUE_DIR, PROC_DIR, LOG_DIR):
         d.mkdir(parents=True, exist_ok=True)
     state = load_state()

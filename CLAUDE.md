@@ -7,6 +7,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Keep this CLAUDE.md in sync with the tool: whenever a change affects commands, architecture, file contracts or configuration, update the relevant section in the same change.
 - `TODO.md` tracks all planned work, general and personal. It is gitignored and stays local, so it may be missing in a fresh clone. Sort every new TODO into one of its existing categories (Repository & Infrastructure, Configuration, Features, Bugs & Fixes, Documentation); add a new category only if none fits. Check items off (`- [x]`) when done.
 
+## Versioning and changelog
+
+- Semantic Versioning `vX.Y.Z`. The single source of truth is `__version__` in `encoding.py`, shown by `python3 encoding.py version`. It covers the whole tool, including `encode.sh`, `status.sh`, the plist and `preset.json`.
+  - MAJOR: incompatible changes, such as the `state.json` schema, the queue, results or `current.txt` file formats, renamed or removed subcommands, or anything that requires reinstalling the launchd agent.
+  - MINOR: new backward-compatible features, subcommands or options.
+  - PATCH: bug fixes and small adjustments, including changes to filters or presets that don't change the behaviour of the interface.
+- Every user-visible change gets an entry under `## [Unreleased]` in `CHANGELOG.md` ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format: Added, Changed, Deprecated, Removed, Fixed, Security). Pure doc or repo housekeeping doesn't need one.
+- To release, bump `__version__`, rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`, add a fresh empty `[Unreleased]` section, commit, and tag `vX.Y.Z` (annotated).
+
 ## Overview
 
 Semi-automatic H.264 → H.265 (x265) re-encoding of a Plex library on a Mac, using HandBrakeCLI. No build system, dependencies, linter or tests: plain Python 3 (stdlib only) plus zsh scripts. All code comments, CLI output, and the README are in **German**; keep it that way when editing.
@@ -18,6 +27,7 @@ python3 encoding.py scan [--json]            # scan NAS, refresh numbered list +
 python3 encoding.py queue alle -3 -7 --skip-rest   # queue by number from last scan (also: 1,2,5-8)
 python3 encoding.py skip 4 | skipped | unskip 2
 python3 encoding.py status
+python3 encoding.py version                  # print __version__ (also --version, -V)
 python3 encoding.py import-legacy <cache.json> <note.md>   # one-time migration from old encoding_todo.py
 zsh encode.sh                                # run the worker manually (normally started by launchd)
 zsh status.sh                                # live terminal progress view
