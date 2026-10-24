@@ -19,8 +19,8 @@ What this script does
 
 What is NOT offered
 -------------------
-- Files with x265 / H.265 / HEVC / FuN in the name, or with an HEVC video track
-  according to ffprobe (already encoded)
+- Files with x265 / H.265 / HEVC / FuN in the name, or whose video track is already
+  in an optimized codec according to ffprobe (HEVC, AV1, VVC)
 - Release types such as LD, MD, TS, Telesync, CAM, HDCAM, TC, Line/Mic Dubbed
 - Files already finished in the output folder (waiting for your review)
 - Files already in the queue or being encoded
@@ -109,7 +109,7 @@ STATUS_LABELS = {
     "offer":    "Offered",
     "queued":   "Queued",
     "waiting":  "Encoded, awaiting review",
-    "h265":     "Already H.265",
+    "h265":     "Already optimized",
     "bad":      "Filtered (release type)",
     "skipped":  "Skipped",
     "baseline": "Legacy baseline",
@@ -118,6 +118,9 @@ STATUS_LABELS = {
 # ─── Detection ────────────────────────────────────────────────────────────────
 
 VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov", ".m4v", ".wmv", ".ts", ".mpg", ".mpeg"}
+
+# Codecs that count as optimized: such files are never offered for encoding
+OPTIMIZED_CODECS = {"hevc", "av1", "vvc"}
 
 # Already encoded (judged by the file name)
 HEVC_RE = re.compile(r"x265|h\.?265|hevc|FuN", re.IGNORECASE)
@@ -459,7 +462,7 @@ def _scan(state, probe_files):
             continue
         info = infos[key]
         n_total += 1
-        if HEVC_RE.search(fn) or info.get("video_codec") == "hevc":
+        if HEVC_RE.search(fn) or info.get("video_codec") in OPTIMIZED_CODECS:
             n_encoded += 1
             info["status"] = "h265"
             continue
@@ -634,6 +637,23 @@ def parse_selection(tokens, n):
     return sorted(sel)
 
 
+def write_batch(keys):
+    """Queue the given keys as a new batch. Keys already queued are left out.
+    Returns the keys that were actually queued."""
+    already = set(queued_keys())
+    chosen = [k for k in dict.fromkeys(keys) if k not in already]
+    if not chosen:
+        return []
+    QUEUE_DIR.mkdir(parents=True, exist_ok=True)
+    batch = QUEUE_DIR / f"batch-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.txt"
+    tmp = DATA_DIR / f".{batch.name}.tmp"         # same disk as queue/, so os.replace is atomic
+    tmp.write_text("\n".join(chosen) + "\n", encoding="utf-8")
+    os.replace(tmp, batch)                       # only now does the worker see the batch
+    with closing(connect()) as con, con:         # show them as queued before the next scan
+        con.executemany("UPDATE files SET status = 'queued' WHERE key = ?", [(k,) for k in chosen])
+    return chosen
+
+
 def cmd_queue(state, args):
     skip_rest = "--skip-rest" in args
     args = [a for a in args if a != "--skip-rest"]
@@ -641,14 +661,7 @@ def cmd_queue(state, args):
     if not offer:
         raise SystemExit("The last list is empty. Run 'scan' first.")
     nums = parse_selection(args, len(offer))
-    already = set(queued_keys())
-    chosen = [offer[i - 1] for i in nums if offer[i - 1] not in already]
-    if chosen:
-        QUEUE_DIR.mkdir(parents=True, exist_ok=True)
-        batch = QUEUE_DIR / f"batch-{datetime.now().strftime('%Y%m%d-%H%M%S')}.txt"
-        tmp = DATA_DIR / f".{batch.name}.tmp"     # same disk as queue/, so os.replace is atomic
-        tmp.write_text("\n".join(chosen) + "\n", encoding="utf-8")
-        os.replace(tmp, batch)   # only now does the worker see the batch
+    chosen = write_batch([offer[i - 1] for i in nums])
     skipped_now = []
     if skip_rest:
         for i, k in enumerate(offer, 1):

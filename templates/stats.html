@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Stats{% endblock %}
+
+{% macro legend(c) %}
+  {% if c.series|length > 1 %}
+    <ul class="legend">{% for key, name in c.series %}<li><span class="swatch viz-{{ key }}"></span>{{ name }}</li>{% endfor %}</ul>
+  {% endif %}
+{% endmacro %}
+
+{% macro tip(row, seg) %}{{ row.label }} · {{ seg.series }}: {{ seg.display }}{% if row.segments|length > 1 %} ({{ '%.0f'|format(seg.share) }} %){% endif %}{% endmacro %}
+
+{% macro table_view(c) %}
+  <details class="table-view">
+    <summary>Show as table</summary>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>{{ c.title }}</th>{% for key, name in c.series %}<th class="num">{{ name }}</th>{% endfor %}{% if c.series|length > 1 %}<th class="num">Total</th>{% endif %}</tr></thead>
+        <tbody>
+        {% for row in c.rows %}
+          {% set by = {} %}{% for s in row.segments %}{% set _ = by.update({s.cls: s.display}) %}{% endfor %}
+          <tr><td>{{ row.label }}</td>{% for key, name in c.series %}<td class="num">{{ by.get(key, '–') }}</td>{% endfor %}{% if c.series|length > 1 %}<td class="num">{{ row.display }}</td>{% endif %}</tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+{% endmacro %}
+
+{% macro bars(c) %}
+  <div class="hbars" role="img" aria-label="{{ c.title }}: bar chart, details in the table below">
+    {% for row in c.rows %}
+      <div class="hbar-row">
+        <span class="hbar-label">{{ row.label }}</span>
+        <span class="hbar-track">
+          <span class="hbar-fill" style="width: {{ '%.2f'|format(row.pct) }}%">
+            {% for seg in row.segments %}<span class="seg viz-{{ seg.cls }}" style="flex-grow: {{ seg.value }}" title="{{ tip(row, seg) }}"></span>{% endfor %}
+          </span>
+          <span class="hbar-value">{{ row.display }}</span>
+        </span>
+      </div>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
+{% macro columns(c) %}
+  <div class="columns" role="img" aria-label="{{ c.title }}: column chart, details in the table below">
+    <div class="col-plot">
+      {% for label, pos in c.ticks %}<span class="gridline" style="bottom: {{ pos }}%"><span class="tick">{{ label }}</span></span>{% endfor %}
+      {% for row in c.rows %}
+        <div class="col" title="{{ row.label }}: {{ row.display }}">
+          <span class="col-value" style="bottom: {{ '%.2f'|format(row.pct) }}%">{% if row.total %}{{ row.display }}{% endif %}</span>
+          <span class="col-fill" style="height: {{ '%.2f'|format(row.pct) }}%">
+            {% for seg in row.segments|reverse %}<span class="seg viz-{{ seg.cls }}" style="flex-grow: {{ seg.value }}" title="{{ tip(row, seg) }}"></span>{% endfor %}
+          </span>
+        </div>
+      {% endfor %}
+    </div>
+    <div class="col-labels">{% for row in c.rows %}<span>{{ row.label }}</span>{% endfor %}</div>
+  </div>
+{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Stats</h1>
+  {% if last_scan %}<span class="muted">Last scan: {{ last_scan }}</span>{% endif %}
+</div>
+
+{% if not tiles %}
+  <p class="empty">No data yet. Start a scan on the <a href="{{ url_for('files') }}">Files</a> page.</p>
+{% else %}
+  <section class="cards">
+    <div class="card"><span class="label">Videos</span><span class="value">{{ tiles.videos|count }}</span>
+      <span class="sub">{{ tiles.total_size|size }} in total</span></div>
+    <div class="card"><span class="label">Optimized share (by size)</span><span class="value">{{ '%.0f'|format(tiles.good_share) }} %</span>
+      <span class="meter"><span class="viz-good" style="width: {{ '%.1f'|format(tiles.good_share) }}%"></span></span>
+      <span class="sub">{{ tiles.good_count|count }} files in H.265 or AV1</span></div>
+    <div class="card"><span class="label">Not optimized yet</span><span class="value">{{ tiles.other_size|size }}</span>
+      <span class="sub">{{ tiles.other_count|count }} files in other codecs</span></div>
+    <div class="card"><span class="label">Median bitrate</span><span class="value">{{ tiles.median_other|bitrate }}</span>
+      <span class="sub">other codecs · optimized: {{ tiles.median_good|bitrate }}</span></div>
+  </section>
+
+  <div class="chart-grid">
+    {% for c in charts %}
+      <section class="panel chart" id="{{ c.id }}">
+        <h2>{{ c.title }}</h2>
+        <p class="muted small">{{ c.subtitle }}</p>
+        {{ legend(c) }}
+        {% if c.kind == 'columns' %}{{ columns(c) }}{% else %}{{ bars(c) }}{% endif %}
+        {{ table_view(c) }}
+      </section>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endblock %}

@@ -20,13 +20,13 @@ Semi-automatic conversion of movies and TV episodes in a Plex library from H.264
 ## What it does
 
 1. **Scan** the library (a movies folder and a TV shows folder). Each video is read with ffprobe (codec, resolution, duration, bitrate) and sorted:
-   - already H.265: `x265`, `H.265`, `HEVC` or `FuN` in the name, or an HEVC video track according to ffprobe
+   - already optimized: `x265`, `H.265`, `HEVC` or `FuN` in the name, or a video track in H.265 (HEVC), AV1 or H.266 (VVC) according to ffprobe
    - poor release types, filtered out: LD, MD, TS, Telesync, CAM, HDCAM, TC, Line/Mic Dubbed
    - already encoded and waiting for your review in the output folder
    - already in the queue
    - skipped by you, or part of the legacy baseline from the previous script
    - everything else: **offered** as a numbered list
-2. **Choose** which numbers to encode. This writes a batch file into `queue/`.
+2. **Choose** which files to encode: tick them on the web UI's Files page, or pass their numbers to `encoding.py queue`. Either way a batch file is written into `queue/`.
 3. **Encode**: a worker picks up the batch and runs HandBrakeCLI with your preset (`preset.json`). It writes to `<output>/.inprogress/` first and moves the file to the output folder only when the encode succeeded.
 4. **Review** the finished files yourself and move them into the library (e.g. renaming them to x265). Until then, a rescan shows them as "waiting for review".
 
@@ -179,7 +179,9 @@ Open <http://127.0.0.1:7979>. Under **Settings**, check that each folder has a g
 
 ### 4. Queue files
 
-Choosing files works on the command line for now:
+On the **Files** page, tick the files you want to encode, or tick a folder to select everything in it (e.g. a whole season), then click **Queue for encoding**. Any file can be queued this way, including files the scan didn't offer.
+
+The same works on the command line, using the numbers from the last scan:
 
 ```bash
 docker compose exec encoding python3 encoding.py scan
@@ -241,8 +243,9 @@ In Docker, prefix each command with `docker compose exec encoding`. The numbers 
 
 | Page | Content |
 |---|---|
-| **Files** | All scanned videos as a folder tree with codec, resolution, bitrate, duration, size and status. Totals and the H.265 share at the top. Filters by text, codec and status. |
+| **Files** | All scanned videos as a folder tree with codec, resolution, bitrate, duration, size and status. Codecs are color coded: green for optimized codecs (H.265, AV1, H.266), orange for all others. Totals and the optimized share at the top. Filters by text, codec and status. Select files or whole folders and click **Queue for encoding** to queue them. |
 | **Status** | Current encode with progress, the queue, the latest results and a scan button. Refreshes every 10 seconds. |
+| **Stats** | Key figures (optimized share, size still to optimize, median bitrates) and charts of the distribution by codec (count and storage), bitrate, file size, resolution, library section and status. Every chart has a table view, and hovering a bar shows its values. |
 | **Settings** | The values from `config.env`, in separate sections (Library, Encoding, Obsidian, Worker). Each folder shows whether it exists. Changes apply immediately. |
 
 There is **no login yet**. The web UI therefore listens on `127.0.0.1` only, and `docker-compose.yml` publishes the port only on `127.0.0.1`. Don't make it reachable from other machines until login is implemented. Values entered in the settings may use `$HOME`, but no other `$`, quotes or backslashes, because `config.env` is read by the shell.
