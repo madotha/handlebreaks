@@ -14,6 +14,7 @@ config.env
 state.json*
 queue/
 processing/
+replace/
 done/
 logs/
 .lock
