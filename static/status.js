@@ -29,7 +29,10 @@
     const r = await fetch(url);
     if (!r.ok) return;
     const html = await r.text();
+    const picked = new Set([...rows.querySelectorAll('input[name="key"]:checked')].map((c) => c.value));
     if (append) rows.insertAdjacentHTML("beforeend", html); else rows.innerHTML = html;
+    rows.querySelectorAll('input[name="key"]').forEach((c) => { c.checked = picked.has(c.value); });
+    updateSelection();
     $("[data-queue-empty]").hidden = rows.children.length > 0;
     const next = r.headers.get("X-Next");
     let btn = $("[data-queue-more]");
@@ -48,6 +51,23 @@
       btn.remove();
     }
   }
+
+  // Selecting waiting entries for "Remove selected"
+  const selectAll = $("[data-select-waiting]");
+  function updateSelection() {
+    const boxes = [...rows.querySelectorAll('input[name="key"]')];
+    const n = boxes.filter((c) => c.checked).length;
+    const btn = $("[data-remove-selected]");
+    btn.disabled = n === 0;
+    btn.textContent = n ? `Remove selected (${n.toLocaleString()})` : "Remove selected";
+    selectAll.checked = n > 0 && n === boxes.length;
+    selectAll.indeterminate = n > 0 && n < boxes.length;
+  }
+  rows.addEventListener("change", (e) => { if (e.target.name === "key") updateSelection(); });
+  selectAll.addEventListener("change", () => {
+    rows.querySelectorAll('input[name="key"]').forEach((c) => { c.checked = selectAll.checked; });
+    updateSelection();
+  });
 
   async function poll(force) {
     if (running) return;
@@ -71,6 +91,7 @@
       document.querySelectorAll("[data-count]").forEach((el) => {
         el.textContent = (s.counts[el.dataset.count] || 0).toLocaleString();
       });
+      $("[data-remove-all]").disabled = !s.counts.waiting;
       const scanBox = $("[data-scan-running]");
       scanBox.hidden = !s.scan.running;
       if (s.scan.running) {

@@ -1,16 +1,15 @@
 {# One level of the folder tree: subfolders (content loaded when opened) and files. #}
+{% set scan_url = url_for('start_scan') %}
 {% for f in folders %}
   {% set open = filters and f.count <= auto_open %}
   <details class="dir" data-path="{{ f.path }}" {% if open %}open{% endif %}>
     <summary>
       <input type="checkbox" class="dir-toggle" name="folder" value="{{ f.path }}" data-count="{{ f.selectable }}"
-             aria-label="Select all files in {{ f.name }}" title="Select all {{ f.selectable|count }} files in this folder"
-             {% if not f.selectable %}disabled data-locked{% endif %}>
+             aria-label="Select folder"{% if not f.selectable %} disabled data-locked{% endif %}>
       <span class="dirname">{{ f.name }}</span>{% if f.note %}<span class="dirnote">{{ f.note }}</span>{% endif %}
-      <button class="icon-btn" formaction="{{ url_for('start_scan') }}" name="path" value="{{ f.path }}" data-scan-path data-files="{{ f.count }}"
-              title="Scan this folder again (re-reads every file with ffprobe)" aria-label="Scan {{ f.name }} again">↻</button>
+      <button class="icon-btn" formaction="{{ scan_url }}" name="path" value="{{ f.path }}" data-scan-path data-files="{{ f.count }}" aria-label="Scan again">↻</button>
       <span class="meta">
-        <span class="opt" title="{{ f.optimized|count }} optimized · {{ f.other|count }} other codecs{% if f.unknown %} · {{ f.unknown|count }} not probed{% endif %}">
+        <span class="opt">
           <span class="opt-bar" aria-hidden="true">{% if f.optimized %}<span class="viz-good" style="flex-grow: {{ f.optimized }}"></span>{% endif %}{% if f.other %}<span class="viz-other" style="flex-grow: {{ f.other }}"></span>{% endif %}{% if f.unknown %}<span class="viz-unknown" style="flex-grow: {{ f.unknown }}"></span>{% endif %}</span>
           <span class="codec codec-{{ 'good' if f.optimized == f.count else 'other' }}">{{ '%.0f'|format(f.share|round(0, 'floor') if f.optimized < f.count else 100) }} %</span>
           <span class="opt-count">{{ f.optimized|count }} of {{ f.count|count }} optimized</span>
@@ -18,9 +17,7 @@
         <span class="dir-size">{{ f.size|size }}</span>
       </span>
     </summary>
-    <div class="dir-body" data-src="{{ url_for('files_folder', path=f.path, **link_args) }}">
-      <p class="muted small loading">Loading…</p>
-    </div>
+    <div class="dir-body"></div>
   </details>
 {% endfor %}
 {% if files %}

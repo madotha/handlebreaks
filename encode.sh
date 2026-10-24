@@ -25,6 +25,7 @@ export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 BASE="${0:A:h}"                                  # program folder, e.g. ~/scripts/encoding
 DATA="${ENCODING_DATA_DIR:-$BASE}"               # config.env, queue/, logs/ … (Docker: /data)
 QUEUE="$DATA/queue"; PROC="$DATA/processing"; DONE="$DATA/done"; LOGS="$DATA/logs"
+CANCELLED="$DATA/cancelled.txt"   # "batch<TAB>key" removed from this run in the web UI
 mkdir -p "$QUEUE" "$PROC" "$DONE" "$LOGS"
 
 log() { print -r -- "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOGS/encode.log"; }
@@ -162,6 +163,9 @@ for b in $batches; do
   while IFS=$'\t' read -r key override || [[ -n "$key" ]]; do
     [[ -z "$key" ]] && continue
     i=$(( i + 1 ))
+    if [[ -f "$CANCELLED" ]] && grep -qxF -- "${b:t}	$key" "$CANCELLED"; then
+      log "Removed from the queue, skipped: $key"; continue
+    fi
     prefix="${key%%/*}"
     if [[ "$key" != */* || -z "${ROOTS[$prefix]:-}" ]]; then
       log "Unknown entry: $key"; continue
@@ -230,5 +234,5 @@ print(p["PresetName"]); print({"av_mp4": "mp4", "av_webm": "webm"}.get(p.get("Fi
 done
 
 log "Queue finished"
-rm -f "$LOGS/current.txt"
+rm -f "$LOGS/current.txt" "$CANCELLED"
 write_status idle

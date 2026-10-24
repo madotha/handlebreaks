@@ -1,6 +1,7 @@
 {# One page of queue entries; also returned on its own for "Show more" and refreshing. #}
 {% for r in rows %}
   <tr class="{{ 'is-current' if r.state == 'encoding' }}">
+    <td class="check">{% if r.state == 'waiting' %}<input type="checkbox" name="key" value="{{ r.key }}" form="queue-remove" aria-label="Select">{% endif %}</td>
     <td class="num muted">{{ r.n }}</td>
     <td class="name" title="{{ r.key }}">{{ r.short }}</td>
     <td class="small">{{ r.preset_name or "Share's preset" }}</td>

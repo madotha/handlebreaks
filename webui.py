@@ -26,6 +26,8 @@ Host and port can also be set with WEB_HOST and WEB_PORT.
 """
 
 import argparse
+import gzip
+import hashlib
 import json
 import math
 import os
@@ -34,7 +36,8 @@ import secrets
 import sys
 import threading
 import time
-from collections import Counter
+import urllib.parse
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 from contextlib import closing
 from pathlib import Path
@@ -77,9 +80,12 @@ SETTINGS = {
         ("STATUS_NOTE_ENABLED", "Update the status note every minute while encoding", "bool", ""),
     ]),
     "scans": ("Scans", [
-        ("SCAN_INTERVAL", "Automatic rescan interval (minutes)", "minutes",
+        ("SCAN_INTERVAL", "Automatic rescan interval (minutes)", "number",
          "Rescans all shares when the last scan is this many minutes old; only new or changed "
          "files are read with ffprobe. 0 = off. Runs while the web UI runs (always in Docker)."),
+        ("FFPROBE_WORKERS", "Parallel ffprobe calls", "number",
+         f"How many files are read at the same time during scans. Empty or 0 = number of CPUs "
+         f"({os.cpu_count()} here). Lower it if the NAS gets slow during scans."),
     ]),
     "plex": ("Plex", [
         ("PLEX_URL", "Plex server URL", "text",
@@ -196,7 +202,7 @@ def next_auto_scan(cfg):
     minutes = scan_interval(cfg)
     if not minutes:
         return None
-    last = enc.load_state()["last_scan"]
+    last = enc.last_scan()
     try:
         return datetime.strptime(last, "%Y-%m-%d %H:%M") + timedelta(minutes=minutes)
     except (TypeError, ValueError):             # never scanned: due now
@@ -276,6 +282,22 @@ def before():
         enc.apply_config(enc.load_config())
     except SystemExit as e:
         g.config_error = str(e)
+
+
+@app.after_request
+def compress(resp):
+    """gzip larger HTML/JSON responses (a big folder level is ~1 MB of repetitive HTML)."""
+    if (resp.direct_passthrough or not 200 <= resp.status_code < 300 or resp.headers.get("Content-Encoding")
+            or "gzip" not in request.headers.get("Accept-Encoding", "")
+            or resp.mimetype not in ("text/html", "application/json")):
+        return resp
+    data = resp.get_data()
+    if len(data) < 2048:
+        return resp
+    resp.set_data(gzip.compress(data, compresslevel=5))
+    resp.headers["Content-Encoding"] = "gzip"
+    resp.headers["Vary"] = "Accept-Encoding"
+    return resp
 
 
 @app.context_processor
@@ -374,6 +396,19 @@ def index():
 
 PAGE_SIZE = 200                                 # files per "Show more" step
 AUTO_OPEN = 300                                 # with a filter, open folders with up to this many matches
+
+
+_CACHE = {}
+
+
+def cached(name, version, compute):
+    """compute() once per version (e.g. enc.db_version()); repeated page views are free."""
+    hit = _CACHE.get(name)
+    if hit and hit[0] == version:
+        return hit[1]
+    value = compute()
+    _CACHE[name] = (version, value)
+    return value
 
 
 def natural(name):
@@ -478,7 +513,7 @@ def next_sort(field, sort):
     """Clicking a column header cycles: ascending -> descending -> no sorting."""
     if sort.get("sort") != field:
         return {"sort": field, "dir": "asc"}
-    return {"sort": field, "dir": "desc"} if sort["dir"] == "asc" else {}
+    return {"sort": field, "dir": "desc"} if sort["dir"] == "asc" else {"sort": "none"}
 
 
 def sort_arrow(field, sort):
@@ -503,26 +538,26 @@ def tree_level(path, filters, queued, offset=0, sort=None):
     clause, params = filter_sql(filters, path)
     plen = len(path) + 1 if path else 0
     sort = sort or {"sort": "name", "dir": "asc"}          # no sorting = by name
-    folders, here = {}, []
+    where = clause + (" AND " if clause else " WHERE ")
+    start = plen + 1                            # first character after "path/"
+    folders = {}
     with closing(db()) as con:
-        for key, size, status, codec, bitrate, duration, width, height in con.execute(
-                f"SELECT key, size, status, video_codec, bitrate, duration, width, height FROM files{clause}", params):
-            head, sep, _ = key[plen:].partition("/")
-            if not sep:
-                here.append({"key": key, "size": size, "status": status, "video_codec": codec,
-                             "bitrate": bitrate, "duration": duration, "width": width, "height": height})
-                continue
-            f = folders.get(head)
-            if f is None:
-                f = folders[head] = {"name": head, "path": f"{path}/{head}" if path else head,
-                                     "count": 0, "size": 0, "selectable": 0, "optimized": 0, "unknown": 0}
-            f["count"] += 1
-            if status == "h265":
-                f["optimized"] += 1
-            elif not codec:
-                f["unknown"] += 1
-            f["size"] += size or 0
-            f["selectable"] += key not in queued
+        # Subfolders: SQLite groups by the next path part and counts (fast for 70,000+ files)
+        q_sum = "0"
+        if queued:
+            con.execute("CREATE TEMP TABLE q (key TEXT PRIMARY KEY)")
+            con.executemany("INSERT OR IGNORE INTO q VALUES (?)", [(k,) for k in queued])
+            q_sum = "SUM(key IN (SELECT key FROM q))"
+        for head, count, size, optimized, unknown, in_queue in con.execute(
+                f"SELECT substr(key, ?, instr(substr(key, ?), '/') - 1), COUNT(*), COALESCE(SUM(size), 0), "
+                f"SUM(status = 'h265'), SUM(status != 'h265' AND video_codec IS NULL), {q_sum} "
+                f"FROM files{where}instr(substr(key, ?), '/') > 0 GROUP BY 1", [start, start] + params + [start]):
+            folders[head] = {"name": head, "path": f"{path}/{head}" if path else head, "count": count,
+                             "size": size, "optimized": optimized, "unknown": unknown, "selectable": count - in_queue}
+        # Files directly in this folder, sorted (only their rows are loaded)
+        here = [dict(zip(("key", "size", "status", "video_codec", "bitrate", "duration", "width", "height"), r))
+                for r in con.execute(f"SELECT key, size, status, video_codec, bitrate, duration, width, height "
+                                     f"FROM files{where}instr(substr(key, ?), '/') = 0", params + [start])]
         keys = [r["key"] for r in sort_rows(here, SORT_FIELDS[sort["sort"]][1], sort["dir"] == "desc",
                                              tiebreak=SORT_FIELDS["name"][1])]
         page = keys[offset:offset + PAGE_SIZE]
@@ -562,7 +597,8 @@ def level_context(path, filters, queued, offset=0, sort=None):
     return {"folders": folders, "files": files, "total_files": total, "shown_files": min(nxt, total),
             "more_url": more, "filters": filters, "queued": queued, "auto_open": AUTO_OPEN,
             "status_labels": enc.STATUS_LABELS, "sort": sort, "sort_links": sort_links(filters, sort),
-            "link_args": dict(filters, **sort)}       # query of folder URLs: filters + sort
+            "link_args": dict(filters, **sort),      # query of folder URLs: filters + sort
+            "folder_query": urllib.parse.urlencode(dict(filters, **sort), doseq=True)}
 
 
 def sort_links(filters, sort):
@@ -571,24 +607,56 @@ def sort_links(filters, sort):
             for field in SORT_FIELDS}
 
 
+def library_summary():
+    """Totals, codec and status counts and unscanned shares; cached until the database changes."""
+    def compute():
+        with closing(db()) as con:
+            total, total_size, opt_size = con.execute(
+                "SELECT COUNT(*), COALESCE(SUM(size), 0), COALESCE(SUM(CASE WHEN status = 'h265' THEN size END), 0) "
+                "FROM files").fetchone()
+            codecs = con.execute(f"SELECT COALESCE(video_codec, '{UNKNOWN_CODEC}'), COUNT(*) FROM files "
+                                 "GROUP BY 1 ORDER BY 2 DESC").fetchall()
+            statuses = dict(con.execute("SELECT status, COUNT(*) FROM files GROUP BY status").fetchall())
+        unscanned = [enc.SHARE_NAMES[p] for p, i in share_info().items() if not i["files"]]
+        return total, total_size, opt_size, codecs, statuses, unscanned
+    return cached(("summary", tuple(enc.ROOT_CANDIDATES)), enc.db_version(), compute)
+
+
+def sort_state(src, name, fields=None):
+    """The list's sort: from the request if it sets one (sort=none = off), otherwise the
+    one remembered in the session, so it survives switching pages and reloading."""
+    if "sort" in src:
+        sort = sort_args(src, fields)
+        session[f"sort:{name}"] = sort
+        return sort
+    return sort_args(session.get(f"sort:{name}", {}), fields)
+
+
 @app.route("/files")
 def files():
     filters = file_filters(request.args)
-    empty = render_template("files.html", total=0, filters=filters)
+    sort = sort_state(request.args, "files")
+    empty = render_template("files.html", total=0, filters=filters, sort=sort)
     if g.config_error:
         return empty
-    with closing(db()) as con:
-        total, total_size, opt_size = con.execute(
-            "SELECT COUNT(*), COALESCE(SUM(size), 0), COALESCE(SUM(CASE WHEN status = 'h265' THEN size END), 0) "
-            "FROM files").fetchone()
-        if not total:
-            return empty
-        codecs = con.execute(f"SELECT COALESCE(video_codec, '{UNKNOWN_CODEC}'), COUNT(*) FROM files "
-                             "GROUP BY 1 ORDER BY 2 DESC").fetchall()
-        statuses = dict(con.execute("SELECT status, COUNT(*) FROM files GROUP BY status").fetchall())
-        clause, params = filter_sql(filters)
-        shown = con.execute(f"SELECT COUNT(*) FROM files{clause}", params).fetchone()[0]
+    total, total_size, opt_size, codecs, statuses, unscanned = library_summary()
+    if not total:
+        return empty
+    if filters:
+        with closing(db()) as con:
+            clause, params = filter_sql(filters)
+            shown = con.execute(f"SELECT COUNT(*) FROM files{clause}", params).fetchone()[0]
+    else:
+        shown = total
     queued = set(enc.queued_keys())
+    # Folder contents only change with the database or the queue: the browser keeps loaded
+    # folders for this version (files.js), so reopening them after a reload needs no request
+    version = hashlib.sha1(repr((enc.db_version(), sorted(queued))).encode()).hexdigest()[:12]
+    if filters:
+        level = level_context("", filters, queued, sort=sort)
+    else:                                       # the unfiltered top level is the same until data changes
+        level = cached(("top", tuple(sorted(sort.items())), hash(frozenset(queued))), enc.db_version(),
+                       lambda: level_context("", filters, queued, sort=sort))
     return render_template(
         "files.html", total=total, total_size=total_size, shown=shown,
         optimized_share=opt_size / total_size * 100 if total_size else 0, codecs=codecs,
@@ -597,9 +665,8 @@ def files():
         codec_groups=[(k, label, sum(n for c, n in codecs if codec_class(c) == k.split(":")[1]))
                       for k, label in CODEC_GROUPS.items()],
         codec_summary=codec_summary(filters.get("codec", [])),
-        last_scan=enc.load_state()["last_scan"], ffprobe=bool(enc.FFPROBE), preset_list=preset_choices(),
-        unscanned=[enc.SHARE_NAMES[p] for p, i in share_info().items() if not i["files"]],
-        **level_context("", filters, queued, sort=sort_args(request.args)))
+        last_scan=enc.last_scan(), ffprobe=bool(enc.FFPROBE), preset_list=preset_choices(),
+        unscanned=unscanned, folder_version=version, **level)
 
 
 @app.route("/files/folder")
@@ -689,7 +756,7 @@ def queue_view(state="", offset=0, sort=None):
         item["n"] = n                           # processing order, kept when sorting
     counts = Counter(i["state"] for i in items)
     shown = [i for i in items if not state or i["state"] == state or
-             (state == "done" and i["state"] not in ("waiting", "encoding"))]
+             (state == "done" and i["state"] not in ("waiting", "encoding", "removed"))]
     if sort:
         shown = sorted(shown, key=QUEUE_SORT[sort["sort"]][1], reverse=sort["dir"] == "desc")
     page = shown[offset:offset + QUEUE_PAGE]
@@ -751,10 +818,10 @@ def status():
     state = request.args.get("state", "")
     results = replace_info([{"at": at, "status": st, "key": key} for at, st, key in enc.recent_results(20)])
     return render_template("status.html", cur=enc.current_progress(),
-                           q=queue_view(state, sort=sort_args(request.args, QUEUE_SORT)),
+                           q=queue_view(state, sort=sort_state(request.args, "queue", QUEUE_SORT)),
                            results=results, auto_interval=scan_interval(cfg),
                            auto_next=next_auto_scan(cfg), short=enc.short,
-                           last_scan=enc.load_state()["last_scan"])
+                           last_scan=enc.last_scan())
 
 
 @app.route("/status/live")
@@ -772,6 +839,26 @@ def status_queue():
     resp.headers["X-Next"] = view["more_url"] or ""
     resp.headers["X-Shown-Total"] = str(view["shown_total"])
     return resp
+
+
+@app.route("/queue/remove", methods=["POST"])
+def queue_remove():
+    """Remove waiting entries from the queue: the selected ones, or with all=1 every one."""
+    keys = None if request.form.get("all") else request.form.getlist("key")
+    if keys == []:
+        flash("No entries selected.", "error")
+    else:
+        removed = enc.remove_queued(keys)
+        flash(f"{len(removed):,} entr{'y' if len(removed) == 1 else 'ies'} removed from the queue."
+              if removed else "Nothing removed: the entries aren't waiting any more.", "ok" if removed else "error")
+    return redirect(url_for("status"))
+
+
+@app.route("/results/clear", methods=["POST"])
+def results_clear():
+    n = enc.clear_results()
+    flash(f"Results history cleared ({n:,} result(s)).", "ok")
+    return redirect(url_for("status"))
 
 
 @app.route("/scan", methods=["POST"])
@@ -871,34 +958,65 @@ def chart(title, subtitle, kind, unit, series, rows):
             "ticks": ticks, "id": re.sub(r"\W+", "-", title.lower())}
 
 
+def bin_case(column, bins, scale):
+    """SQL CASE that returns the index of the bin (lo <= value/scale < hi), -1 for no value."""
+    parts = [f"WHEN {column} < {hi * scale} THEN {i}" for i, (_, hi, _) in enumerate(bins) if hi != math.inf]
+    return f"CASE WHEN {column} IS NULL OR {column} = 0 THEN -1 {' '.join(parts)} ELSE {len(bins) - 1} END"
+
+
+RES_CASE = ("CASE WHEN width IS NULL OR height IS NULL THEN 'Unknown' "
+            "WHEN width >= 3200 OR height >= 1800 THEN '2160p (4K)' "
+            "WHEN width >= 1800 OR height >= 1000 THEN '1080p' "
+            "WHEN width >= 1200 OR height >= 700 THEN '720p' ELSE 'SD' END")
+
+
 @app.route("/stats")
 def stats():
-    rows = list(enc.load_files().values()) if not g.config_error else []
-    if not rows:
+    """All numbers are counted by SQLite in one grouped query (a few thousand groups instead
+    of every file), so the page stays fast with large libraries."""
+    if g.config_error:
         return render_template("stats.html", charts=[], tiles=None)
+    with closing(db()) as con:
+        groups = con.execute(f"""
+            SELECT video_codec, {bin_case('bitrate', BITRATE_BINS, 1e6)}, {bin_case('size', SIZE_BINS, GB)},
+                   {RES_CASE}, substr(key, 1, instr(key, '/') - 1), status, COUNT(*), COALESCE(SUM(size), 0)
+            FROM files GROUP BY 1, 2, 3, 4, 5, 6""").fetchall()
+        if not groups:
+            return render_template("stats.html", charts=[], tiles=None)
+        good = sorted(enc.OPTIMIZED_CODECS)
+        marks = ", ".join("?" * len(good))
+
+        def median_bitrate(where):
+            n = con.execute(f"SELECT COUNT(*) FROM files WHERE bitrate > 0 AND {where}", good).fetchone()[0]
+            row = con.execute(f"SELECT bitrate FROM files WHERE bitrate > 0 AND {where} ORDER BY bitrate "
+                              f"LIMIT 1 OFFSET ?", good + [n // 2]).fetchone() if n else None
+            return row[0] if row else None
+        median_good = median_bitrate(f"video_codec IN ({marks})")
+        median_other = median_bitrate(f"video_codec IS NOT NULL AND video_codec NOT IN ({marks})")
 
     by_codec_n, by_codec_size = Counter(), Counter()
-    bitrate, size, res = {}, {}, {}
-    sections, status = {}, Counter()
-    no_bitrate = 0
-    for r in rows:
-        cls = codec_class(r["video_codec"])
-        codec = r["video_codec"] or UNKNOWN_CODEC
-        by_codec_n[codec] += 1
-        by_codec_size[codec] += r["size"] or 0
-        if r["bitrate"]:
-            mbit = r["bitrate"] / 1e6
-            b = next(lbl for lo, hi, lbl in BITRATE_BINS if lo <= mbit < hi)
-            bitrate.setdefault(b, Counter())[cls] += 1
+    bitrate, size, res = defaultdict(Counter), defaultdict(Counter), defaultdict(Counter)
+    sections, status = defaultdict(Counter), Counter()
+    no_bitrate = videos = total_size = good_count = other_count = good_size = other_size = 0
+    for codec, bb, sb, rc, prefix, st, n, total in groups:
+        cls = codec_class(codec)
+        codec = codec or UNKNOWN_CODEC
+        videos += n
+        total_size += total
+        by_codec_n[codec] += n
+        by_codec_size[codec] += total
+        if bb < 0:
+            no_bitrate += n
         else:
-            no_bitrate += 1
-        gb = (r["size"] or 0) / GB
-        sb = next(lbl for lo, hi, lbl in SIZE_BINS if lo <= gb < hi)
-        size.setdefault(sb, Counter())[cls] += 1
-        res.setdefault(resolution_class(r["width"], r["height"]), Counter())[cls] += 1
-        sections.setdefault(enc.SHARE_NAMES.get(r["key"].split("/", 1)[0], r["key"].split("/", 1)[0]),
-                            Counter())[cls] += r["size"] or 0
-        status[r["status"]] += 1
+            bitrate[BITRATE_BINS[bb][2]][cls] += n
+        size[SIZE_BINS[max(sb, 0)][2]][cls] += n
+        res[rc][cls] += n
+        sections[enc.SHARE_NAMES.get(prefix, prefix)][cls] += total
+        status[st] += n
+        if cls == "good":
+            good_count, good_size = good_count + n, good_size + total
+        elif cls == "other":
+            other_count, other_size = other_count + n, other_size + total
 
     def codec_rows(counter):
         return [(codec_name(c), {codec_class(c): v}) for c, v in counter.most_common()]
@@ -923,23 +1041,13 @@ def stats():
               [(enc.STATUS_LABELS.get(s_, s_), {"single": n}) for s_, n in status.most_common()]),
     ]
 
-    total_size = sum(r["size"] or 0 for r in rows)
-    good = [r for r in rows if codec_class(r["video_codec"]) == "good"]
-    other = [r for r in rows if codec_class(r["video_codec"]) == "other"]
-    good_size = sum(r["size"] or 0 for r in good)
-
-    def median_bitrate(rs):
-        values = sorted(r["bitrate"] for r in rs if r["bitrate"])
-        return values[len(values) // 2] if values else None
-
     tiles = {
-        "videos": len(rows), "total_size": total_size,
+        "videos": videos, "total_size": total_size,
         "good_share": good_size / total_size * 100 if total_size else 0,
-        "good_count": len(good), "other_count": len(other),
-        "other_size": sum(r["size"] or 0 for r in other),
-        "median_good": median_bitrate(good), "median_other": median_bitrate(other),
+        "good_count": good_count, "other_count": other_count, "other_size": other_size,
+        "median_good": median_good, "median_other": median_other,
     }
-    return render_template("stats.html", charts=charts, tiles=tiles, last_scan=enc.load_state()["last_scan"])
+    return render_template("stats.html", charts=charts, tiles=tiles, last_scan=enc.last_scan())
 
 
 # ─── Presets ──────────────────────────────────────────────────────────────────
@@ -1099,9 +1207,9 @@ def settings(section):
                 errors[key] = "Choose a preset."
             elif key == "ENCODED_DIR" and not val:
                 errors[key] = "This folder is required."
-            elif typ == "minutes" and not re.fullmatch(r"\d{1,6}", val or "0"):
-                errors[key] = "Enter a whole number of minutes (0 = off)."
-            if typ == "minutes":
+            elif typ == "number" and not re.fullmatch(r"\d{1,6}", val or "0"):
+                errors[key] = "Enter a whole number (0 = off)."
+            if typ == "number":
                 val = str(int(val)) if re.fullmatch(r"\d{1,6}", val) else (val or "0")
             if not key.startswith("SHARE_new"):
                 updates[key] = val

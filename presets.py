@@ -214,11 +214,41 @@ def _help_list(text, heading):
     return []
 
 
+CACHE_FILE = DATA_DIR / ".handbrake-cache.json"   # capabilities and built-in presets per HandBrakeCLI build
+
+
+def _disk_cache(name, compute):
+    """compute() once per HandBrakeCLI build (path, size, date), kept in CACHE_FILE, so
+    restarts don't have to ask HandBrakeCLI again (about a second)."""
+    st = os.stat(HANDBRAKE)
+    build = [HANDBRAKE, st.st_size, st.st_mtime_ns]
+    try:
+        data = json.loads(CACHE_FILE.read_text())
+        if data.get("build") == build and name in data:
+            return data[name]
+    except (OSError, ValueError):
+        data = {}
+    if data.get("build") != build:
+        data = {"build": build}
+    data[name] = compute()
+    try:
+        tmp = CACHE_FILE.with_name(CACHE_FILE.name + ".tmp")
+        tmp.write_text(json.dumps(data))
+        os.replace(tmp, CACHE_FILE)
+    except OSError:
+        pass                                        # no cache, compute again next time
+    return data[name]
+
+
 @lru_cache(maxsize=1)
 def capabilities():
-    """What the installed HandBrakeCLI supports. Cached for the lifetime of the process."""
+    """What the installed HandBrakeCLI supports. Cached in the process and on disk."""
     if not HANDBRAKE:
         return dict(FALLBACK, available=False, version=None)
+    return _disk_cache("capabilities", _capabilities)
+
+
+def _capabilities():
     text = _run("--help")
     caps = {
         "available": True,
@@ -253,6 +283,10 @@ def builtin_presets():
     """HandBrake's built-in presets: [(category, name, description)]."""
     if not HANDBRAKE:
         return []
+    return [tuple(p) for p in _disk_cache("builtins", _builtin_presets)]
+
+
+def _builtin_presets():
     out, category, current = [], "", None
     for line in _run("--preset-list").splitlines():
         if re.fullmatch(r"\S.*/", line):

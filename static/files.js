@@ -33,18 +33,56 @@
   const openSet = new Set((() => { try { return JSON.parse(sessionStorage.getItem(OPEN_KEY)) || []; } catch (e) { return []; } })());
   function saveOpen() { try { sessionStorage.setItem(OPEN_KEY, JSON.stringify([...openSet])); } catch (e) { /* storage blocked */ } }
 
-  async function load(details) {
+  // Loaded folders are kept for this tab while the data doesn't change (data-version
+  // changes with the database and the queue), so open folders show at once after a reload.
+  const CACHE_PREFIX = "files-folder:";
+  function cacheGet(url) {
+    try {
+      const c = JSON.parse(sessionStorage.getItem(CACHE_PREFIX + url));
+      return c && c.v === form.dataset.version ? c.html : null;
+    } catch (e) { return null; }
+  }
+  function cachePut(url, html) {
+    try {
+      for (let i = sessionStorage.length - 1; i >= 0; i--) {   // drop entries of older versions
+        const k = sessionStorage.key(i);
+        if (k.startsWith(CACHE_PREFIX) && !k.includes(form.dataset.version)) {
+          const c = JSON.parse(sessionStorage.getItem(k) || "{}");
+          if (c.v !== form.dataset.version) sessionStorage.removeItem(k);
+        }
+      }
+      const entry = JSON.stringify({ v: form.dataset.version, html });
+      try {
+        sessionStorage.setItem(CACHE_PREFIX + url, entry);
+      } catch (e) {                                            // full: make room once
+        Object.keys(sessionStorage).filter((k) => k.startsWith(CACHE_PREFIX)).forEach((k) => sessionStorage.removeItem(k));
+        sessionStorage.setItem(CACHE_PREFIX + url, entry);
+      }
+    } catch (e) { /* too big or storage blocked: just don't keep it */ }
+  }
+
+  async function load(details, fresh) {
     const body = details.querySelector(":scope > .dir-body");
     if (body.dataset.loaded) return;
     body.dataset.loaded = "1";
-    try {
-      const r = await fetch(body.dataset.src);
-      if (!r.ok) throw new Error(r.status);
-      body.innerHTML = await r.text();
-    } catch (e) {
-      body.innerHTML = '<p class="flash error">Could not load this folder. Reload the page and try again.</p>';
-      delete body.dataset.loaded;
-      return;
+    const url = `${form.dataset.folderUrl}?path=${encodeURIComponent(details.dataset.path)}` +
+      (form.dataset.folderQuery ? "&" + form.dataset.folderQuery : "");
+    const cached = fresh ? null : cacheGet(url);
+    if (cached !== null) {
+      body.innerHTML = cached;
+    } else {
+      body.innerHTML = '<p class="muted small loading">Loading…</p>';
+      try {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error(r.status);
+        const html = await r.text();
+        body.innerHTML = html;
+        if (!fresh) cachePut(url, html);     // after a rescan the page's version is outdated
+      } catch (e) {
+        body.innerHTML = '<p class="flash error">Could not load this folder. Reload the page and try again.</p>';
+        delete body.dataset.loaded;
+        return;
+      }
     }
     const parent = toggleOf(details);
     if (parent && parent.checked) cover(body, true);
@@ -133,7 +171,7 @@
       const parent = level && level.closest("details.dir");
       if (!parent) { location.reload(); return; }
       delete level.dataset.loaded;
-      await load(parent);
+      await load(parent, true);
     } catch (err) {
       say("The scan request failed. Reload the page and try again.", "error");
     } finally {
@@ -151,7 +189,7 @@
     const parent = levelBody && levelBody.closest("details.dir");
     if (!parent) { location.reload(); return; }
     delete levelBody.dataset.loaded;
-    await load(parent);
+    await load(parent, true);
   }
 
   // "Replace…" (static/replace.js): afterwards check the folder again and reload it

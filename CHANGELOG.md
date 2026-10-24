@@ -9,6 +9,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Housekeeping on the Status page: tick waiting queue entries and **Remove selected**, or **Remove all waiting**. Batches in `queue/` are rewritten; entries of the run in progress go to `cancelled.txt` (`batch<TAB>key`), show as "Removed" and are skipped by `encode.sh`, which deletes the file when the run ends. Removed files are offered again on the Files page. Also `encoding.remove_queued()`.
+- **Clear results history** on the Status page (with confirmation): forgets all encode results (database and `logs/results.tsv`) and deletes finished batch files (`done/`), logs of failed encodes and results of replace jobs. Also `encoding.clear_results()`.
+- `FFPROBE_WORKERS` (Settings → Scans): number of parallel ffprobe calls during scans; empty = number of CPUs (before: fixed 4).
+- The sort of the Files page and the Status queue is remembered (per browser session) when switching pages or reloading; "off" resets it. Tables sorted in the browser remember their sort per page.
+- Opened folders on the Files page show at once after a reload or page switch: the browser keeps loaded folders for its tab as long as the library data and queue are unchanged.
+
 - Sorting by column header everywhere: a click cycles ascending → descending → off (default order). Files page: file name, codec, resolution, bitrate, duration, size, status, via a "Sort by" bar that's always visible at the top of the list (part of the sticky queue bar) and via the column headers of opened folders. Status queue: file, preset, state (off = processing order). Latest results, the Presets list and the Stats table views sort in the browser (`static/tablesort.js`, numbers numerically, empty values last). Sorting happens on the server, so all pages of a folder follow it; folders are ordered by size or optimized share when sorting by size or status, otherwise by name; files without a value come last; ties are ordered by name. Opened folders are remembered for the browser tab and open again after a reload.
 - Plex integration: with `PLEX_URL` and `PLEX_TOKEN` in `config.env`, the worker tells Plex about a replaced file right away: same file name → the movie or episode is analyzed (found by its path through Plex's folder view); new name or extension → Plex scans just that folder. Several URLs can be listed (e.g. for the Mac and the Docker container). Settings → Plex tests the connection; the token is never shown. A Plex problem never blocks a replace, it's only reported.
 - **Replace…** also on the Status page: next to finished entries in the queue and in "Latest results" while their encode is in the output folder; replaced entries show "Replaced". The dialog and its logic are shared (`templates/_replace_dialog.html`, `static/replace.js`).
@@ -22,6 +28,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Faster web UI and scans: the Files tree and Stats are aggregated in SQL (Stats ~2× faster) with a covering index, library totals and the unfiltered top level are cached until the database changes, HTML and JSON responses are gzip-compressed (a 1.4 MB folder now transfers as ~60 KB, with slimmer markup), new lines of `results.tsv` are imported incrementally, HandBrakeCLI's capabilities and built-in presets are cached on disk (`.handbrake-cache.json`), and ffprobe reads less of each file (~30 % faster per file, same results).
 - Times in the web UI are shown in the viewer's time zone (as `<time>` elements converted in the browser). Before, they appeared in the server's time zone, which is UTC in a Docker container by default.
 
 ### Fixed

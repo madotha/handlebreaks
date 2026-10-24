@@ -21,8 +21,11 @@ logs/
 .secret_key
 .scan.lock
 .migrate.lock
+.handbrake-cache.json
 presets/
 config.env.v2.bak
 TODO.md
 docker-compose*.yml
 local.plex-encoding*.plist
+cancelled.txt
+.queue-edit/

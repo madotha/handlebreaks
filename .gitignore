@@ -6,11 +6,14 @@ encoding.db
 encoding.db-*
 .scan.lock
 .migrate.lock
+.handbrake-cache.json
 presets/
 config.env.v2.bak
 .secret_key
 queue/
 processing/
+cancelled.txt
+.queue-edit/
 replace/
 done/
 logs/

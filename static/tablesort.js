@@ -3,6 +3,8 @@
 // by data-sort if set (e.g. raw numbers behind "1.2 TB"), otherwise by their text;
 // numbers numerically, text naturally; empty cells ("–") always last. Columns with
 // data-nosort on their header aren't sortable. Big, paged lists sort on the server.
+// The sort of each table is remembered in the browser (per page and table) and restored
+// when the page is opened again.
 (function () {
   const value = (cell) => {
     const raw = (cell.dataset.sort ?? cell.textContent).trim();
@@ -12,11 +14,15 @@
   const compare = (x, y) => (typeof x === "number" && typeof y === "number")
     ? x - y : String(x).localeCompare(String(y), undefined, { numeric: true });
 
-  document.querySelectorAll("table[data-sortable]").forEach((table) => {
+  document.querySelectorAll("table[data-sortable]").forEach((table, index) => {
+    const storeKey = `tablesort:${location.pathname}:${table.closest("[id]")?.id || index}`;
     const tbody = table.tBodies[0];
     const headers = [...table.tHead.rows[0].cells];
     const original = [...tbody.rows];
     let col = -1, dir = null;
+    const remember = () => {
+      try { localStorage.setItem(storeKey, JSON.stringify({ col, dir })); } catch (e) { /* storage blocked */ }
+    };
 
     function render() {
       let rows = original.slice();
@@ -46,7 +52,14 @@
         else if (dir === "asc") dir = "desc";
         else { col = -1; dir = null; }
         render();
+        remember();
       });
     });
+    try {                                           // restore the remembered sort
+      const saved = JSON.parse(localStorage.getItem(storeKey));
+      if (saved && saved.dir && headers[saved.col]?.classList.contains("sortable-th")) {
+        col = saved.col; dir = saved.dir; render();
+      }
+    } catch (e) { /* nothing remembered */ }
   });
 })();

@@ -46,11 +46,11 @@
     </select>
     {% for k, v in sort.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}{# keep the column sort #}
     <button>Filter</button>
-    {% if filtered or sort %}<a href="{{ url_for('files') }}">Reset</a>{% endif %}
+    {% if filtered or sort %}<a href="{{ url_for('files', sort='none') }}">Reset</a>{% endif %}
   </form>
   <p class="muted">{{ shown|count }} of {{ total|count }} files{% if filtered %} match{% endif %} · <span class="codec codec-good">optimized</span> <span class="codec codec-other">other codec</span></p>
 
-  <form id="queue-form" method="post" action="{{ url_for('queue') }}">
+  <form id="queue-form" method="post" action="{{ url_for('queue') }}" data-folder-url="{{ url_for('files_folder') }}" data-folder-query="{{ folder_query }}" data-version="{{ folder_version }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <input type="hidden" name="next" value="{{ request.full_path }}">
     {% for k, v in filters.items() %}{% for item in (v if v is not string else [v]) %}<input type="hidden" name="{{ k }}" value="{{ item }}">{% endfor %}{% endfor %}
@@ -63,7 +63,7 @@
         </select>
       </label>
       <button data-queue-button>Queue for encoding</button>
-      <span class="hint">Tick files, or a folder to select all {{ 'matching ' if filtered }}files in it. Folders load when opened. ↻ scans a file or folder again.</span>
+      <span class="hint">Tick files, or a folder to select all {{ 'matching ' if filtered }}files in it. Folders load when opened. ↻ scans a file or folder again (re-reads it with ffprobe). The bar shows optimized (green), other codecs (orange) and not probed (gray).</span>
       <nav class="sort-bar" aria-label="Sort the list">
         <span class="muted small">Sort by</span>
         {% for field, label in [('name', 'File'), ('codec', 'Codec'), ('resolution', 'Resolution'), ('bitrate', 'Bitrate'), ('duration', 'Duration'), ('size', 'Size'), ('status', 'Status')] %}
