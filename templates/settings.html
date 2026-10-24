@@ -23,7 +23,7 @@
           <input id="{{ key }}" name="{{ key }}" value="{{ cfg.get(key, '') }}" {% if typ == 'preset' %}list="presets"{% endif %} spellcheck="false" autocomplete="off">
           {% if typ == 'preset' %}<datalist id="presets">{% for p in presets %}<option value="{{ p }}">{% endfor %}</datalist>{% endif %}
         {% endif %}
-        {% if hint %}<p class="hint">{{ hint }}{% if typ == 'paths' %} Separate several paths with <code>:</code>; the first one that exists is used.{% endif %}</p>{% endif %}
+        {% if hint %}<p class="hint">{{ hint }}{% if typ in ('paths', 'paths_new') %} Separate fallback paths for the same folder with <code>:</code>; the first one that exists is used.{% endif %}</p>{% endif %}
         {% if key in env_overrides %}<p class="flash info">Set by the environment variable <code>{{ key }}={{ env_overrides[key] }}</code> (e.g. in docker-compose.hybrid.yml). The value here is ignored.</p>{% endif %}
         {% if errors.get(key) %}<p class="flash error">{{ errors[key] }}</p>{% endif %}
         {% if checks.get(key) %}

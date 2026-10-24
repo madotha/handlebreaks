@@ -74,7 +74,7 @@ Processes coordinate only through files in the data folder (`DATA_DIR`: the prog
 - Changing the schema or these meanings is a MAJOR change.
 
 Shared file contracts (change both sides together):
-- **Keys**: every file is identified as `Movies/<rel path>` or `Shows/<rel path>`. Batch files contain one key per line; `encode.sh` maps the prefix to `$MOVIES`/`$SHOWS`. Keys from version 1.x (`Filme/`, `Serien/`) are converted by `legacy_key()` when `state.json` and `results.tsv` are imported.
+- **Keys**: every file is identified as `<prefix>/<rel path>`. The prefix is the library folder: `Movies`/`Shows` for `MOVIES_DIR`/`SHOWS_DIR`, and `Movies N`/`Shows N` for the numbered extra folders `MOVIES_DIR_N`/`SHOWS_DIR_N` (N ≥ 2; `encoding.library_roots()`, and the `ROOTS` associative array in `encode.sh`). `section_of(key)` gives Movies or Shows. Batch files contain one key per line; `encode.sh` looks up the prefix in `ROOTS`. The numbers are part of stored keys, so they must never be renumbered or reused: the web UI comments out removed folders, and `next_number()` skips any number that appears in `config.env`, even commented out. Keys from version 1.x (`Filme/`, `Serien/`) are converted by `legacy_key()` when `state.json` and `results.tsv` are imported.
 - **`logs/results.tsv`**: `date \t STATUS \t key`, status ∈ OK/FAIL/MISSING/EXISTS. Written by `encode.sh`, imported into the DB; `encoding.py` uses the last entry per key (e.g. to flag prior failures).
 - **`logs/current.txt`**: `key \t i \t total \t epoch` for the file being encoded. **`logs/progress.log`** is HandBrakeCLI stdout. Both are parsed by regex (`Encoding: ..., N %`, `avg N fps`, `ETA XhYmZs`) in `encoding.current_progress()` and in `status.sh`.
 
@@ -100,7 +100,7 @@ Machine-specific settings live in **`config.env`** next to the scripts. It is gi
 
 | Setting | Where |
 |---|---|
-| Library / output / Obsidian folders | `config.env` `MOVIES_DIR`, `SHOWS_DIR`, `ENCODED_DIR`, `NOTE_DIR` |
+| Library / output / Obsidian folders | `config.env` `MOVIES_DIR`, `SHOWS_DIR` (plus optional `MOVIES_DIR_N`, `SHOWS_DIR_N`), `ENCODED_DIR`, `NOTE_DIR` |
 | Encoding settings (codec, RF, audio, crop, container) | `preset.json` (exported from the HandBrake app), or the file set in `config.env` `PRESET_FILE` |
 | Preset selection | `config.env` `PRESET_NAME` |
 | Per-minute Obsidian status note during encoding | `config.env` `STATUS_NOTE_ENABLED` |

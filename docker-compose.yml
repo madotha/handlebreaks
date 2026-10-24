@@ -5,6 +5,13 @@
 #   open http://127.0.0.1:7979
 #
 # To keep encoding natively on the Mac, add docker-compose.hybrid.yml.
+#
+# More library folders (MOVIES_DIR_2, SHOWS_DIR_2, …): mount them in a local
+# docker-compose.override.yml (gitignored, picked up automatically), e.g.
+#   services:
+#     encoding:
+#       volumes:
+#         - /Volumes/Archive/Movies:/media/Movies 2:ro
 services:
   encoding:
     build: .

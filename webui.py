@@ -56,11 +56,7 @@ app.secret_key = secret_key()
 
 # section -> (title, [(key, label, type, hint)])
 SETTINGS = {
-    "library": ("Library", [
-        ("MOVIES_DIR", "Movies", "paths", "Folder with the movies. Read only, never modified."),
-        ("SHOWS_DIR", "TV shows", "paths", "Folder with the TV shows. Read only, never modified."),
-        ("ENCODED_DIR", "Output folder", "paths", "Finished files land here and wait for your review."),
-    ]),
+    "library": ("Library", []),                 # fields built from config.env (library_fields)
     "encoding": ("Encoding", [
         ("PRESET_FILE", "Preset file", "path", "Exported from the HandBrake app. Empty = preset.json in the program folder."),
         ("PRESET_NAME", "Preset name", "preset", "Internal name (PresetName) of the preset in the file."),
@@ -91,18 +87,58 @@ def raw_config():
 
 
 def write_config(updates):
-    """Replace values in config.env, keeping comments and order."""
+    """Replace values in config.env, keeping comments and order. A value of None
+    comments the setting out, so a removed library folder's number stays reserved.
+    New library folders are added below their section."""
     src = enc.CONFIG_FILE if enc.CONFIG_FILE.exists() else enc.EXAMPLE_CONFIG
     lines = src.read_text(encoding="utf-8").splitlines()
+    setting = lambda line: (m := re.match(r"\s*([A-Z_][A-Z0-9_]*)=", line)) and m.group(1)
     done = set()
     for i, line in enumerate(lines):
-        m = re.match(r"\s*([A-Z_][A-Z0-9_]*)=", line)
-        if m and m.group(1) in updates:
-            lines[i] = f'{m.group(1)}="{updates[m.group(1)]}"'
-            done.add(m.group(1))
-    lines += [f'{k}="{v}"' for k, v in updates.items() if k not in done]
+        key = setting(line)
+        if key in updates:
+            lines[i] = (f"# {line.strip()}   # removed, number stays reserved" if updates[key] is None
+                        else f'{key}="{updates[key]}"')
+            done.add(key)
+    for key, value in updates.items():
+        if key in done or value is None:
+            continue
+        base = next((b for b in enc.SECTIONS.values() if key.startswith(b + "_")), None)
+        same = [i for i, line in enumerate(lines) if base and (setting(line) or "").startswith(base)]
+        lines.insert(same[-1] + 1 if same else len(lines), f'{key}="{value}"')
     enc.DATA_DIR.mkdir(parents=True, exist_ok=True)
     enc.write_text_atomic(enc.CONFIG_FILE, "\n".join(lines) + "\n")
+
+
+def library_fields(cfg):
+    """Settings fields of the library section: every library folder from config.env,
+    one empty field per section to add another folder, and the output folder."""
+    fields = []
+    for section, base in enc.SECTIONS.items():
+        name = "movies" if section == "Movies" else "TV shows"
+        keys = [key for _, sec, key, _ in enc.library_roots(cfg) if sec == section]
+        if base not in keys:
+            keys.insert(0, base)
+        for key in keys:
+            if key == base:
+                fields.append((key, section, "paths", f"Folder with the {name}. Read only, never modified."))
+            else:
+                prefix = f"{section} {key.rsplit('_', 1)[1]}"
+                fields.append((key, prefix, "paths", f"Additional folder with {name}, shown as "
+                               f"\"{prefix}\". Clear the field to remove it."))
+        fields.append((f"{base}_new", f"Add another {name} folder", "paths_new",
+                       f"Optional. Saved as \"{section} {next_number(cfg, base)}\"."))
+    fields.append(("ENCODED_DIR", "Output folder", "paths", "Finished files land here and wait for your review."))
+    return fields
+
+
+def next_number(cfg, base):
+    """Next free number for an additional library folder. Numbers of removed folders
+    (commented out in config.env) are never reused, because file keys contain them."""
+    used = [int(m.group(1)) for k in cfg if (m := re.fullmatch(rf"{base}_(\d+)", k))]
+    if enc.CONFIG_FILE.exists():
+        used += [int(n) for n in re.findall(rf"^#?\s*{base}_(\d+)=", enc.CONFIG_FILE.read_text(), re.M)]
+    return max([1] + used) + 1
 
 
 def path_checks(value):
@@ -413,7 +449,7 @@ def stats():
               CLASS_SERIES, [(lbl, size.get(lbl, {})) for _, _, lbl in SIZE_BINS]),
         chart("Resolution", "Number of files per resolution", "bars", "count",
               CLASS_SERIES, [(r_, res[r_]) for r_ in res_order if r_ in res]),
-        chart("Storage by library section", "Total file size per section", "bars", "size",
+        chart("Storage by library folder", "Total file size per library folder", "bars", "size",
               CLASS_SERIES, sorted(sections.items())),
         chart("Status", "Number of files per status after the last scan", "bars", "count",
               [("single", "Files")],
@@ -450,26 +486,43 @@ def settings(section):
         abort(404)
     title, fields = SETTINGS[section]
     cfg = raw_config()
+    if section == "library":
+        fields = library_fields(cfg)
     errors = {}
     if request.method == "POST":
-        updates = {}
-        for key, _, typ, _ in fields:
+        updates, removed = {}, []
+        for key, label, typ, _ in fields:
             if typ == "bool":
                 updates[key] = "1" if request.form.get(key) else "0"
                 continue
             val = request.form.get(key, "").strip()
             if FORBIDDEN_RE.search(val):
                 errors[key] = 'Not allowed: " ` \\ line breaks and $ (except $HOME).'
+            elif typ == "paths_new":
+                if val:
+                    base = key[:-len("_new")]
+                    updates[f"{base}_{next_number(cfg, base)}"] = val
+                continue
+            elif not val and key in {*enc.SECTIONS.values(), "ENCODED_DIR"}:
+                errors[key] = "This folder is required."
+            elif not val and re.fullmatch(r"[A-Z_]+_DIR_\d+", key):
+                updates[key] = None                 # cleared extra library folder: remove it
+                removed.append(label)
+                continue
             updates[key] = val
         if not errors:
             write_config(updates)
-            flash(f"{title}: saved.", "ok")
+            msg = f"{title}: saved."
+            if removed:
+                msg += (f" Removed {', '.join(removed)}. Its files disappear from the list "
+                        "with the next scan.")
+            flash(msg, "ok")
             return redirect(url_for("settings", section=section))
-        cfg.update(updates)
+        cfg.update({k: v for k, v in updates.items() if v is not None})
 
     return render_template(
         "settings.html", section=section, title=title, fields=fields, cfg=cfg, errors=errors,
-        checks={k: path_checks(cfg.get(k, "")) for k, _, t, _ in fields if t in ("paths", "path")},
+        checks={k: path_checks(cfg.get(k) or "") for k, _, t, _ in fields if t in ("paths", "path")},
         presets=preset_names(cfg), config_file=enc.CONFIG_FILE, config_exists=enc.CONFIG_FILE.exists(),
         env_overrides={k: os.environ[k] for k, _, _, _ in fields if k in ENV_OVERRIDES and k in os.environ})
 

@@ -39,12 +39,20 @@ first_existing() {
   print -r -- "${ps[1]:-}"
 }
 
-MOVIES=$(first_existing "${MOVIES_DIR:-}")
-SHOWS=$(first_existing "${SHOWS_DIR:-}")
+# Library folders: MOVIES_DIR, MOVIES_DIR_2, … and SHOWS_DIR, SHOWS_DIR_2, …
+# Each one is a key prefix ("Movies", "Movies 2", …) mapped to its folder.
+typeset -A ROOTS
+for section var in Movies MOVIES_DIR Shows SHOWS_DIR; do
+  for name in ${(k)parameters[(I)${var}(|_<2->)]}; do
+    [[ -n "${(P)name}" ]] || continue
+    if [[ "$name" == "$var" ]]; then prefix="$section"; else prefix="$section ${name##*_}"; fi
+    ROOTS[$prefix]=$(first_existing "${(P)name}")
+  done
+done
 OUT=$(first_existing "${ENCODED_DIR:-}")
 PRESET_FILE="${PRESET_FILE:-$BASE/preset.json}"
 PRESET_NAME="${PRESET_NAME:-}"                   # internal name of the preset
-if [[ -z "$MOVIES" || -z "$SHOWS" || -z "$OUT" || -z "$PRESET_NAME" ]]; then
+if [[ -z "${ROOTS[Movies]:-}" || -z "${ROOTS[Shows]:-}" || -z "$OUT" || -z "$PRESET_NAME" ]]; then
   log "config.env is incomplete (MOVIES_DIR, SHOWS_DIR, ENCODED_DIR, PRESET_NAME)"; sleep 300; exit 1
 fi
 mkdir -p "$OUT/.inprogress"
@@ -96,11 +104,13 @@ trap 'rm -rf "$LOCK"; rm -f "$LOGS/current.txt"' EXIT INT TERM
 command -v caffeinate >/dev/null && caffeinate -is -w $$ &
 
 # ── Library reachable? Otherwise wait 5 minutes (launchd restarts afterwards) ─
-if [[ ! -d "$MOVIES" || ! -d "$SHOWS" ]]; then
-  log "Library not reachable, retrying in 5 minutes"
-  sleep 300
-  exit 1
-fi
+for prefix root in ${(kv)ROOTS}; do
+  if [[ ! -d "$root" ]]; then
+    log "Library not reachable ($prefix: $root), retrying in 5 minutes"
+    sleep 300
+    exit 1
+  fi
+done
 if ! command -v HandBrakeCLI >/dev/null; then
   log "HandBrakeCLI not found"; sleep 300; exit 1
 fi
@@ -120,11 +130,11 @@ for b in $batches; do
   while IFS= read -r key || [[ -n "$key" ]]; do
     [[ -z "$key" ]] && continue
     i=$(( i + 1 ))
-    case "$key" in
-      Movies/*) src="$MOVIES/${key#Movies/}" ;;
-      Shows/*)  src="$SHOWS/${key#Shows/}" ;;
-      *) log "Unknown entry: $key"; continue ;;
-    esac
+    prefix="${key%%/*}"
+    if [[ "$key" != */* || -z "${ROOTS[$prefix]:-}" ]]; then
+      log "Unknown entry: $key"; continue
+    fi
+    src="${ROOTS[$prefix]}/${key#*/}"
 
     if [[ ! -f "$src" ]]; then
       log "Missing in library: $key"; result MISSING "$key"; continue

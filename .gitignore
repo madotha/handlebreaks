@@ -15,6 +15,7 @@ logs/
 
 # Local, machine-specific configuration and overrides
 config.env
+docker-compose.override.yml
 *.local
 *.local.*
 local/

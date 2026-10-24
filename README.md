@@ -19,7 +19,7 @@ Semi-automatic conversion of movies and TV episodes in a Plex library from H.264
 
 ## What it does
 
-1. **Scan** the library (a movies folder and a TV shows folder). Each video is read with ffprobe (codec, resolution, duration, bitrate) and sorted:
+1. **Scan** the library: one or more movie folders and one or more TV show folders, e.g. on different NAS shares. Each video is read with ffprobe (codec, resolution, duration, bitrate) and sorted:
    - already optimized: `x265`, `H.265`, `HEVC` or `FuN` in the name, or a video track in H.265 (HEVC), AV1 or H.266 (VVC) according to ffprobe
    - poor release types, filtered out: LD, MD, TS, Telesync, CAM, HDCAM, TC, Line/Mic Dubbed
    - already encoded and waiting for your review in the output folder
@@ -96,7 +96,7 @@ cp config.example.env config.env
 open -e config.env
 ```
 
-Set at least `MOVIES_DIR`, `SHOWS_DIR`, `ENCODED_DIR` and `PRESET_NAME`, and `NOTE_DIR` if you want Obsidian notes. Each key is explained in [Configuration](#configuration). Each folder setting already lists a container path after the `:`; it doesn't hurt in a native setup.
+Set at least `MOVIES_DIR`, `SHOWS_DIR`, `ENCODED_DIR` and `PRESET_NAME`, and `NOTE_DIR` if you want Obsidian notes. If your movies or shows are spread over several folders, add `MOVIES_DIR_2`, `SHOWS_DIR_2` etc. (see [More library folders](#more-library-folders)). Each key is explained in [Configuration](#configuration). Each folder setting already lists a container path after the `:`; it doesn't hurt in a native setup.
 
 ### 5. First scan
 
@@ -164,6 +164,17 @@ open -e .env
 | `HOST_ENCODED_DIR` | Output folder | `/encoded` |
 | `HOST_NOTE_DIR` | Optional: Obsidian folder | `/notes` |
 | `WEB_PORT` | Optional: port on the Mac, default `7979` | `7979` |
+
+For [more library folders](#more-library-folders), mount each one in a `docker-compose.override.yml` next to `docker-compose.yml` (Docker Compose reads it automatically; it's gitignored):
+
+```yaml
+services:
+  encoding:
+    volumes:
+      - /Volumes/Archive/Movies:/media/Movies 2:ro
+```
+
+Then add the folder under **Settings → Library** with the container path (here `/media/Movies 2`) after the `:`, and restart with `docker compose up -d`.
 
 ### 2. Start
 
@@ -245,7 +256,7 @@ In Docker, prefix each command with `docker compose exec encoding`. The numbers 
 |---|---|
 | **Files** | All scanned videos as a folder tree with codec, resolution, bitrate, duration, size and status. Codecs are color coded: green for optimized codecs (H.265, AV1, H.266), orange for all others. Totals and the optimized share at the top. Filters by text, codec and status. Select files or whole folders and click **Queue for encoding** to queue them. |
 | **Status** | Current encode with progress, the queue, the latest results and a scan button. Refreshes every 10 seconds. |
-| **Stats** | Key figures (optimized share, size still to optimize, median bitrates) and charts of the distribution by codec (count and storage), bitrate, file size, resolution, library section and status. Every chart has a table view, and hovering a bar shows its values. |
+| **Stats** | Key figures (optimized share, size still to optimize, median bitrates) and charts of the distribution by codec (count and storage), bitrate, file size, resolution, library folder and status. Every chart has a table view, and hovering a bar shows its values. |
 | **Settings** | The values from `config.env`, in separate sections (Library, Encoding, Obsidian, Worker). Each folder shows whether it exists. Changes apply immediately. |
 
 There is **no login yet**. The web UI therefore listens on `127.0.0.1` only, and `docker-compose.yml` publishes the port only on `127.0.0.1`. Don't make it reachable from other machines until login is implemented. Values entered in the settings may use `$HOME`, but no other `$`, quotes or backslashes, because `config.env` is read by the shell.
@@ -259,6 +270,7 @@ All machine-specific settings live in `config.env` in the data folder. It is cre
 | Key | Meaning |
 |---|---|
 | `MOVIES_DIR`, `SHOWS_DIR` | Movie and TV show folders of the library (read only) |
+| `MOVIES_DIR_2`, `SHOWS_DIR_2`, … | Optional: more movie or TV show folders, see below |
 | `ENCODED_DIR` | Output folder for finished files, created if missing |
 | `NOTE_DIR` | Obsidian folder for "Encoding To-Do.md" and "Encoding Status.md". Leave empty to skip notes. |
 | `PRESET_FILE` | HandBrake preset file. Leave empty to use `preset.json` next to the scripts. |
@@ -267,6 +279,23 @@ All machine-specific settings live in `config.env` in the data folder. It is cre
 | `WORKER_ENABLED` | Docker only: `1` encodes in the container, `0` only runs web UI and scans |
 
 Write values in double quotes and use `"$HOME"` rather than `~`. A folder setting can list several paths separated by `:`, and the first one that exists is used. That way one `config.env` works on the Mac and in the container.
+
+### More library folders
+
+If your library is spread over several folders or NAS shares, add numbered settings, either in the web UI (**Settings → Library → Add another … folder**) or in `config.env`:
+
+```bash
+MOVIES_DIR="/Volumes/Media/Movies:/media/Movies"           # shown as "Movies"
+MOVIES_DIR_2="/Volumes/Archive/Movies:/media/Movies 2"     # shown as "Movies 2"
+SHOWS_DIR="/Volumes/Media/Shows:/media/Shows"              # shown as "Shows"
+SHOWS_DIR_2="/Volumes/Anime:/media/Shows 2"                # shown as "Shows 2"
+```
+
+- Movies and TV shows stay separate. Each folder appears as its own top-level folder in the web UI and in the stats.
+- The `:` still separates fallback paths of the *same* folder (Mac path, container path), not different folders.
+- **Keep each folder's number.** It is part of how files are stored in the database (skipped files, results, the queue). To remove a folder, comment its line out (the web UI does this when you clear the field); a commented-out number is never reused. Renumbering a folder makes its files look new and loses their skipped marks.
+- All folders must be reachable for a scan and for the worker to start, so a disconnected share never makes files disappear from the list.
+- Finished files from all folders land in the same output folder. Two files with the same name from different folders (e.g. the same movie on two shares) can't both be there: the second one is logged as `EXISTS`.
 
 ### Environment variables
 

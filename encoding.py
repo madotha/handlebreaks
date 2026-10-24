@@ -33,6 +33,10 @@ Each folder setting may list several paths separated by ":", e.g. the real macOS
 path and a fallback path inside the Docker container or another environment
 (~/media/...). The script uses the first path that exists.
 
+Each section can have several library folders: MOVIES_DIR, MOVIES_DIR_2, MOVIES_DIR_3, …
+and SHOWS_DIR, SHOWS_DIR_2, … Their files are keyed as "Movies/…", "Movies 2/…" etc.,
+so keep each folder's number when editing config.env.
+
 The data folder is the folder of this script, unless the environment variable
 ENCODING_DATA_DIR points elsewhere (e.g. /data in the Docker container). It holds
 config.env, the database encoding.db (SQLite), queue/, processing/, done/ and logs/.
@@ -83,7 +87,9 @@ ENCODED_CANDIDATES = []
 NOTE_DIR_CANDIDATES = []
 NOTE_NAME = "Encoding To-Do.md"
 
-# Library sections: key prefix -> config.env setting
+# Library sections: section -> config.env setting. Each section can have several
+# library folders: MOVIES_DIR, MOVIES_DIR_2, MOVIES_DIR_3, … Every folder gets its
+# own key prefix ("Movies", "Movies 2", …), so the number must not change later.
 SECTIONS = {"Movies": "MOVIES_DIR", "Shows": "SHOWS_DIR"}
 # Version 1.x used German folder labels as key prefixes. Only used to import old
 # data (state.json, results.tsv), so these words must stay as they are.
@@ -165,12 +171,30 @@ def path_list(value):
     return [os.path.expanduser(p) for p in value.split(":") if p]
 
 
+def library_roots(cfg):
+    """Library folders from config.env: [(prefix, section, setting, value)], in a stable order.
+    MOVIES_DIR -> "Movies", MOVIES_DIR_2 -> "Movies 2", …; empty settings are ignored."""
+    roots = []
+    for section, base in SECTIONS.items():
+        numbered = sorted((int(m.group(1)), k) for k in cfg
+                          if (m := re.fullmatch(rf"{base}_(\d+)", k)) and int(m.group(1)) >= 2)
+        for n, key in [(1, base)] + numbered:
+            if cfg.get(key):
+                roots.append((section if n == 1 else f"{section} {n}", section, key, cfg[key]))
+    return roots
+
+
+def section_of(key):
+    """Section ("Movies" or "Shows") of a file key such as "Movies 2/Film/Film.mkv"."""
+    return key.split("/", 1)[0].split(" ", 1)[0]
+
+
 def apply_config(cfg):
     global ROOT_CANDIDATES, ENCODED_CANDIDATES, NOTE_DIR_CANDIDATES
     missing = [k for k in (*SECTIONS.values(), "ENCODED_DIR") if not cfg.get(k)]
     if missing:
         raise SystemExit(f"ERROR: {CONFIG_FILE} is missing: {', '.join(missing)}")
-    ROOT_CANDIDATES = {label: path_list(cfg[key]) for label, key in SECTIONS.items()}
+    ROOT_CANDIDATES = {prefix: path_list(value) for prefix, _, _, value in library_roots(cfg)}
     ENCODED_CANDIDATES = path_list(cfg["ENCODED_DIR"])
     NOTE_DIR_CANDIDATES = path_list(cfg.get("NOTE_DIR", ""))
 
@@ -524,9 +548,11 @@ def _scan(state, probe_files):
 # ─── Obsidian note ────────────────────────────────────────────────────────────
 
 def short(key):
-    """Short, readable form: folder of the show/movie + file name."""
+    """Short, readable form: folder of the show/movie + file name. Files from an
+    additional library folder ("Movies 2", …) are prefixed with its name."""
     parts = key.split("/")
-    return f"{parts[1]} › {parts[-1]}" if len(parts) > 2 else key
+    tag = f"{parts[0]}: " if " " in parts[0] else ""
+    return f"{tag}{parts[1]} › {parts[-1]}" if len(parts) > 2 else key
 
 
 def write_note(s):
