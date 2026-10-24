@@ -476,6 +476,10 @@ def level_context(path, filters, queued, offset=0):
     folders, files, total = tree_level(path, filters, queued, offset)
     nxt = offset + PAGE_SIZE
     more = url_for("files_folder", path=path, offset=nxt, rows=1, **filters) if nxt < total else None
+    if any(f["status"] == "waiting" for f in files):  # finished encodes, for the Replace button
+        encoded = enc.encoded_files(enc.first_existing(enc.ENCODED_CANDIDATES))
+        for f in files:
+            f["encoded"] = encoded.get(Path(f["name"]).stem.lower()) if f["status"] == "waiting" else None
     return {"folders": folders, "files": files, "total_files": total, "shown_files": min(nxt, total),
             "more_url": more, "filters": filters, "queued": queued, "auto_open": AUTO_OPEN,
             "status_labels": enc.STATUS_LABELS}
@@ -601,6 +605,30 @@ def live_status():
         "scan": dict({k: SCAN[k] for k in ("running", "label", "summary", "error")},
                      started=(to_datetime(SCAN["started"]) or datetime.now()).isoformat() if SCAN["started"] else None),
     }
+
+
+@app.route("/replace", methods=["POST"])
+def replace():
+    """Ask the worker to replace an original with its finished encode (JSON)."""
+    key = request.form.get("key", "")
+    new_name = request.form.get("new_name", "").strip()
+    with closing(db()) as con:
+        row = con.execute("SELECT status FROM files WHERE key = ?", (key,)).fetchone()
+    if not row:
+        return {"error": "Unknown file. Scan again and retry."}, 400
+    encoded = enc.encoded_files(enc.first_existing(enc.ENCODED_CANDIDATES)).get(Path(key).stem.lower())
+    if not encoded:
+        return {"error": "No finished encode of this file in the output folder."}, 400
+    problem = enc.check_new_name(new_name, encoded)
+    if problem:
+        return {"error": problem}, 400
+    job_id = enc.request_replace(key, encoded, new_name, keep_original=bool(request.form.get("keep_original")))
+    return {"id": job_id, "status_url": url_for("replace_state", job_id=job_id)}
+
+
+@app.route("/replace/<job_id>")
+def replace_state(job_id):
+    return enc.replace_status(job_id)
 
 
 @app.route("/status")

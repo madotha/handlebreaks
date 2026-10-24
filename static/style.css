@@ -146,6 +146,16 @@ textarea.json { width: 100%; min-height: 28rem; font: .8rem/1.4 ui-monospace, SF
 .scan-note { font-size: .8rem; padding: .3rem .6rem; margin: .3rem .6rem; border-radius: 6px; }
 .scan-note.ok { background: var(--ok-bg); color: var(--ok); }
 .scan-note.error { background: var(--err-bg); color: var(--err); }
+.link-btn { background: none; border: 0; padding: 0 .3rem; color: var(--accent); font-size: .8rem; font-weight: 600; cursor: pointer; }
+.link-btn:hover { text-decoration: underline; }
+.replace-dialog { border: 1px solid var(--border); border-radius: 10px; padding: 1.2rem 1.4rem; max-width: min(560px, 92vw);
+  background: var(--surface); color: var(--text); }
+.replace-dialog::backdrop { background: rgba(0,0,0,.35); }
+.replace-dialog h2 { margin-top: 0; }
+.replace-dialog code { overflow-wrap: anywhere; }
+.name-input { display: flex; align-items: center; gap: .3rem; }
+.name-input input { flex: 1; }
+.name-input span { color: var(--muted); font-family: ui-monospace, monospace; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .card .sub { display: block; color: var(--muted); font-size: .8rem; margin-top: .2rem; }
 

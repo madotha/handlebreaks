@@ -9,9 +9,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Replace…** button for files awaiting review (Files page): opens a dialog to choose the new file name (pre-filled; the extension follows the encoded container) and whether to keep the original (in `<output>/.replaced/`, default) or delete it. The web UI writes a replace job (`replace/`); the worker (`encode.sh`, natively or in the container) carries it out, also while an encode runs, retries moves the NAS briefly refuses, never overwrites another file, and puts the original back if the move fails. The page waits for the result and checks the folder again. Also `encoding.py replace-jobs`.
 - ↻ button on every file and folder of the Files page: re-reads just that file or folder with ffprobe (new files are added, removed ones dropped) and shows the result right away without leaving the page; opened folders stay open. Also `scan(path=…)` in `encoding.py`. Such checks don't reset the automatic rescan timer.
 - Automatic rescan: `SCAN_INTERVAL` (minutes, default `0` = off; Settings → Scans) rescans all shares once the last scan is that old. It runs in the web UI process, and the Status page shows when the next one is due.
 - Live queue on the Status page: every queued entry with its state (waiting, encoding, done, failed, missing, already exists) and preset. Progress and counts update every 3 seconds without reloading the page, the list is paged (100 entries), filterable by state, and reloads when the next file starts or on "Refresh", so it stays fast with thousands of queued files.
+- launchd template `local.plex-encoding.plist` also watches `replace/`; reinstall the agent (README, Setup A step 7) to start replace jobs immediately.
 - Docker: `TZ` in `.env` sets the container's time zone (default UTC); the image now includes tzdata.
 - Folder status in the Files page tree: every folder and share shows how many of its files are already optimized ("36 of 48 optimized"), a bar split into optimized (green), other codecs (orange) and not probed (gray), and a percentage badge that is green only when the whole folder is optimized. The counts follow the active filters.
 

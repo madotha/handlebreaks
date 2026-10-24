@@ -257,7 +257,7 @@ In Docker, prefix each command with `docker compose exec encoding`. The numbers 
 
 | Page | Content |
 |---|---|
-| **Files** | All scanned videos as a folder tree with codec, resolution, bitrate, duration, size and status. Folders load their content when opened, and long file lists show 200 files at a time (**Show more**), so the page stays fast with tens of thousands of files. Codecs are color coded: green for optimized codecs (H.265, AV1, H.266), orange for all others. Every folder shows how many of its files are already optimized, with a green/orange bar and a percentage badge (green when the whole folder is optimized). Totals and the optimized share at the top. Filters: text search, status, and a codec filter that combines any of the codecs found with the groups "All optimized codecs" and "All other codecs". With a filter active, small matching folders open automatically. Select files or whole folders (they don't need to be opened) and click **Queue for encoding**; a folder queues all its files that match the active filters. The **↻** button next to every file and folder scans just that file or folder again (re-reading it with ffprobe), e.g. to check a file after replacing it. |
+| **Files** | All scanned videos as a folder tree with codec, resolution, bitrate, duration, size and status. Folders load their content when opened, and long file lists show 200 files at a time (**Show more**), so the page stays fast with tens of thousands of files. Codecs are color coded: green for optimized codecs (H.265, AV1, H.266), orange for all others. Every folder shows how many of its files are already optimized, with a green/orange bar and a percentage badge (green when the whole folder is optimized). Totals and the optimized share at the top. Filters: text search, status, and a codec filter that combines any of the codecs found with the groups "All optimized codecs" and "All other codecs". With a filter active, small matching folders open automatically. Select files or whole folders (they don't need to be opened) and click **Queue for encoding**; a folder queues all its files that match the active filters. The **↻** button next to every file and folder scans just that file or folder again (re-reading it with ffprobe), e.g. to check a file after replacing it. Files awaiting review have a **Replace…** button, see [Replacing originals](#replacing-originals). |
 | **Status** | Current encode with progress, fps and time left, and the queue with the state of every entry (waiting, encoding, done, failed, missing, already exists) and its preset. Progress and counts update live every 3 seconds without reloading; the list shows 100 entries at a time, can be filtered by state, and reloads when the next file starts or on **Refresh** — so it stays fast with thousands of queued files. Also the scan state, the automatic rescan schedule and the latest results. |
 | **Stats** | Key figures (optimized share, size still to optimize, median bitrates) and charts of the distribution by codec (count and storage), bitrate, file size, resolution, library folder and status. Every chart has a table view, and hovering a bar shows its values. |
 | **Settings** | The values from `config.env`, in separate sections (Library, Encoding, Obsidian, Worker). Each folder shows whether it exists. Changes apply immediately. |
@@ -330,6 +330,18 @@ Which preset a file gets:
 
 Presets are stored as HandBrake export files in `presets/` in the data folder, named by their id (e.g. `presets/1080p-x265-ger-eng-rf20.json`). The id is fixed when a preset is created, so renaming a preset doesn't affect shares or queued files. The output file's extension follows the preset's container (`.mkv`, `.mp4`, `.webm`).
 
+### Replacing originals
+
+Finished encodes wait in the output folder for your review. When you're happy with one, click **Replace…** next to the original on the **Files** page:
+
+1. Choose the file name. It's pre-filled with the encode's name (the original name; the extension follows the encoded container, e.g. `.mp4` → `.mkv`). Keeping the original name is best for Plex.
+2. Choose whether to keep the original in `<output folder>/.replaced/` (default, same folder structure as in the share) or delete it.
+3. **Move and replace**: the encode is moved into the original's folder under the chosen name, and the original is moved away or deleted. The page shows the result and checks the folder again.
+
+The move is done by the worker (`encode.sh`), because the web UI may not be allowed to write to the library (in Docker it's mounted read-only): natively with launchd, or in the container if its library mount is writable. It also runs while an encode is in progress. It never overwrites another file, retries if the NAS briefly refuses the move, and puts the original back if the move fails.
+
+Afterwards, let Plex pick up the change: for the same file name run **Analyze** on the item in Plex; if the extension changed, run **Scan Library Files** (with "Empty trash automatically after every scan" turned off, so the item keeps its watch history). Delete the backups in `.replaced/` once you're happy.
+
 ### Environment variables
 
 | Variable | Default | Meaning |
@@ -352,6 +364,7 @@ Everything the tool creates lives in the data folder (the program folder, or `/d
 | `logs/results.tsv` | One line per encoded file (OK, FAIL, MISSING, EXISTS); copied into the database |
 | `logs/fail-*.log` | HandBrake log of a failed encode |
 | `logs/launchd.log`, `logs/webui.log` | Output of the launchd agents (Setup A) |
+| `replace/`, `replace/done/` | Replace jobs from the web UI and their results |
 
 ## Updating from version 2.x
 

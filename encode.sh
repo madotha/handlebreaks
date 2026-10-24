@@ -13,6 +13,9 @@
 #   3. Only when finished, move it to <output>/<name>.mkv
 #      (so an aborted encode never counts as finished)
 #   4. Log the result in logs/results.tsv (OK, FAIL, MISSING, EXISTS)
+# It also carries out replace jobs from the web UI (replace/*.json: move a finished
+# encode into the library in place of the original), at the start and every minute
+# while encoding, so they don't wait for a long encode.
 # The original in the library is never modified.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -118,6 +121,13 @@ if ! command -v HandBrakeCLI >/dev/null; then
   log "HandBrakeCLI not found"; sleep 300; exit 1
 fi
 
+# ── Replace jobs (python3 encoding.py replace-jobs) ──────────────────────────
+replace_jobs() {
+  [[ -n "$(print -r -- "$DATA"/replace/*.json(N))" ]] || return 0
+  python3 "$BASE/encoding.py" replace-jobs >> "$LOGS/encode.log" 2>&1
+}
+replace_jobs
+
 # ── Take over new batches ────────────────────────────────────────────────────
 for f in "$QUEUE"/*.txt(N); do mv "$f" "$PROC/"; done
 
@@ -171,8 +181,9 @@ print(p["PresetName"]); print({"av_mp4": "mp4", "av_webm": "webm"}.get(p.get("Fi
                  -i "$src" -o "$tmp" \
                  > "$LOGS/progress.log" 2> "$LOGS/handbrake-last.log" < /dev/null &
     hbpid=$!
-    while kill -0 $hbpid 2>/dev/null; do     # update the status note every minute
+    while kill -0 $hbpid 2>/dev/null; do     # every minute: status note, replace jobs
       write_status
+      replace_jobs
       for s in {1..12}; do kill -0 $hbpid 2>/dev/null || break; sleep 5; done
     done
     wait $hbpid

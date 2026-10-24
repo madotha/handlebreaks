@@ -25,7 +25,7 @@ worker_enabled() {
 }
 
 has_jobs() {
-  for f in "$DATA"/queue/*.txt "$DATA"/processing/*.txt; do
+  for f in "$DATA"/queue/*.txt "$DATA"/processing/*.txt "$DATA"/replace/*.json; do
     [ -e "$f" ] && return 0
   done
   return 1

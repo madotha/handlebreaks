@@ -60,6 +60,7 @@ Examples
     python3 encoding.py skipped               # list hidden files
     python3 encoding.py unskip 2              # show no. 2 from "skipped" again
     python3 encoding.py status
+    python3 encoding.py replace-jobs          # run pending replace jobs (normally done by encode.sh)
     python3 encoding.py version
 """
 
@@ -74,6 +75,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing, contextmanager
 from datetime import datetime
@@ -108,6 +110,8 @@ SCAN_LOCK    = DATA_DIR / ".scan.lock"
 MIGRATE_LOCK = DATA_DIR / ".migrate.lock"
 QUEUE_DIR    = DATA_DIR / "queue"         # new batches (picked up by encode.sh)
 PROC_DIR     = DATA_DIR / "processing"    # batch being encoded
+REPLACE_DIR  = DATA_DIR / "replace"       # replace jobs from the web UI (run by encode.sh)
+REPLACE_DONE = REPLACE_DIR / "done"       # their results
 LOG_DIR      = DATA_DIR / "logs"
 RESULTS_FILE = LOG_DIR / "results.tsv"
 CURRENT_FILE = LOG_DIR / "current.txt"
@@ -515,6 +519,129 @@ def encoded_stems(enc_dir):
             if f.is_file() and not any(p.startswith(".") for p in f.relative_to(enc_dir).parts):
                 stems.add(f.stem.lower())
     return stems
+
+
+# ─── Replacing originals with finished encodes ────────────────────────────────
+# The web UI can't write to the library (read-only in Docker), so it only writes a job
+# into replace/; encode.sh, which runs where the library is writable, carries it out
+# (run_replace_jobs) and writes the result into replace/done/. Only files are touched
+# here, no database, so this also works in a native worker next to a Docker web UI.
+
+def encoded_files(enc_dir):
+    """Finished files in the output folder: lowercase stem -> file name."""
+    files = {}
+    if enc_dir and enc_dir.exists():
+        for f in enc_dir.iterdir():
+            if f.is_file() and not f.name.startswith(".") and f.suffix.lower() in VIDEO_EXTS:
+                files[f.stem.lower()] = f.name
+    return files
+
+
+def check_new_name(new_name, encoded_name):
+    """Problem with the chosen file name, or None. The extension must stay the encoded
+    file's, because it matches its container."""
+    ext = Path(encoded_name).suffix
+    if not new_name or "/" in new_name or "\0" in new_name or new_name.startswith("."):
+        return "Enter a file name without folders."
+    if Path(new_name).suffix.lower() != ext.lower() or not Path(new_name).stem.strip():
+        return f"The name must end with {ext} (the container of the encoded file)."
+    if len(new_name.encode()) > 255:
+        return "The name is too long."
+    return None
+
+
+def request_replace(key, encoded_name, new_name, keep_original=True):
+    """Write a replace job; returns its id."""
+    problem = check_new_name(new_name, encoded_name)
+    if problem:
+        raise SystemExit(problem)
+    job_id = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    REPLACE_DIR.mkdir(parents=True, exist_ok=True)
+    job = {"id": job_id, "key": key, "encoded": encoded_name, "new_name": new_name,
+           "keep_original": bool(keep_original), "requested": now_str()}
+    tmp = DATA_DIR / f".replace-{job_id}.tmp"
+    tmp.write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, REPLACE_DIR / f"{job_id}.json")
+    return job_id
+
+
+def replace_status(job_id):
+    """Result of a replace job: {"state": "pending" | "done" | "failed", "message", …}."""
+    if not re.fullmatch(r"[\d-]+", job_id or ""):
+        return {"state": "failed", "message": "Unknown job."}
+    done = REPLACE_DONE / f"{job_id}.json"
+    if done.exists():
+        return json.loads(done.read_text(encoding="utf-8"))
+    if (REPLACE_DIR / f"{job_id}.json").exists():
+        return {"state": "pending", "message": "Waiting for the worker …"}
+    return {"state": "failed", "message": "Unknown job."}
+
+
+def move_file(src, dst, attempts=6, wait=10):
+    """Move a file, retrying while a NAS briefly refuses it (e.g. its media indexer)."""
+    for attempt in range(1, attempts + 1):
+        try:
+            shutil.move(str(src), str(dst))     # rename, or copy + delete across file systems
+            return
+        except PermissionError:
+            if attempt == attempts:
+                raise
+            time.sleep(wait)
+
+
+def replace_one(job):
+    root = first_existing(ROOT_CANDIDATES.get(job["key"].split("/", 1)[0], []))
+    enc_dir = first_existing(ENCODED_CANDIDATES)
+    if root is None or enc_dir is None:
+        raise RuntimeError("The share or the output folder isn't reachable.")
+    rel = job["key"].split("/", 1)[1]
+    original = root / rel
+    encoded = enc_dir / job["encoded"]
+    target = original.parent / job["new_name"]
+    if check_new_name(job["new_name"], job["encoded"]) or not target.resolve().is_relative_to(root.resolve()):
+        raise RuntimeError("Invalid file name.")
+    if not encoded.is_file():
+        raise RuntimeError(f"The encoded file {job['encoded']} isn't in the output folder any more.")
+    if target.exists() and target != original:
+        raise RuntimeError(f"{job['new_name']} already exists in that folder. Choose another name.")
+    if not os.access(original.parent, os.W_OK):
+        raise RuntimeError("The library folder isn't writable here (in Docker the library is mounted "
+                           "read-only; replacing needs the native worker or a writable mount).")
+    backup = None
+    if original.exists():
+        if job["keep_original"]:
+            backup = enc_dir / ".replaced" / rel
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            move_file(original, backup)
+        else:
+            original.unlink()
+    try:
+        move_file(encoded, target)
+    except Exception:
+        if backup and backup.exists():          # put the original back
+            move_file(backup, original)
+        raise
+    kept = f" The original is kept in {backup}." if backup else " The original was deleted."
+    return f"Replaced {original.name} with {target.name}.{kept}", f"{job['key'].split('/', 1)[0]}/" + \
+        str(target.relative_to(root))
+
+
+def run_replace_jobs():
+    """Carry out all pending replace jobs. Returns how many ran."""
+    jobs = sorted(REPLACE_DIR.glob("*.json")) if REPLACE_DIR.exists() else []
+    if jobs:
+        REPLACE_DONE.mkdir(parents=True, exist_ok=True)
+    for path in jobs:
+        job = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            message, new_key = replace_one(job)
+            result = dict(job, state="done", message=message, new_key=new_key, finished=now_str())
+        except Exception as e:
+            result = dict(job, state="failed", message=f"Not replaced: {e}", finished=now_str())
+        print(f"{now_str()} replace {job['key']}: {result['message']}")
+        write_text_atomic(REPLACE_DONE / path.name, json.dumps(result, ensure_ascii=False))
+        path.unlink(missing_ok=True)
+    return len(jobs)
 
 
 # ─── Scan ─────────────────────────────────────────────────────────────────────
@@ -997,6 +1124,9 @@ def main():
         print(f"encoding.py v{__version__}")
         return
     apply_config(load_config())
+    if cmd == "replace-jobs":                   # file moves only, no database (see run_replace_jobs)
+        run_replace_jobs()
+        return
     for d in (QUEUE_DIR, PROC_DIR, LOG_DIR):
         d.mkdir(parents=True, exist_ok=True)
     state = load_state()

@@ -17,6 +17,7 @@
   <key>QueueDirectories</key>
   <array>
     <string>/Users/YOUR_USER/scripts/encoding/queue</string>
+    <string>/Users/YOUR_USER/scripts/encoding/replace</string>
   </array>
   <key>ThrottleInterval</key>
   <integer>30</integer>
