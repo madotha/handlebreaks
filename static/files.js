@@ -112,6 +112,19 @@
     update();
   }
 
+  // "Show more folders": the response holds the next folders and, if any are left, a new button
+  async function moreDirs(btn) {
+    btn.disabled = true;
+    const r = await fetch(btn.dataset.moreDirs);
+    if (!r.ok) { btn.disabled = false; return; }
+    const tmp = document.createElement("div");
+    tmp.innerHTML = await r.text();
+    const parent = toggleOf(btn.closest("details"));
+    if (parent && parent.checked) cover(tmp, true);
+    init(tmp);
+    btn.replaceWith(...tmp.childNodes);
+  }
+
   function init(root) {
     root.querySelectorAll("details.dir").forEach((d) => {
       d.addEventListener("toggle", () => {
@@ -135,6 +148,7 @@
       });
     });
     root.querySelectorAll("[data-more]").forEach((b) => b.addEventListener("click", () => more(b)));
+    root.querySelectorAll("[data-more-dirs]").forEach((b) => b.addEventListener("click", () => moreDirs(b)));
     update();
   }
 

@@ -28,6 +28,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Files page: folders with many subfolders show 100 at a time (**Show more folders**), folder rows outside the screen aren't laid out, and the markup is compacted. Opening a share with 1,100 shows went from ~1 s to ~0.15 s in the browser, and a reload with all shares open from ~3.5 s to ~0.6 s.
 - Faster web UI and scans: the Files tree and Stats are aggregated in SQL (Stats ~2× faster) with a covering index, library totals and the unfiltered top level are cached until the database changes, HTML and JSON responses are gzip-compressed (a 1.4 MB folder now transfers as ~60 KB, with slimmer markup), new lines of `results.tsv` are imported incrementally, HandBrakeCLI's capabilities and built-in presets are cached on disk (`.handbrake-cache.json`), and ffprobe reads less of each file (~30 % faster per file, same results).
 - Times in the web UI are shown in the viewer's time zone (as `<time>` elements converted in the browser). Before, they appeared in the server's time zone, which is UTC in a Docker container by default.
 

@@ -20,6 +20,9 @@
     <div class="dir-body"></div>
   </details>
 {% endfor %}
+{% if more_dirs_url %}
+  <button type="button" class="secondary more-dirs" data-more-dirs="{{ more_dirs_url }}">Show more folders <span>({{ shown_dirs|count }} of {{ total_dirs|count }})</span></button>
+{% endif %}
 {% if files %}
   <div class="table-wrap files-level">
     <table>

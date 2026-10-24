@@ -395,6 +395,7 @@ def index():
 # all: it shows the top folders, and each folder's content is fetched when opened.
 
 PAGE_SIZE = 200                                 # files per "Show more" step
+FOLDER_PAGE = 100                               # subfolders per "Show more folders" step
 AUTO_OPEN = 300                                 # with a filter, open folders with up to this many matches
 
 
@@ -585,17 +586,26 @@ def tree_level(path, filters, queued, offset=0, sort=None):
     return ordered, files, len(keys)
 
 
-def level_context(path, filters, queued, offset=0, sort=None):
+def level_context(path, filters, queued, offset=0, sort=None, dir_offset=0):
+    """One folder level: a page of subfolders (dir_offset) and a page of files (offset).
+    Large levels are paged so the browser never builds thousands of rows at once."""
     sort = sort or {}
     folders, files, total = tree_level(path, filters, queued, offset, sort)
     nxt = offset + PAGE_SIZE
     more = url_for("files_folder", path=path, offset=nxt, rows=1, **filters, **sort) if nxt < total else None
+    dir_nxt = dir_offset + FOLDER_PAGE
+    more_dirs = (url_for("files_folder", path=path, dirs=dir_nxt, **filters, **sort)
+                 if path and dir_nxt < len(folders) else None)
+    total_dirs = len(folders)
+    if path:                                    # the top level (shares) is never paged
+        folders = folders[dir_offset:dir_nxt]
     if any(f["status"] == "waiting" for f in files):  # finished encodes, for the Replace button
         encoded = enc.encoded_files(enc.first_existing(enc.ENCODED_CANDIDATES))
         for f in files:
             f["encoded"] = encoded.get(Path(f["name"]).stem.lower()) if f["status"] == "waiting" else None
     return {"folders": folders, "files": files, "total_files": total, "shown_files": min(nxt, total),
-            "more_url": more, "filters": filters, "queued": queued, "auto_open": AUTO_OPEN,
+            "more_url": more, "more_dirs_url": more_dirs, "shown_dirs": min(dir_nxt, total_dirs),
+            "total_dirs": total_dirs, "filters": filters, "queued": queued, "auto_open": AUTO_OPEN,
             "status_labels": enc.STATUS_LABELS, "sort": sort, "sort_links": sort_links(filters, sort),
             "link_args": dict(filters, **sort),      # query of folder URLs: filters + sort
             "folder_query": urllib.parse.urlencode(dict(filters, **sort), doseq=True)}
@@ -677,12 +687,21 @@ def files_folder():
         abort(409, g.config_error)
     path = request.args.get("path", "").strip("/")
     offset = max(int(request.args.get("offset", 0) or 0), 0)
-    ctx = level_context(path, file_filters(request.args), set(enc.queued_keys()), offset, sort_args(request.args))
+    dir_offset = max(int(request.args.get("dirs", 0) or 0), 0)
+    ctx = level_context(path, file_filters(request.args), set(enc.queued_keys()), offset, sort_args(request.args),
+                        dir_offset)
     if request.args.get("rows"):
-        resp = app.make_response(render_template("_file_rows.html", **ctx))
+        resp = app.make_response(squeeze(render_template("_file_rows.html", **ctx)))
         resp.headers["X-Next"] = ctx["more_url"] or ""
         return resp
-    return render_template("_level.html", **ctx)
+    if dir_offset:                              # "Show more folders": only the next folders
+        ctx["files"] = []
+    return squeeze(render_template("_level.html", **ctx))
+
+
+def squeeze(html):
+    """Collapse the template's indentation between tags (renders the same, parses faster)."""
+    return re.sub(r">\s+<", "> <", html)
 
 
 def safe_next(default):
