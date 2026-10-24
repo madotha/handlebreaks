@@ -12,7 +12,11 @@
 #      queueing, otherwise the share's preset (SHARE_N_PRESET), otherwise DEFAULT_PRESET
 #   3. Only when finished, move it to <output>/<name>.mkv
 #      (so an aborted encode never counts as finished)
-#   4. Log the result in logs/results.tsv (OK, FAIL, MISSING, EXISTS)
+#   4. Log the result in logs/results.tsv (OK, FAIL, MISSING, EXISTS, STOPPED)
+#
+# The web UI can stop the running encode (stop.txt, checked every 5 s): "skip" goes on
+# with the next file, "all" puts the rest of the run back into the queue and pauses it
+# (paused) until "Resume".
 # It also carries out replace jobs from the web UI (replace/*.json: move a finished
 # encode into the library in place of the original), at the start and every minute
 # while encoding, so they don't wait for a long encode.
@@ -26,6 +30,8 @@ BASE="${0:A:h}"                                  # program folder, e.g. ~/script
 DATA="${ENCODING_DATA_DIR:-$BASE}"               # config.env, queue/, logs/ … (Docker: /data)
 QUEUE="$DATA/queue"; PROC="$DATA/processing"; DONE="$DATA/done"; LOGS="$DATA/logs"
 CANCELLED="$DATA/cancelled.txt"   # "batch<TAB>key" removed from this run in the web UI
+STOPFILE="$DATA/stop.txt"         # "skip|all<TAB>key": stop the running encode (web UI)
+PAUSED="$DATA/paused"             # queue paused by "Stop all"; removed by "Resume"
 mkdir -p "$QUEUE" "$PROC" "$DONE" "$LOGS"
 
 log() { print -r -- "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOGS/encode.log"; }
@@ -126,7 +132,7 @@ print $$ > "$LOCK/pid"
 trap 'rm -rf "$LOCK"; rm -f "$LOGS/current.txt"' EXIT INT TERM
 
 # ── Keep the Mac awake while encoding (macOS only) ───────────────────────────
-command -v caffeinate >/dev/null && caffeinate -is -w $$ &
+if command -v caffeinate >/dev/null; then caffeinate -is -w $$ & caf=$!; fi
 
 # ── Library reachable? Otherwise wait 5 minutes (launchd restarts afterwards) ─
 for prefix root in ${(kv)ROOTS}; do
@@ -147,6 +153,30 @@ replace_jobs() {
 }
 replace_jobs
 
+# ── Paused by "Stop all" in the web UI: wait for "Resume" ────────────────────
+# Replace jobs still run. After 10 minutes the worker exits; launchd or the Docker
+# loop start it again as long as batches are waiting.
+if [[ -f "$PAUSED" && -n "$(print -r -- "$QUEUE"/*.txt(N) "$PROC"/*.txt(N))" ]]; then
+  [[ -n "${caf:-}" ]] && kill $caf 2>/dev/null   # let the Mac sleep while paused
+  for s in {1..60}; do
+    [[ -f "$PAUSED" ]] || break
+    (( s % 6 )) || replace_jobs
+    sleep 10
+  done
+  [[ -f "$PAUSED" ]] && exit 0
+  log "Queue resumed"
+  if command -v caffeinate >/dev/null; then caffeinate -is -w $$ & caf=$!; fi
+fi
+
+# Prints the mode ("skip" or "all") if the web UI asked to stop the encode of key $1
+stop_request() {
+  [[ -f "$STOPFILE" ]] || return 1
+  local mode k
+  IFS=$'\t' read -r mode k < "$STOPFILE"
+  if [[ "$k" != "$1" ]]; then rm -f "$STOPFILE"; return 1; fi   # meant for a file that's done
+  print -r -- "$mode"
+}
+
 # ── Take over new batches ────────────────────────────────────────────────────
 for f in "$QUEUE"/*.txt(N); do mv "$f" "$PROC/"; done
 
@@ -158,6 +188,7 @@ for b in $batches; do total=$(( total + $(grep -c . "$b") )); done
 log "Starting: $total file(s)"
 
 i=0
+stopped_all=0
 for b in $batches; do
   # A batch line is "key" or "key<TAB>preset id" (preset chosen when queueing)
   while IFS=$'\t' read -r key override || [[ -n "$key" ]]; do
@@ -203,11 +234,29 @@ print(p["PresetName"]); print({"av_mp4": "mp4", "av_webm": "webm"}.get(p.get("Fi
                  -i "$src" -o "$tmp" \
                  > "$LOGS/progress.log" 2> "$LOGS/handbrake-last.log" < /dev/null &
     hbpid=$!
+    stop_mode=""
     while kill -0 $hbpid 2>/dev/null; do     # every minute: status note, replace jobs
       write_status
       replace_jobs
-      for s in {1..12}; do kill -0 $hbpid 2>/dev/null || break; sleep 5; done
+      for s in {1..12}; do                    # every 5 s: still running, stop requested?
+        kill -0 $hbpid 2>/dev/null || break
+        if stop_mode=$(stop_request "$key"); then break 2; fi
+        sleep 5
+      done
     done
+    if [[ -n "$stop_mode" ]]; then           # stopped in the web UI
+      kill $hbpid 2>/dev/null; wait $hbpid 2>/dev/null
+      rm -f "$STOPFILE"
+      fs rm "$tmp"
+      log "  STOPPED in the web UI: $key"; result STOPPED "$key"
+      if [[ "$stop_mode" == all ]]; then
+        n=$(python3 "$BASE/encoding.py" stop-rest "$i" 2>> "$LOGS/encode.log")
+        log "Stopped all: ${n:-0} remaining file(s) back in the queue, paused until Resume"
+        stopped_all=1
+        break 2
+      fi
+      continue
+    fi
     wait $hbpid
     rc=$?
     if (( rc == 0 )) && [[ -s "$tmp" ]]; then
@@ -233,6 +282,6 @@ print(p["PresetName"]); print({"av_mp4": "mp4", "av_webm": "webm"}.get(p.get("Fi
   mv "$b" "$DONE/"
 done
 
-log "Queue finished"
-rm -f "$LOGS/current.txt" "$CANCELLED"
+(( stopped_all )) || log "Queue finished"
+rm -f "$LOGS/current.txt" "$CANCELLED" "$STOPFILE"
 write_status idle

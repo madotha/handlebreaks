@@ -843,8 +843,11 @@ def live_status():
     """Small snapshot for the Status page's live updates."""
     cur = enc.current_progress()
     view_counts = Counter(i["state"] for i in enc.queue_items())
+    stop = enc.stop_requested()
     return {
         "current": dict(cur, short=enc.short(cur["key"])) if cur else None,
+        "stopping": stop[0] if stop and cur and stop[1] == cur["key"] else None,
+        "paused": enc.is_paused(),
         "counts": dict(view_counts),
         "scan": dict({k: SCAN[k] for k in ("running", "label", "summary", "error")},
                      started=(to_datetime(SCAN["started"]) or datetime.now()).isoformat() if SCAN["started"] else None),
@@ -886,7 +889,10 @@ def status():
     cfg = enc.parse_config(enc.CONFIG_FILE) if enc.CONFIG_FILE.exists() else {}
     state = request.args.get("state", "")
     results = replace_info([{"at": at, "status": st, "key": key} for at, st, key in enc.recent_results(20)])
-    return render_template("status.html", cur=enc.current_progress(),
+    cur = enc.current_progress()
+    stop = enc.stop_requested()
+    return render_template("status.html", cur=cur, paused=enc.is_paused(),
+                           stopping=stop[0] if stop and cur and stop[1] == cur["key"] else None,
                            q=queue_view(state, sort=sort_state(request.args, "queue", QUEUE_SORT)),
                            results=results, auto_interval=scan_interval(cfg),
                            auto_next=next_auto_scan(cfg), short=enc.short,
@@ -920,6 +926,25 @@ def queue_remove():
         removed = enc.remove_queued(keys)
         flash(f"{len(removed):,} entr{'y' if len(removed) == 1 else 'ies'} removed from the queue."
               if removed else "Nothing removed: the entries aren't waiting any more.", "ok" if removed else "error")
+    return redirect(url_for("status"))
+
+
+@app.route("/encode/stop", methods=["POST"])
+def encode_stop():
+    """Stop the running encode: mode=skip goes on with the next file, mode=all pauses the queue."""
+    mode, key = request.form.get("mode", ""), request.form.get("key", "")
+    if enc.request_stop(mode, key):
+        flash(f"Stopping {enc.short(key)} …" + (" The rest of the queue will be paused." if mode == "all" else
+              " The worker goes on with the next file.") + " This takes a few seconds.", "ok")
+    else:
+        flash("Nothing stopped: that file isn't being encoded any more.", "error")
+    return redirect(url_for("status"))
+
+
+@app.route("/encode/resume", methods=["POST"])
+def encode_resume():
+    enc.resume_queue()
+    flash("Queue resumed. The worker starts within a minute.", "ok")
     return redirect(url_for("status"))
 
 

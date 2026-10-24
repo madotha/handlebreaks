@@ -15,7 +15,25 @@
 </div>
 
 <section class="panel" data-current-panel data-current-key="{{ cur.key if cur else '' }}">
-  <h2>Encoding</h2>
+  <div class="page-head">
+    <h2>Encoding</h2>
+    <form class="row-actions" method="post" action="{{ url_for('encode_stop') }}" data-stop-form {% if not cur or stopping %}hidden{% endif %}>
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="key" value="{{ cur.key if cur else '' }}" data-stop-key>
+      <button class="secondary" name="mode" value="skip"
+              onclick="return confirm('Stop this encode and continue with the next file? The partly encoded file is deleted.')">Stop, continue with next</button>
+      <button class="danger" name="mode" value="all"
+              onclick="return confirm('Stop this encode and pause the queue? The remaining files stay queued until you click Resume.')">Stop all</button>
+    </form>
+  </div>
+  <div class="flash info paused-bar" data-paused {% if not paused %}hidden{% endif %}>
+    <span><strong>Queue paused</strong> (after "Stop all"). Queued files wait until you resume; replace jobs still run.</span>
+    <form method="post" action="{{ url_for('encode_resume') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <button>Resume</button>
+    </form>
+  </div>
+  <p class="flash info" data-stopping {% if not stopping %}hidden{% endif %}>Stopping <span data-stopping-mode>{{ 'all' if stopping == 'all' else '' }}</span>… the worker ends the encode within a few seconds.</p>
   <div data-current {% if not cur %}hidden{% endif %}>
     <p><strong>File <span data-cur-i>{{ cur.i if cur }}</span> of <span data-cur-n>{{ cur.n if cur }}</span>:</strong> <span data-cur-name>{{ short(cur.key) if cur }}</span></p>
     <span class="meter big"><span data-cur-bar style="width: {{ (cur.pct if cur else 0) or 0 }}%"></span></span>
@@ -43,6 +61,7 @@
     <span class="qstate qstate-ok"><span data-count="OK">{{ q.counts.get('OK', 0)|count }}</span> done</span>
     <span class="qstate qstate-fail"><span data-count="FAIL">{{ q.counts.get('FAIL', 0)|count }}</span> failed</span>
     <span class="qstate qstate-missing"><span data-count="MISSING">{{ q.counts.get('MISSING', 0)|count }}</span> missing</span>
+    <span class="qstate qstate-stopped"><span data-count="STOPPED">{{ q.counts.get('STOPPED', 0)|count }}</span> stopped</span>
     <span class="qstate qstate-exists"><span data-count="EXISTS">{{ q.counts.get('EXISTS', 0)|count }}</span> already exist</span>
   </p>
   <form id="queue-remove" class="row-actions queue-tools" method="post" action="{{ url_for('queue_remove') }}">

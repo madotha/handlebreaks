@@ -61,6 +61,7 @@ Examples
     python3 encoding.py unskip 2              # show no. 2 from "skipped" again
     python3 encoding.py status
     python3 encoding.py replace-jobs          # run pending replace jobs (normally done by encode.sh)
+    python3 encoding.py stop-rest <n>         # after "Stop all": requeue the run after entry n, pause (encode.sh)
     python3 encoding.py version
 """
 
@@ -115,6 +116,8 @@ PROC_DIR     = DATA_DIR / "processing"    # batch being encoded
 DONE_DIR     = DATA_DIR / "done"          # finished batches
 CANCEL_FILE  = DATA_DIR / "cancelled.txt" # "batch<TAB>key" removed from the current run (encode.sh skips them)
 QUEUE_EDIT   = DATA_DIR / ".queue-edit"   # batches from queue/ while they are rewritten
+STOP_FILE    = DATA_DIR / "stop.txt"      # "skip|all<TAB>key": stop the running encode (checked by encode.sh)
+PAUSE_FILE   = DATA_DIR / "paused"        # queue paused by "Stop all": encode.sh starts nothing until it's gone
 REPLACE_DIR  = DATA_DIR / "replace"       # replace jobs from the web UI (run by encode.sh)
 REPLACE_DONE = REPLACE_DIR / "done"       # their results
 LOG_DIR      = DATA_DIR / "logs"
@@ -534,7 +537,7 @@ def queued_keys():
 
 
 def load_results():
-    """Latest result per file: OK, FAIL, MISSING or EXISTS.
+    """Latest result per file: OK, FAIL, MISSING, EXISTS or STOPPED.
     New lines from logs/results.tsv (written by encode.sh) are imported into the database first."""
     with closing(connect()) as con:
         if RESULTS_FILE.exists():             # only lines added since the last import
@@ -1056,8 +1059,9 @@ def current_progress():
     return cur
 
 
-# State of a queued entry (queue_items) -> label; results of encode.sh map to the last four
+# State of a queued entry (queue_items) -> label; the upper-case ones are results of encode.sh
 QUEUE_STATES = {"encoding": "Encoding", "waiting": "Waiting", "removed": "Removed", "OK": "Done", "FAIL": "Failed",
+                "STOPPED": "Stopped",
                 "MISSING": "Missing in library", "EXISTS": "Output already exists"}
 
 
@@ -1118,11 +1122,68 @@ def remove_queued(keys=None):
         with open(CANCEL_FILE, "a", encoding="utf-8") as f:
             f.writelines(f"{b}\t{k}\n" for b, k in cancel)
     removed = list(dict.fromkeys(i["key"] for i in waiting))
-    with closing(connect()) as con, con:        # show them as offered (or skipped) again
+    unqueue_status(removed)
+    return removed
+
+
+def unqueue_status(keys):
+    """Show files that left the queue as offered (or skipped) again."""
+    with closing(connect()) as con, con:
         skipped = {k for (k,) in con.execute("SELECT key FROM skipped")}
         con.executemany("UPDATE files SET status = ? WHERE key = ? AND status = 'queued'",
-                        [("skipped" if k in skipped else "offer", k) for k in removed])
-    return removed
+                        [("skipped" if k in skipped else "offer", k) for k in keys])
+
+
+STOP_MODES = ("skip", "all")
+
+
+def request_stop(mode, key):
+    """Ask the worker to stop the encode of key: "skip" continues with the next file,
+    "all" also pauses the rest of the run (see requeue_rest). encode.sh checks the
+    request every few seconds. Returns False if key isn't being encoded (any more)."""
+    cur = current_progress()
+    if mode not in STOP_MODES or not cur or cur["key"] != key:
+        return False
+    write_text_atomic(STOP_FILE, f"{mode}\t{key}\n")
+    unqueue_status([key])
+    return True
+
+
+def stop_requested():
+    """(mode, key) of a stop request the worker hasn't carried out yet, or None."""
+    try:
+        mode, _, key = STOP_FILE.read_text(encoding="utf-8").strip().partition("\t")
+    except OSError:
+        return None
+    return mode, key
+
+
+def requeue_rest(done):
+    """After "Stop all" (called by encode.sh, no database): put the entries of the
+    current run after the first `done` back into the queue, ahead of other batches,
+    finish the run's batches and pause the queue. Returns how many were requeued."""
+    cancelled = cancelled_entries()
+    entries = [e for e in batch_entries() if e[0].parent == PROC_DIR]
+    rest = [(k, p) for f, k, p in entries[done:] if (f.name, k) not in cancelled]
+    PAUSE_FILE.touch()                          # first, so the new batch doesn't start a worker
+    if rest:
+        QUEUE_DIR.mkdir(parents=True, exist_ok=True)
+        name = f"batch-0-resumed-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.txt"   # sorts first
+        tmp = DATA_DIR / f".{name}.tmp"
+        tmp.write_text("".join(f"{k}\t{p}\n" if p else f"{k}\n" for k, p in rest), encoding="utf-8")
+        os.replace(tmp, QUEUE_DIR / name)
+    DONE_DIR.mkdir(parents=True, exist_ok=True)
+    for f in dict.fromkeys(e[0] for e in entries):
+        os.replace(f, DONE_DIR / f.name)
+    return len(rest)
+
+
+def is_paused():
+    return PAUSE_FILE.exists()
+
+
+def resume_queue():
+    PAUSE_FILE.unlink(missing_ok=True)
 
 
 def status_text():
@@ -1283,6 +1344,9 @@ def main():
     apply_config(load_config())
     if cmd == "replace-jobs":                   # file moves only, no database (see run_replace_jobs)
         run_replace_jobs()
+        return
+    if cmd == "stop-rest":                      # encode.sh after "Stop all"; no database either
+        print(requeue_rest(int(rest[0])))
         return
     for d in (QUEUE_DIR, PROC_DIR, LOG_DIR):
         d.mkdir(parents=True, exist_ok=True)

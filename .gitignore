@@ -13,6 +13,8 @@ config.env.v2.bak
 queue/
 processing/
 cancelled.txt
+stop.txt
+paused
 .queue-edit/
 replace/
 done/

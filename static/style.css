@@ -139,6 +139,8 @@ textarea.json { width: 100%; min-height: 28rem; font: .8rem/1.4 ui-monospace, SF
 .qstate-ok { background: var(--ok-bg); color: var(--ok); }
 .qstate-fail, .qstate-missing { background: var(--err-bg); color: var(--err); }
 .qstate-exists { background: var(--warn-bg); color: var(--warn); }
+.qstate-stopped, .result-stopped { background: var(--warn-bg); color: var(--warn); }
+.paused-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .qstate-removed { color: var(--muted); text-decoration: line-through; }
 .queue-table .check { width: 1.8rem; }
 .queue-tools { margin: .2rem 0 .6rem; }

@@ -79,6 +79,11 @@
       const cur = s.current;
       $("[data-current]").hidden = !cur;
       $("[data-idle]").hidden = !!cur;
+      $("[data-stop-form]").hidden = !cur || !!s.stopping;
+      $("[data-stop-key]").value = cur ? cur.key : "";        // stop exactly the file shown
+      $("[data-stopping]").hidden = !s.stopping;
+      setText("[data-stopping-mode]", s.stopping === "all" ? "all" : "");
+      $("[data-paused]").hidden = !s.paused;
       if (cur) {
         setText("[data-cur-i]", cur.i);
         setText("[data-cur-n]", cur.n);

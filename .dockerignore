@@ -28,5 +28,7 @@ TODO.md
 docker-compose*.yml
 local.plex-encoding*.plist
 cancelled.txt
+stop.txt
+paused
 .queue-edit/
 docs/
