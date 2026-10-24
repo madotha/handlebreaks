@@ -136,6 +136,14 @@ textarea.json { width: 100%; min-height: 28rem; font: .8rem/1.4 ui-monospace, SF
 th.sel, td.sel { width: 2rem; padding-right: 0; }
 .tree summary { align-items: center; justify-content: flex-start; }
 .tree summary .meta { margin-left: auto; }
+.tree .meta { display: flex; align-items: center; gap: .5rem; }
+.opt { display: inline-flex; align-items: center; gap: .45rem; }
+.opt-bar { display: inline-flex; gap: 1px; width: 64px; height: 8px; border-radius: 4px; overflow: hidden; background: var(--bg); }
+.opt-bar > span { min-width: 2px; }
+.opt .codec { font-variant-numeric: tabular-nums; min-width: 3.4rem; text-align: center; }
+.opt-count { min-width: 11.5rem; text-align: right; font-variant-numeric: tabular-nums; }
+.dir-size { min-width: 5.5rem; text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 700px) { .opt-bar, .dir-size { display: none; } .opt-count { min-width: 0; } }
 .tree .dirnote { color: var(--muted); font-size: .8rem; margin-left: .5rem; }
 .tree .loading { margin: .4rem .8rem; }
 .files-level > button { margin: .5rem .6rem .8rem; }

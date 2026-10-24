@@ -327,12 +327,14 @@ def root_folders():
 
 def tree_level(path, filters, queued, offset=0):
     """Direct subfolders and files of `path` ("" = top level) that match the filters.
-    Returns (folders, files of the requested page, number of files in total)."""
+    Each folder counts its files: optimized (status h265: optimized codec or name),
+    unknown (not probed) and other. Returns (folders, files of the requested page,
+    number of files in total)."""
     clause, params = filter_sql(filters, path)
     plen = len(path) + 1 if path else 0
     folders, keys = {}, []
     with closing(db()) as con:
-        for key, size in con.execute(f"SELECT key, size FROM files{clause}", params):
+        for key, size, status, codec in con.execute(f"SELECT key, size, status, video_codec FROM files{clause}", params):
             head, sep, _ = key[plen:].partition("/")
             if not sep:
                 keys.append(key)
@@ -340,8 +342,12 @@ def tree_level(path, filters, queued, offset=0):
             f = folders.get(head)
             if f is None:
                 f = folders[head] = {"name": head, "path": f"{path}/{head}" if path else head,
-                                     "count": 0, "size": 0, "selectable": 0}
+                                     "count": 0, "size": 0, "selectable": 0, "optimized": 0, "unknown": 0}
             f["count"] += 1
+            if status == "h265":
+                f["optimized"] += 1
+            elif not codec:
+                f["unknown"] += 1
             f["size"] += size or 0
             f["selectable"] += key not in queued
         keys.sort(key=natural)
@@ -358,6 +364,9 @@ def tree_level(path, filters, queued, offset=0):
                 folders[prefix]["name"] = name
                 if folder != name:
                     folders[prefix]["note"] = folder
+    for f in folders.values():
+        f["other"] = f["count"] - f["optimized"] - f["unknown"]
+        f["share"] = f["optimized"] / f["count"] * 100 if f["count"] else 0
     files = [dict(rows[k], name=k[plen:]) for k in page if k in rows]
     return sorted(folders.values(), key=lambda f: natural(f["name"])), files, len(keys)
 
