@@ -35,17 +35,18 @@
     }
     dialog.close();
     btn.disabled = true;
-    opts.say(`Replacing ${btn.dataset.original} … waiting for the worker`, "busy");
+    btn.textContent = "Replacing…";                // the job runs even if the page is left or reloaded
+    opts.say(`Replacing ${btn.dataset.original} … waiting for the worker. You can leave or reload the page; the replace continues.`, "busy");
     for (let i = 0; i < 600; i++) {                 // up to ~20 minutes (e.g. a copy across disks)
       await new Promise((ok) => setTimeout(ok, 2000));
       const st = await (await fetch(res.status_url)).json();
       if (st.state === "pending") continue;
       opts.say(st.message, st.state === "done" ? "ok" : "error");
-      if (st.state === "done") await opts.done(btn); else btn.disabled = false;
+      if (st.state === "done") await opts.done(btn); else { btn.disabled = false; btn.textContent = "Replace…"; }
       return;
     }
     opts.say("The worker hasn't picked up the replace job yet. Is it running? See the Status page.", "error");
-    btn.disabled = false;
+    btn.textContent = "Replacing…";   // still queued: the worker runs it when it starts
   }
 
   window.ReplaceDialog = {

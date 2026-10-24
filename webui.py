@@ -230,6 +230,45 @@ def auto_scan_loop():
             print(f"Automatic scan failed: {type(e).__name__}: {e}", file=sys.stderr)
 
 
+REPLACE_SYNC = threading.Lock()
+
+
+def sync_replaces():
+    """Bring finished replace jobs into the database: rescan the folder of each (new or
+    changed files only), then mark the job as synced. Runs in the background and when a
+    page asks for a job's result, so it happens even if nobody waits on the page.
+    Returns False if a scan was running and blocked it (tried again later)."""
+    with REPLACE_SYNC:
+        jobs = enc.unsynced_replaces()
+        if not jobs:
+            return True
+        enc.apply_config(enc.load_config())
+        folders = {}
+        for f, job in jobs:
+            folders.setdefault(job["key"].rsplit("/", 1)[0], []).append((f, job))
+        for folder, items in folders.items():
+            if any(j.get("state") == "done" for _, j in items):
+                try:
+                    enc.scan(enc.load_state(), path=folder)
+                except SystemExit as e:
+                    if "already running" in str(e):
+                        return False
+                    print(f"Replace sync of {folder}: {e}", file=sys.stderr)   # e.g. share offline
+            for f, job in items:
+                enc.mark_replace_synced(f, job)
+        return True
+
+
+def replace_sync_loop():
+    """Every 10 s: put the results of finished replace jobs into the database."""
+    while True:
+        time.sleep(10)
+        try:
+            sync_replaces()
+        except Exception as e:                  # keep the loop alive
+            print(f"Replace sync failed: {type(e).__name__}: {e}", file=sys.stderr)
+
+
 def path_summary(path):
     """'3 files: 2 optimized, 1 offered' for the files of one file or folder."""
     with closing(db()) as con:
@@ -602,8 +641,10 @@ def level_context(path, filters, queued, offset=0, sort=None, dir_offset=0):
         folders = folders[dir_offset:dir_nxt]
     if any(f["status"] == "waiting" for f in files):  # finished encodes, for the Replace button
         encoded = enc.encoded_files(enc.first_existing(enc.ENCODED_CANDIDATES))
+        pending = enc.pending_replaces()
         for f in files:
             f["encoded"] = encoded.get(Path(f["name"]).stem.lower()) if f["status"] == "waiting" else None
+            f["replacing"] = f["key"] in pending
     return {"folders": folders, "files": files, "total_files": total, "shown_files": min(nxt, total),
             "more_url": more, "more_dirs_url": more_dirs, "shown_dirs": min(dir_nxt, total_dirs),
             "total_dirs": total_dirs, "filters": filters, "queued": queued, "auto_open": AUTO_OPEN,
@@ -752,7 +793,9 @@ def replace_info(rows):
     "replaced" (already replaced by a replace job) to rows of successfully encoded files."""
     encoded = enc.encoded_files(enc.first_existing(enc.ENCODED_CANDIDATES))
     replaced = enc.replaced_keys()
+    pending = enc.pending_replaces()
     for r in rows:
+        r["replacing"] = r["key"] in pending
         if r.get("state", r.get("status")) == "OK":
             r["encoded"] = encoded.get(Path(r["key"]).stem.lower())
             r["replaced"] = not r["encoded"] and r["key"] in replaced
@@ -829,7 +872,13 @@ def replace():
 
 @app.route("/replace/<job_id>")
 def replace_state(job_id):
-    return enc.replace_status(job_id)
+    st = enc.replace_status(job_id)
+    if st.get("state") == "done" and not st.get("synced"):
+        if sync_replaces():
+            st["synced"] = True
+        else:
+            st["message"] += " The list updates once the running scan is finished."
+    return st
 
 
 @app.route("/status")
@@ -1265,6 +1314,7 @@ def main():
     args = ap.parse_args()
     print(f"Web UI: http://{args.host}:{args.port}", file=sys.stderr)
     threading.Thread(target=auto_scan_loop, daemon=True).start()
+    threading.Thread(target=replace_sync_loop, daemon=True).start()
     try:
         from waitress import serve
     except ImportError:

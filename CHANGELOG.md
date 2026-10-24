@@ -36,6 +36,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Replaces seemed cancelled when the page was reloaded before they finished: the files were replaced, but the list kept showing the old file, because the page itself had to trigger the folder rescan afterwards. The web UI now rescans the folder of every finished replace job on its own (background check every 10 s, and when a page asks for the result), and files with a pending replace show **Replacing…** instead of the button after a reload, so a job can't be sent twice.
 - Encodes on a network share were marked as failed although they succeeded: when launchd starts `encode.sh` on macOS, `/bin/mv` and `/bin/rm` get "Operation not permitted" on the NFS share (Python's file functions are allowed). Moving the finished file out of `.inprogress/` and removing partial files now go through Python (`fs` helper in `encode.sh`).
 - `encode.sh` reported a file as done even if moving it out of `.inprogress/` failed (seen on a Synology NAS while its media indexer read the new file: "Operation not permitted"). The move is now retried up to 6 times, 10 s apart; if it still fails, the file is marked as failed and the encode stays in `.inprogress/`.
 - Preset check on macOS: presets with Apple's AAC encoder (`ca_aac`) were rejected by a native HandBrakeCLI, because the check always replaced `ca_aac` with `av_aac` (which only exists in other builds). The replacement now only applies where `ca_aac` itself isn't available.

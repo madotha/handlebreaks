@@ -194,23 +194,15 @@
     }
   });
 
-  // Re-scan one file or folder and reload the folder level that shows it
-  async function rescan(path, levelBody) {
-    const body = new FormData();
-    body.append("csrf", form.querySelector('input[name="csrf"]').value);
-    body.append("path", path);
-    await fetch(form.querySelector("[data-scan-path]").formAction, { method: "POST", body, headers: { Accept: "application/json" } });
+  // "Replace…" (static/replace.js): the server has already rescanned the folder when the
+  // job is reported done, so only reload the folder level that shows the file
+  async function reloadLevel(levelBody) {
     const parent = levelBody && levelBody.closest("details.dir");
     if (!parent) { location.reload(); return; }
     delete levelBody.dataset.loaded;
     await load(parent, true);
   }
-
-  // "Replace…" (static/replace.js): afterwards check the folder again and reload it
-  window.ReplaceDialog.attach(form, {
-    say,
-    done: (btn) => rescan(btn.dataset.key.split("/").slice(0, -1).join("/"), btn.closest(".dir-body")),
-  });
+  window.ReplaceDialog.attach(form, { say, done: (btn) => reloadLevel(btn.closest(".dir-body")) });
 
   // "Collapse all": close every folder, forget them for reloads and drop their content
   // (reopening is quick: loaded folders are kept in sessionStorage)

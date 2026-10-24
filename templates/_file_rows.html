@@ -12,7 +12,8 @@
     <td>{{ f.duration|duration }}</td>
     <td class="num">{{ f.size|size }}</td>
     <td><span class="status status-{{ 'queued' if is_queued else f.status }}">{{ status_labels['queued'] if is_queued else status_labels.get(f.status, f.status) }}</span>
-      {% if f.encoded %}<button type="button" class="link-btn" data-replace data-key="{{ f.key }}" data-original="{{ f.name.rsplit('/', 1)[-1] }}"
+      {% if f.replacing %}<span class="muted small" title="The worker carries out the replace job; the list updates when it's done">Replacing…</span>
+      {% elif f.encoded %}<button type="button" class="link-btn" data-replace data-key="{{ f.key }}" data-original="{{ f.name.rsplit('/', 1)[-1] }}"
           data-encoded="{{ f.encoded }}" title="Move the finished encode into the library in place of this file">Replace…</button>{% endif %}</td>
   </tr>
 {% endfor %}

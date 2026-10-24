@@ -1,4 +1,5 @@
 {# Replace… for a successfully encoded file r (Status page), or a "Replaced" note. #}
-{% if r.encoded %}<button type="button" class="link-btn" data-replace data-key="{{ r.key }}" data-original="{{ r.original }}"
+{% if r.replacing %}<span class="muted small" title="The worker carries out the replace job; the list updates when it's done">Replacing…</span>
+{% elif r.encoded %}<button type="button" class="link-btn" data-replace data-key="{{ r.key }}" data-original="{{ r.original }}"
     data-encoded="{{ r.encoded }}" title="Move the finished encode into the library in place of the original">Replace…</button>
 {% elif r.replaced %}<span class="muted small" title="The original was replaced by this encode">Replaced</span>{% endif %}

@@ -339,7 +339,7 @@ Finished encodes wait in the output folder for your review. When you're happy wi
 
 1. Choose the file name. It's pre-filled with the encode's name (the original name; the extension follows the encoded container, e.g. `.mp4` → `.mkv`). Keeping the original name is best for Plex.
 2. Choose whether to keep the original in `<output folder>/.replaced/` (default, same folder structure as in the share) or delete it.
-3. **Move and replace**: the encode is moved into the original's folder under the chosen name, and the original is moved away or deleted. The page shows the result and checks the folder again.
+3. **Move and replace**: the encode is moved into the original's folder under the chosen name, and the original is moved away or deleted. The page shows the result. The replace is a job on the server: it finishes even if you reload or leave the page (the file shows **Replacing…** until then), and the web UI checks the folder afterwards on its own, so the list shows the new file either way.
 
 The move is done by the worker (`encode.sh`), because the web UI may not be allowed to write to the library (in Docker it's mounted read-only): natively with launchd, or in the container if its library mount is writable. It also runs while an encode is in progress. It never overwrites another file, retries if the NAS briefly refuses the move, and puts the original back if the move fails.
 

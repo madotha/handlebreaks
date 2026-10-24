@@ -569,8 +569,12 @@ def clear_results():
         con.execute("INSERT OR REPLACE INTO meta VALUES ('results_offset', '0')")
     if RESULTS_FILE.exists():
         RESULTS_FILE.write_bytes(b"")       # truncate: encode.sh appends to the same file
-    for d, pattern in ((DONE_DIR, "*.txt"), (LOG_DIR, "fail-*.log"), (REPLACE_DONE, "*.json")):
+    for d, pattern in ((DONE_DIR, "*.txt"), (LOG_DIR, "fail-*.log")):
         for f in d.glob(pattern) if d.exists() else []:
+            f.unlink(missing_ok=True)
+    unsynced = {f for f, _ in unsynced_replaces()}  # their folders still need a rescan
+    for f in REPLACE_DONE.glob("*.json") if REPLACE_DONE.exists() else []:
+        if f not in unsynced:
             f.unlink(missing_ok=True)
     return n
 
@@ -647,6 +651,36 @@ def replace_status(job_id):
     if (REPLACE_DIR / f"{job_id}.json").exists():
         return {"state": "pending", "message": "Waiting for the worker …"}
     return {"state": "failed", "message": "Unknown job."}
+
+
+def pending_replaces():
+    """Keys with a replace job the worker hasn't carried out yet."""
+    keys = set()
+    for f in REPLACE_DIR.glob("*.json") if REPLACE_DIR.exists() else []:
+        try:
+            keys.add(json.loads(f.read_text(encoding="utf-8"))["key"])
+        except (ValueError, KeyError, OSError):
+            continue
+    return keys
+
+
+def unsynced_replaces():
+    """Finished replace jobs whose result isn't in the database yet: [(file, job)].
+    The worker only moves files (it may run on another machine than the database), so
+    the web UI rescans the folder of each one and then marks it with sync_replace()."""
+    jobs = []
+    for f in sorted(REPLACE_DONE.glob("*.json")) if REPLACE_DONE.exists() else []:
+        try:
+            job = json.loads(f.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            continue
+        if not job.get("synced"):
+            jobs.append((f, job))
+    return jobs
+
+
+def mark_replace_synced(path, job):
+    write_text_atomic(path, json.dumps(dict(job, synced=True), ensure_ascii=False))
 
 
 def replaced_keys():
