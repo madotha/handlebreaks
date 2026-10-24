@@ -61,6 +61,7 @@
       </div>
       {% endif %}
     {% endfor %}
+    {% if plex_status %}<p class="flash {{ 'ok' if plex_status[0] else 'error' }}">{{ plex_status[1] }}</p>{% endif %}
     {% if section == 'encoding' %}<p class="hint"><a href="{{ url_for('presets_page') }}">Manage presets</a></p>{% endif %}
     <button>Save</button>
     <p class="hint">Saved to <code>{{ config_file }}</code>. <code>$HOME</code> is allowed, but no other <code>$</code>, no quotes and no backslash.</p>

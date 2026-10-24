@@ -38,6 +38,7 @@ Scans can also update an Obsidian note with the to-do list. Steps 1 and 2 can be
 | `encode.sh` | Worker: encodes everything in `queue/` with HandBrakeCLI |
 | `webui.py`, `templates/`, `static/` | Web UI on port 7979 |
 | `config.example.env` | Template for `config.env`, the local settings |
+| `plex.py` | Plex integration: analyze an item or scan a folder after a replace |
 | `presets.py` | Preset store and what the installed HandBrakeCLI supports (used by the CLI and the web UI) |
 | `preset.json` | Bundled HandBrake preset (x265, RF 22, MKV, AAC 5.1), imported as the first preset on first run |
 | `local.plex-encoding.plist` | launchd agent (macOS) that starts `encode.sh` when a batch appears in `queue/` |
@@ -281,6 +282,7 @@ All machine-specific settings live in `config.env` in the data folder. It is cre
 | `STATUS_NOTE_ENABLED` | `1` updates the status note every minute while encoding; `0` turns it off |
 | `SCAN_INTERVAL` | Automatic rescan of all shares, in **minutes**: a scan starts once the last scan is that old. `0` (default) = off. See [Automatic rescan](#automatic-rescan). |
 | `WORKER_ENABLED` | Docker only: `1` encodes in the container, `0` only runs web UI and scans |
+| `PLEX_URL`, `PLEX_TOKEN` | Optional: Plex server address(es) and token, so Plex is refreshed after **Replace…**. See [Connecting Plex](#connecting-plex). |
 
 Write values in double quotes and use `"$HOME"` rather than `~`. A folder setting can list several paths separated by `:`, and the first one that exists is used. That way one `config.env` works on the Mac and in the container.
 
@@ -340,7 +342,20 @@ Finished encodes wait in the output folder for your review. When you're happy wi
 
 The move is done by the worker (`encode.sh`), because the web UI may not be allowed to write to the library (in Docker it's mounted read-only): natively with launchd, or in the container if its library mount is writable. It also runs while an encode is in progress. It never overwrites another file, retries if the NAS briefly refuses the move, and puts the original back if the move fails.
 
-Afterwards, let Plex pick up the change: for the same file name run **Analyze** on the item in Plex; if the extension changed, run **Scan Library Files** (with "Empty trash automatically after every scan" turned off, so the item keeps its watch history). Delete the backups in `.replaced/` once you're happy.
+**Plex:** with `PLEX_URL` and `PLEX_TOKEN` set (see below), the worker tells Plex right after the move: for the same file name it has Plex **analyze** that movie or episode (a library scan wouldn't notice a same-name replacement, and Plex would keep showing the old codec); for a new name or extension it has Plex **scan just that folder**. The result appears in the replace message. Without them, do it by hand: **Analyze** the item, or **Scan Library Files** with "Empty trash automatically after every scan" turned off, so the item keeps its watch history. Delete the backups in `.replaced/` once you're happy.
+
+#### Connecting Plex
+
+1. Get the token of your Plex server. On the Mac running Plex Media Server: `defaults read com.plexapp.plexmediaserver PlexOnlineToken`. Or in Plex Web: an item → ⋯ → Get Info → View XML, the address ends in `X-Plex-Token=…`. Treat it like a password.
+2. Add to `config.env` (gitignored; the token isn't editable or shown in the web UI):
+   ```bash
+   PLEX_URL="http://127.0.0.1:32400"
+   PLEX_TOKEN="…"
+   ```
+   In the mixed setup (Setup C), list both addresses, the Mac's and the one seen from the container: `PLEX_URL="http://127.0.0.1:32400 http://host.docker.internal:32400"`. The first that answers is used.
+3. **Settings → Plex** shows whether the connection works and which Plex libraries match your shares.
+
+The files must have the same paths for the worker as in your Plex libraries, which is the case when the worker runs on the Plex server's Mac with the same mounts.
 
 ### Environment variables
 

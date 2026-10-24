@@ -11,7 +11,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY encoding.py presets.py webui.py encode.sh status.sh docker-entrypoint.sh preset.json config.example.env ./
+COPY encoding.py plex.py presets.py webui.py encode.sh status.sh docker-entrypoint.sh preset.json config.example.env ./
 COPY templates/ templates/
 COPY static/ static/
 

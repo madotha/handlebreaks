@@ -81,6 +81,7 @@ from contextlib import closing, contextmanager
 from datetime import datetime
 from pathlib import Path
 
+import plex
 import presets
 
 # ─── Configuration ────────────────────────────────────────────────────────────
@@ -92,6 +93,7 @@ EXAMPLE_CONFIG = BASE / "config.example.env"
 DB_FILE = Path(os.environ.get("ENCODING_DB_FILE") or DATA_DIR / "encoding.db")
 
 # For each location a list of possible paths, set from config.env (apply_config)
+CONFIG = {}                                     # the settings applied by apply_config()
 ROOT_CANDIDATES = {}                            # key prefix ("share3") -> paths
 SHARE_NAMES = {}                                # key prefix -> display name
 ENCODED_CANDIDATES = []
@@ -246,7 +248,8 @@ def next_share_number():
 
 
 def apply_config(cfg):
-    global ROOT_CANDIDATES, SHARE_NAMES, ENCODED_CANDIDATES, NOTE_DIR_CANDIDATES
+    global CONFIG, ROOT_CANDIDATES, SHARE_NAMES, ENCODED_CANDIDATES, NOTE_DIR_CANDIDATES
+    CONFIG = cfg
     found = shares(cfg)
     missing = ([] if found else ["SHARE_1"]) + ([] if cfg.get("ENCODED_DIR") else ["ENCODED_DIR"])
     if missing:
@@ -622,7 +625,8 @@ def replace_one(job):
             move_file(backup, original)
         raise
     kept = f" The original is kept in {backup}." if backup else " The original was deleted."
-    return f"Replaced {original.name} with {target.name}.{kept}", f"{job['key'].split('/', 1)[0]}/" + \
+    refreshed = plex.notify_replaced(CONFIG, original, target)   # "" if Plex isn't configured
+    return f"Replaced {original.name} with {target.name}.{kept}{refreshed}", f"{job['key'].split('/', 1)[0]}/" + \
         str(target.relative_to(root))
 
 

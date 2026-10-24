@@ -43,6 +43,7 @@ from flask import Flask, Response, abort, flash, g, redirect, render_template, r
 from markupsafe import Markup
 
 import encoding as enc
+import plex
 import presets
 
 app = Flask(__name__)
@@ -79,6 +80,11 @@ SETTINGS = {
         ("SCAN_INTERVAL", "Automatic rescan interval (minutes)", "minutes",
          "Rescans all shares when the last scan is this many minutes old; only new or changed "
          "files are read with ffprobe. 0 = off. Runs while the web UI runs (always in Docker)."),
+    ]),
+    "plex": ("Plex", [
+        ("PLEX_URL", "Plex server URL", "text",
+         "E.g. http://127.0.0.1:32400. Used after \"Replace…\" to make Plex analyze the item or scan its "
+         "folder. The token (PLEX_TOKEN) is set in config.env only, never shown here. Empty = off."),
     ]),
     "worker": ("Worker", [
         ("WORKER_ENABLED", "Encode inside the Docker container", "bool",
@@ -135,6 +141,23 @@ def share_info():
         counts = dict(con.execute("SELECT substr(key, 1, instr(key, '/') - 1), COUNT(*) FROM files GROUP BY 1"))
     scans = enc.share_scans()
     return {p: {"files": counts.get(p, 0), "scanned": scans.get(p)} for p in enc.ROOT_CANDIDATES}
+
+
+def plex_status(cfg):
+    """(ok, message) of a connection test with PLEX_URL and PLEX_TOKEN (the token is never shown)."""
+    full = enc.parse_config(enc.CONFIG_FILE) if enc.CONFIG_FILE.exists() else {}
+    if not full.get("PLEX_URL"):
+        return None
+    if not full.get("PLEX_TOKEN"):
+        return False, "PLEX_TOKEN isn't set in config.env."
+    try:
+        sections = plex.Plex(full["PLEX_URL"], full["PLEX_TOKEN"], timeout=5).sections()
+    except plex.PlexError as e:
+        return False, str(e)
+    shared = [t for _, t, locs in sections if any(any(str(p).startswith(l + "/") or str(p) == l
+              for p in paths for l in locs) for paths in enc.ROOT_CANDIDATES.values())]
+    return True, (f"Connected; token accepted. {len(sections)} libraries"
+                  + (f", matching your shares: {', '.join(shared)}." if shared else "; none matches a share path."))
 
 
 def preset_choices():
@@ -1021,6 +1044,7 @@ def settings(section):
         checks={k: path_checks(cfg.get(k) or "") for k, _, t, _ in fields if t in ("paths", "path")},
         preset_list=preset_choices(), default_preset=presets.name_of(cfg.get("DEFAULT_PRESET", "")),
         share_info=share_info() if section == "library" else {},
+        plex_status=plex_status(cfg) if section == "plex" else None,
         config_file=enc.CONFIG_FILE, config_exists=enc.CONFIG_FILE.exists(),
         env_overrides={k: os.environ[k] for k, _, _, _ in fields if k in ENV_OVERRIDES and k in os.environ})
 
