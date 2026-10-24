@@ -28,6 +28,24 @@ QUEUE="$DATA/queue"; PROC="$DATA/processing"; DONE="$DATA/done"; LOGS="$DATA/log
 mkdir -p "$QUEUE" "$PROC" "$DONE" "$LOGS"
 
 log() { print -r -- "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOGS/encode.log"; }
+
+# Move or delete files on the library/output share. Started by launchd on macOS, /bin/mv
+# and /bin/rm may get "Operation not permitted" on network shares while Python's file
+# functions work, so all file operations on the share go through Python.
+#   fs mv SRC DST     fs rm FILE…
+fs() {
+  python3 -c 'import os, shutil, sys
+op, args = sys.argv[1], sys.argv[2:]
+try:
+    if op == "mv":
+        shutil.move(args[0], args[1])
+    else:
+        for path in args:
+            if os.path.lexists(path):
+                os.unlink(path)
+except OSError as e:
+    sys.exit(f"{op}: {e.strerror}: {e.filename}")' "$@"
+}
 result() { print -r -- "$(date '+%Y-%m-%d %H:%M')	$1	$2" >> "$LOGS/results.tsv"; }
 
 # ── Settings from config.env (template: config.example.env) ──────────────────
@@ -174,7 +192,7 @@ print(p["PresetName"]); print({"av_mp4": "mp4", "av_webm": "webm"}.get(p.get("Fi
 
     print -r -- "$key	$i	$total	$(date +%s)" > "$LOGS/current.txt"
     log "[$i/$total] $key (preset: $preset_name)"
-    rm -f "$tmp"
+    fs rm "$tmp"
     # Progress (stdout) to progress.log, HandBrake log (stderr) to handbrake-last.log
     : > "$LOGS/progress.log"
     HandBrakeCLI --preset-import-file "$preset_file" -Z "$preset_name" \
@@ -193,7 +211,7 @@ print(p["PresetName"]); print({"av_mp4": "mp4", "av_webm": "webm"}.get(p.get("Fi
       # moment (e.g. while its media indexer reads the new file), so retry a few times.
       moved=0
       for attempt in {1..6}; do
-        if err=$(mv "$tmp" "$out" 2>&1); then moved=1; break; fi
+        if err=$(fs mv "$tmp" "$out" 2>&1); then moved=1; break; fi
         log "  move failed (attempt $attempt/6, retrying in 10 s): $err"
         sleep 10
       done
@@ -203,7 +221,7 @@ print(p["PresetName"]); print({"av_mp4": "mp4", "av_webm": "webm"}.get(p.get("Fi
         log "  FAILED: encoded, but the file couldn't be moved; it stays in $tmp: $key"; result FAIL "$key"
       fi
     else
-      rm -f "$tmp"
+      fs rm "$tmp"
       cp "$LOGS/handbrake-last.log" "$LOGS/fail-$(date +%Y%m%d-%H%M%S).log" 2>/dev/null
       log "  FAILED (exit code $rc): $key"; result FAIL "$key"
     fi

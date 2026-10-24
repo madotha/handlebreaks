@@ -74,6 +74,8 @@ Processes coordinate only through files in the data folder (`DATA_DIR`: the prog
 - A v1 `state.json` is imported once by `migrate_state_json()` and renamed to `state.json.migrated`.
 - Changing the schema or these meanings is a MAJOR change.
 
+macOS quirk: when launchd starts `encode.sh`, `/bin/mv` and `/bin/rm` get "Operation not permitted" on the NFS library/output share, while Python's `os`/`shutil` calls work (verified with `launchctl submit`). Every file operation on the share in `encode.sh` must use the `fs` helper (Python); plain `mv`/`rm` are only fine for local files (queue, logs, lock).
+
 Shared file contracts (change both sides together):
 - **Keys**: every file is identified as `share<N>/<rel path>`, where N is the share number from `SHARE_N`. Names (`SHARE_N_NAME`) are display-only. The numbers are part of stored keys, so they must never be renumbered or reused: the web UI comments out removed shares, and `next_share_number()` skips any number that appears in `config.env`, even commented out. Batch files contain one entry per line: `key` or `key<TAB>preset id` (an override chosen when queueing). `encode.sh` looks up the prefix in `ROOTS` and picks the preset as override, then `SHARE_N_PRESET`, then `DEFAULT_PRESET`; `status.sh` and `queued_entries()` read the same format. Keys from version 1.x (`Filme/`) and 2.x (`Movies 2/`) are translated by `legacy_key()` with the `v2_prefix_map` stored in the `meta` table, whenever old `state.json` or `results.tsv` lines are imported.
 - **`logs/results.tsv`**: `date \t STATUS \t key`, status ∈ OK/FAIL/MISSING/EXISTS. Written by `encode.sh`, imported into the DB; `encoding.py` uses the last entry per key (e.g. to flag prior failures).
