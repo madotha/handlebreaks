@@ -3,6 +3,8 @@
   {% set is_queued = f.key in queued %}
   <tr>
     <td class="sel"><input type="checkbox" name="key" value="{{ f.key }}" aria-label="Select {{ f.name }}" {% if is_queued %}disabled data-locked title="Already queued"{% endif %}></td>
+    <td class="sel"><button class="icon-btn" formaction="{{ url_for('start_scan') }}" name="path" value="{{ f.key }}" data-scan-path
+          title="Scan this file again (re-reads it with ffprobe)" aria-label="Scan {{ f.name }} again">↻</button></td>
     <td class="name" title="{{ f.key }}">{{ f.name }}</td>
     <td>{% if f.video_codec %}<span class="codec codec-{{ codec_class(f.video_codec) }}" title="{{ f.video_codec }}">{{ f.video_codec|codec_name }}</span>{% elif f.probe_error %}<span class="muted" title="{{ f.probe_error }}">Error</span>{% else %}<span class="muted">–</span>{% endif %}</td>
     <td>{% if f.width %}{{ f.width }}×{{ f.height }}{% else %}–{% endif %}</td>

@@ -178,8 +178,19 @@ print(p["PresetName"]); print({"av_mp4": "mp4", "av_webm": "webm"}.get(p.get("Fi
     wait $hbpid
     rc=$?
     if (( rc == 0 )) && [[ -s "$tmp" ]]; then
-      mv "$tmp" "$out"
-      log "  done: $out"; result OK "$key"
+      # Move the finished file out of .inprogress. On a NAS the move can fail for a
+      # moment (e.g. while its media indexer reads the new file), so retry a few times.
+      moved=0
+      for attempt in {1..6}; do
+        if err=$(mv "$tmp" "$out" 2>&1); then moved=1; break; fi
+        log "  move failed (attempt $attempt/6, retrying in 10 s): $err"
+        sleep 10
+      done
+      if (( moved )); then
+        log "  done: $out"; result OK "$key"
+      else
+        log "  FAILED: encoded, but the file couldn't be moved; it stays in $tmp: $key"; result FAIL "$key"
+      fi
     else
       rm -f "$tmp"
       cp "$LOGS/handbrake-last.log" "$LOGS/fail-$(date +%Y%m%d-%H%M%S).log" 2>/dev/null

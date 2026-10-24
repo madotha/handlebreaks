@@ -91,6 +91,48 @@
     update();
   }
 
+  // ↻ buttons: re-read one file or folder with ffprobe, then reload the folder it's in
+  const msg = form.querySelector("[data-scan-msg]");
+  function say(text, kind) {
+    msg.hidden = false;
+    msg.className = "scan-msg " + kind;
+    msg.textContent = text;
+  }
+  form.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-scan-path]");
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const files = Number(btn.dataset.files || 1);
+    if (files > 300 && !confirm(`Re-read all ${files.toLocaleString()} files of this folder with ffprobe? ` +
+        `This takes about ${Math.ceil(files * 0.035 / 60)} min or more.`)) return;
+    const body = new FormData();
+    body.append("csrf", form.querySelector('input[name="csrf"]').value);
+    body.append("path", btn.value);
+    btn.classList.add("busy");
+    btn.disabled = true;
+    say("Scanning …", "busy");
+    try {
+      const r = await fetch(btn.formAction, { method: "POST", body, headers: { Accept: "application/json" } });
+      const res = await r.json();
+      if (res.error) { say(res.error, "error"); return; }
+      say(res.message, "ok");
+      if (!res.done) return;
+      // reload the level the scanned row belongs to (a top-level share: the whole page)
+      const row = btn.closest("details.dir") && btn.closest("summary") ? btn.closest("details.dir") : btn.closest("tr");
+      const level = row.parentElement.closest(".dir-body");
+      const parent = level && level.closest("details.dir");
+      if (!parent) { location.reload(); return; }
+      delete level.dataset.loaded;
+      await load(parent);
+    } catch (err) {
+      say("The scan request failed. Reload the page and try again.", "error");
+    } finally {
+      btn.classList.remove("busy");
+      btn.disabled = false;
+    }
+  });
+
   form.addEventListener("change", update);
   form.addEventListener("submit", (e) => {
     const n = Number(button.dataset.count || 0);

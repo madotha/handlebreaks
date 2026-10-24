@@ -148,14 +148,16 @@ SCAN = {"running": False, "started": None, "finished": None, "error": None, "sum
 SCAN_GUARD = threading.Lock()
 
 
-def start_background_scan(label, only=None, force=False):
-    """Start a scan in a background thread. Returns False if a scan is already running."""
+def start_background_scan(label, only=None, force=False, path=None):
+    """Start a scan in a background thread. Returns the thread, or None if a scan is
+    already running."""
     with SCAN_GUARD:
         if SCAN["running"]:
-            return False
+            return None
         SCAN.update(running=True, started=enc.now_str(), finished=None, error=None, summary=None, label=label)
-        threading.Thread(target=run_scan, args=(only, force), daemon=True).start()
-        return True
+        thread = threading.Thread(target=run_scan, args=(only, force, path), daemon=True)
+        thread.start()
+        return thread
 
 
 def scan_interval(cfg):
@@ -199,12 +201,28 @@ def auto_scan_loop():
             print(f"Automatic scan failed: {type(e).__name__}: {e}", file=sys.stderr)
 
 
-def run_scan(only=None, force=False):
+def path_summary(path):
+    """'3 files: 2 optimized, 1 offered' for the files of one file or folder."""
+    with closing(db()) as con:
+        counts = Counter(dict(con.execute(
+            "SELECT status, COUNT(*) FROM files WHERE key = ? OR (key >= ? AND key < ?) GROUP BY status",
+            (path, path + "/", path + "0"))))
+    total = sum(counts.values())
+    if not total:
+        return "no video files found (removed from the list if they were there before)"
+    parts = [f"{n:,} {enc.STATUS_LABELS.get(st, st).lower()}" for st, n in counts.most_common()]
+    return f"{total:,} file{'s' if total != 1 else ''}: " + ", ".join(parts)
+
+
+def run_scan(only=None, force=False, path=None):
     try:
         enc.apply_config(enc.load_config())
-        s = enc.scan(enc.load_state(), only=only, force=force)
-        SCAN.update(error=None, summary=f"{SCAN['label']}: {s['videos_total']:,} videos in the library, "
-                                        f"{s['already_h265']:,} already optimized, {len(s['offer']):,} offered")
+        s = enc.scan(enc.load_state(), only=only, force=force, path=path)
+        if path:
+            SCAN.update(error=None, summary=f"{SCAN['label']}: {path_summary(path)}")
+        else:
+            SCAN.update(error=None, summary=f"{SCAN['label']}: {s['videos_total']:,} videos in the library, "
+                                            f"{s['already_h265']:,} already optimized, {len(s['offer']):,} offered")
     except SystemExit as e:
         SCAN.update(error=str(e), summary=None)
     except Exception as e:                      # show errors in the UI instead of swallowing them
@@ -620,16 +638,40 @@ def start_scan():
     if g.config_error:
         flash(g.config_error, "error")
         return redirect(url_for("settings", section="library"))
-    prefix, _, mode = request.form.get("share", "").partition(":")
-    if prefix and prefix not in enc.ROOT_CANDIDATES:
-        abort(400, "Unknown share.")
-    only, force = ([prefix] if prefix else None), mode == "force"
-    name = enc.SHARE_NAMES.get(prefix, prefix)
-    label = f"{'Full rescan' if force else 'Scan'} of {name}" if prefix else "Scan of all shares"
-    if not start_background_scan(label, only, force):
-        flash("A scan is already running.", "error")
+    path = request.form.get("path", "").strip().strip("/")
+    if path:                                    # one file or folder: re-read it with ffprobe
+        if path.split("/", 1)[0] not in enc.ROOT_CANDIDATES or ".." in path.split("/"):
+            abort(400, "Unknown file or folder.")
+        thread = start_background_scan(f"Check of {enc.short(path) if '/' in path else enc.SHARE_NAMES[path]}",
+                                       force=True, path=path)
     else:
-        flash(f"{label} started. Files are read with ffprobe, which can take a while"
+        prefix, _, mode = request.form.get("share", "").partition(":")
+        if prefix and prefix not in enc.ROOT_CANDIDATES:
+            abort(400, "Unknown share.")
+        only, force = ([prefix] if prefix else None), mode == "force"
+        name = enc.SHARE_NAMES.get(prefix, prefix)
+        label = f"{'Full rescan' if force else 'Scan'} of {name}" if prefix else "Scan of all shares"
+        thread = start_background_scan(label, only, force)
+    wants_json = request.accept_mimetypes.best == "application/json"
+    if thread is None:
+        if wants_json:
+            return {"done": False, "error": "A scan is already running. Try again when it's finished."}, 409
+        flash("A scan is already running.", "error")
+        return safe_next(url_for("status"))
+    if path:
+        thread.join(timeout=15)                 # small checks finish right away; show their result
+        if wants_json:
+            return {"done": not SCAN["running"], "message": SCAN["summary"] if not SCAN["running"] else
+                    f"{SCAN['label']} is still running (large folder) – see the Status page.",
+                    "error": SCAN["error"]}
+        if SCAN["running"]:
+            flash(f"{SCAN['label']} is still running – see the Status page.", "ok")
+        elif SCAN["error"]:
+            flash(SCAN["error"], "error")
+        else:
+            flash(SCAN["summary"], "ok")
+    else:
+        flash(f"{SCAN['label']} started. Files are read with ffprobe, which can take a while"
               + (" (about 0.1 s per file)." if force or prefix else "."), "ok")
     return safe_next(url_for("status"))
 

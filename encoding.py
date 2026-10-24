@@ -417,10 +417,14 @@ def load_files():
         return {r[0]: dict(zip(FILE_COLUMNS, r)) for r in rows}
 
 
-def save_files(infos, prefixes=None):
-    """Replace the inventory with infos; with prefixes, only the rows of those shares."""
+def save_files(infos, prefixes=None, path=None):
+    """Replace the inventory with infos; with prefixes, only the rows of those shares;
+    with path, only the rows of that file or folder."""
     with closing(connect()) as con, con:
-        if prefixes:
+        if path:
+            con.execute("DELETE FROM files WHERE key = ? OR (key >= ? AND key < ?)",
+                        (path, path + "/", path + "0"))
+        elif prefixes:
             for prefix in prefixes:
                 con.execute("DELETE FROM files WHERE key >= ? AND key < ?", (prefix + "/", prefix + "0"))
         else:
@@ -515,9 +519,14 @@ def encoded_stems(enc_dir):
 
 # ─── Scan ─────────────────────────────────────────────────────────────────────
 
-def walk_library(prefixes=None):
+def under(key, path):
+    """True if the key is the file `path` or lies in the folder `path`."""
+    return key == path or key.startswith(path + "/")
+
+
+def walk_library(prefixes=None, path=None):
     """Yields (key, relative_path, file_name, full_path) for every video (of the given
-    shares only, if prefixes is set)."""
+    shares only, if prefixes is set; only the file or folder `path`, a key, if set)."""
     missing = []
     for label, cands in ROOT_CANDIDATES.items():
         if prefixes and label not in prefixes:
@@ -526,7 +535,17 @@ def walk_library(prefixes=None):
         if root is None:
             missing.append(label)
             continue
-        for dirpath, dirnames, filenames in os.walk(root):
+        start = root
+        if path:
+            start = root / path.split("/", 1)[1] if "/" in path else root
+            if ".." in Path(path).parts or not start.resolve().is_relative_to(root.resolve()):
+                raise SystemExit(f"ERROR: {path} is outside the share.")
+            if start.is_file():                 # a single file
+                if not start.name.startswith(".") and start.suffix.lower() in VIDEO_EXTS:
+                    rel = str(start.relative_to(root))
+                    yield f"{label}/{rel}", rel, start.name, start
+                continue
+        for dirpath, dirnames, filenames in os.walk(start):   # nothing if the folder is gone
             dirnames[:] = [d for d in dirnames if not d.startswith(".")]
             for fn in filenames:
                 if fn.startswith("."):          # e.g. "._file.mkv" from the NAS
@@ -604,11 +623,14 @@ def inventory(entries, probe_files, force=False):
     return infos
 
 
-def scan(state, probe_files=True, only=None, force=False):
+def scan(state, probe_files=True, only=None, force=False, path=None):
     """Scan all shares, or only the shares whose prefixes are in `only` (the others keep
-    the data of their last scan). force re-reads every scanned file with ffprobe."""
+    the data of their last scan), or only one file or folder (`path`, a key such as
+    "share6/Show/Season 1"). force re-reads every scanned file with ffprobe."""
+    if path:
+        only = [path.split("/", 1)[0]]
     with scan_lock():
-        return _scan(state, probe_files, only, force)
+        return _scan(state, probe_files, only, force, path)
 
 
 def share_scans():
@@ -618,7 +640,7 @@ def share_scans():
             "SELECT key, value FROM meta WHERE key LIKE 'share_scan:%'")}
 
 
-def _scan(state, probe_files, only=None, force=False):
+def _scan(state, probe_files, only=None, force=False, path=None):
     enc_dir = first_existing(ENCODED_CANDIDATES)
     done_stems = encoded_stems(enc_dir)
     in_queue = set(queued_keys())
@@ -627,7 +649,7 @@ def _scan(state, probe_files, only=None, force=False):
     skipped = state["skipped"]
     known = set(state["known"])
 
-    entries = list(walk_library(only))
+    entries = list(walk_library(only, path))
     infos = inventory(entries, probe_files, force)
 
     offer, waiting, queued, bad, hid_skip, hid_base = [], [], [], [], [], []
@@ -663,11 +685,12 @@ def _scan(state, probe_files, only=None, force=False):
         else:
             offer.append(key)
             info["status"] = "offer"
-    save_files(infos, only)
-    scanned = only or list(ROOT_CANDIDATES)
-    with closing(connect()) as con, con:
-        con.executemany("INSERT OR REPLACE INTO meta VALUES (?, ?)",
-                        [(f"share_scan:{p}", now_str()) for p in scanned])
+    save_files(infos, only, path)
+    if not path:                                # a share counts as scanned only when scanned completely
+        scanned = only or list(ROOT_CANDIDATES)
+        with closing(connect()) as con, con:
+            con.executemany("INSERT OR REPLACE INTO meta VALUES (?, ?)",
+                            [(f"share_scan:{p}", now_str()) for p in scanned])
     if only:                                    # the list covers all shares: others from their last scan
         offer, waiting, queued, bad, hid_skip, hid_base = [], [], [], [], [], []
         n_total = n_encoded = 0
@@ -688,12 +711,14 @@ def _scan(state, probe_files, only=None, force=False):
         elif k not in known:
             flags[k] = "🆕"
 
-    # Forget skipped files that no longer exist (in the scanned shares)
+    # Forget skipped files that no longer exist (in the scanned shares, file or folder)
     state["skipped"] = {k: v for k, v in skipped.items()
-                        if k in all_unencoded or (only and k.split("/", 1)[0] not in only)}
+                        if k in all_unencoded or (only and k.split("/", 1)[0] not in only)
+                        or (path and not under(k, path))}
     state["known"] = sorted(known | set(offer))
     state["last_offer"] = offer
-    state["last_scan"] = now_str()
+    if not path:                                # a file/folder check doesn't reset the rescan timer
+        state["last_scan"] = now_str()
     save_state(state)
 
     summary = {

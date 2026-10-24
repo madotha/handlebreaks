@@ -62,7 +62,8 @@
         </select>
       </label>
       <button data-queue-button>Queue for encoding</button>
-      <span class="hint">Tick files, or a folder to select all {{ 'matching ' if filtered }}files in it. Folders load when opened.</span>
+      <span class="hint">Tick files, or a folder to select all {{ 'matching ' if filtered }}files in it. Folders load when opened. ↻ scans a file or folder again.</span>
+      <span class="scan-msg" data-scan-msg role="status" hidden></span>
     </div>
     <div class="tree">
       {% include "_level.html" %}

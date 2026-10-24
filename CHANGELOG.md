@@ -9,6 +9,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- ↻ button on every file and folder of the Files page: re-reads just that file or folder with ffprobe (new files are added, removed ones dropped) and shows the result right away without leaving the page; opened folders stay open. Also `scan(path=…)` in `encoding.py`. Such checks don't reset the automatic rescan timer.
 - Automatic rescan: `SCAN_INTERVAL` (minutes, default `0` = off; Settings → Scans) rescans all shares once the last scan is that old. It runs in the web UI process, and the Status page shows when the next one is due.
 - Live queue on the Status page: every queued entry with its state (waiting, encoding, done, failed, missing, already exists) and preset. Progress and counts update every 3 seconds without reloading the page, the list is paged (100 entries), filterable by state, and reloads when the next file starts or on "Refresh", so it stays fast with thousands of queued files.
 - Docker: `TZ` in `.env` sets the container's time zone (default UTC); the image now includes tzdata.
@@ -20,6 +21,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- `encode.sh` reported a file as done even if moving it out of `.inprogress/` failed (seen on a Synology NAS while its media indexer read the new file: "Operation not permitted"). The move is now retried up to 6 times, 10 s apart; if it still fails, the file is marked as failed and the encode stays in `.inprogress/`.
 - Preset check on macOS: presets with Apple's AAC encoder (`ca_aac`) were rejected by a native HandBrakeCLI, because the check always replaced `ca_aac` with `av_aac` (which only exists in other builds). The replacement now only applies where `ca_aac` itself isn't available.
 
 ## [3.0.0] - 2026-10-24
