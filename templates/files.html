@@ -72,6 +72,7 @@
              title="Sort by {{ label|lower }}: ascending → descending → off">{{ label }}{% if sort_links[field][1] %} {{ sort_links[field][1] }}{% endif %}</a>
         {% endfor %}
         <span class="muted small">{% if sort %}· folders follow size and status, files every column{% else %}· by name{% endif %}</span>
+        <button type="button" class="secondary collapse-all" data-collapse-all disabled>Collapse all</button>
       </nav>
       <span class="scan-msg" data-scan-msg role="status" hidden></span>
     </div>

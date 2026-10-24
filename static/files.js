@@ -212,6 +212,29 @@
     done: (btn) => rescan(btn.dataset.key.split("/").slice(0, -1).join("/"), btn.closest(".dir-body")),
   });
 
+  // "Collapse all": close every folder, forget them for reloads and drop their content
+  // (reopening is quick: loaded folders are kept in sessionStorage)
+  const collapseBtn = form.querySelector("[data-collapse-all]");
+  const syncCollapse = () => { collapseBtn.disabled = !form.querySelector("details.dir[open]"); };
+  form.addEventListener("toggle", syncCollapse, true);    // toggle doesn't bubble: capture it
+  syncCollapse();
+  collapseBtn.addEventListener("click", () => {
+    form.querySelectorAll("details.dir[open]").forEach((d) => {
+      if (!d.isConnected) return;                           // inside a share unloaded just before
+      d.open = false;
+      const body = d.querySelector(":scope > .dir-body");
+      // top level: unload the whole subtree, unless files in it are ticked (keep the selection)
+      if (!d.parentElement.closest("details.dir") && !body.querySelector("input:checked:not(:disabled)")) {
+        body.innerHTML = "";
+        delete body.dataset.loaded;
+      }
+    });
+    openSet.clear();
+    saveOpen();
+    update();
+    syncCollapse();
+  });
+
   form.addEventListener("change", update);
   form.addEventListener("submit", (e) => {
     const n = Number(button.dataset.count || 0);

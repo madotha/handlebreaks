@@ -191,6 +191,7 @@ button.secondary { background: var(--bg); color: var(--text); border: 1px solid 
 .action-bar .hint { margin: 0; }
 .sort-bar { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: .35rem;
   border-top: 1px solid var(--border); padding-top: .45rem; }
+.sort-bar .collapse-all { margin-left: auto; font-size: .8rem; padding: .25rem .7rem; }
 .sort-chip { font-size: .82rem; color: var(--text); text-decoration: none; padding: .2rem .6rem; border: 1px solid var(--border);
   border-radius: 99px; background: var(--surface); white-space: nowrap; }
 .sort-chip:hover { border-color: var(--accent); color: var(--accent); }

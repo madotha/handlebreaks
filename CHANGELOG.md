@@ -9,6 +9,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Collapse all** on the Files page (in the sticky sort bar): closes every open folder, forgets them for reloads and unloads their content; folders with ticked files inside stay loaded, so the selection is kept.
+
 - Housekeeping on the Status page: tick waiting queue entries and **Remove selected**, or **Remove all waiting**. Batches in `queue/` are rewritten; entries of the run in progress go to `cancelled.txt` (`batch<TAB>key`), show as "Removed" and are skipped by `encode.sh`, which deletes the file when the run ends. Removed files are offered again on the Files page. Also `encoding.remove_queued()`.
 - **Clear results history** on the Status page (with confirmation): forgets all encode results (database and `logs/results.tsv`) and deletes finished batch files (`done/`), logs of failed encodes and results of replace jobs. Also `encoding.clear_results()`.
 - `FFPROBE_WORKERS` (Settings → Scans): number of parallel ffprobe calls during scans; empty = number of CPUs (before: fixed 4).
