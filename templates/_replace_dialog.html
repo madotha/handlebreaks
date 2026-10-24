@@ -6,7 +6,7 @@
       <code data-r-original></code>.</p>
     <div class="field">
       <label for="r-name">New file name</label>
-      <div class="name-input"><input id="r-name" data-r-name required spellcheck="false" autocomplete="off"><span data-r-ext></span></div>
+      <div class="name-input"><textarea id="r-name" data-r-name rows="1" required spellcheck="false" autocomplete="off" autocapitalize="off"></textarea><span data-r-ext></span></div>
       <p class="hint" data-r-hint>Suggested from the original name, with its codec tag changed to the encode's codec
         (<a href="{{ url_for('settings', section='replace') }}">settings</a>). The extension follows the encoded container.
         With the same name, Plex analyzes the item again; with a new name, it scans the folder and picks up the new file.</p>

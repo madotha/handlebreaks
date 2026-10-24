@@ -2,6 +2,18 @@
 // whether to keep the original, then a replace job for the worker; waits for its result.
 // Buttons: <button data-replace data-key=… data-original=… data-encoded=…>.
 (function () {
+  // Name fields are textareas that grow with the name, so the whole name is always
+  // visible; they still act like one line (Enter submits, pasted line breaks are dropped).
+  window.nameField = function (field, onEnter) {
+    const fit = () => { field.style.height = "auto"; field.style.height = field.scrollHeight + 2 + "px"; };
+    field.addEventListener("input", () => {
+      if (/[\r\n]/.test(field.value)) field.value = field.value.replace(/[\r\n]+/g, "");
+      fit();
+    });
+    field.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); if (onEnter) onEnter(e); } });
+    return fit;
+  };
+
   const dialog = document.querySelector("[data-replace-dialog]");
   let current = null;                               // {btn, opts} of the open dialog
   const $ = (sel) => dialog.querySelector(sel);
@@ -18,6 +30,7 @@
     $("[data-r-keep]").checked = true;
     $("[data-r-error]").hidden = true;
     dialog.showModal();
+    fitName();
     suggest(btn, field);
   }
 
@@ -30,7 +43,7 @@
       if (!r.ok) return;
       const { name } = await r.json();
       const dot = name.lastIndexOf(".");
-      if (current && current.btn === btn && field.value === prefilled) field.value = name.slice(0, dot);
+      if (current && current.btn === btn && field.value === prefilled) { field.value = name.slice(0, dot); fitName(); }
     } catch (e) { /* keep the pre-filled name */ }
   }
 
@@ -77,4 +90,5 @@
     },
   };
   if (dialog) $("[data-r-ok]").addEventListener("click", submit);
+  const fitName = dialog ? window.nameField($("[data-r-name]"), () => $("[data-r-ok]").click()) : () => {};
 })();

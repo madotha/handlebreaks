@@ -13,11 +13,13 @@
     const dot = item.suggested.lastIndexOf(".");
     const tr = document.createElement("tr");
     tr.dataset.key = item.key;
-    tr.innerHTML = '<td class="name"></td><td><div class="name-input"><input required spellcheck="false" autocomplete="off">' +
+    tr.innerHTML = '<td class="name"></td><td><div class="name-input"><textarea rows="1" required spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>' +
       '<span></span></div><p class="small b-row-error" hidden></p></td>';
     tr.cells[0].textContent = item.short;
     tr.cells[0].title = item.key;
-    tr.querySelector("input").value = item.suggested.slice(0, dot);
+    const field = tr.querySelector("textarea");
+    field.value = item.suggested.slice(0, dot);
+    tr.fit = window.nameField(field, () => okBtn.click());
     tr.querySelector("span").textContent = item.suggested.slice(dot);
     return tr;
   }
@@ -52,6 +54,7 @@
     $("[data-b-summary]").textContent = text;
     res.items.forEach((item) => rows.append(row(item)));
     $(".bulk-list").hidden = !n;
+    [...rows.children].forEach((tr) => tr.fit());      // heights need the rows to be visible
     okBtn.disabled = !n;
   }
 
@@ -62,7 +65,7 @@
     const trs = [...rows.children];
     trs.forEach((tr) => {
       body.append("key", tr.dataset.key);
-      body.append("new_name", tr.querySelector("input").value.trim() + tr.querySelector("span").textContent);
+      body.append("new_name", tr.querySelector("textarea").value.trim() + tr.querySelector("span").textContent);
       tr.querySelector(".b-row-error").hidden = true;
     });
     if ($("[data-b-keep]").checked) body.append("keep_original", "1");

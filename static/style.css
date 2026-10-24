@@ -312,7 +312,7 @@ textarea.json { width: 100%; min-height: 28rem; font: .8rem/1.45 ui-monospace, S
 input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .85rem; }
 
 /* ─── Dialogs ──────────────────────────────────────────────────────────────── */
-.replace-dialog { border: 1px solid var(--border); border-radius: 14px; padding: 1.4rem 1.5rem; width: min(560px, 92vw); max-width: none;
+.replace-dialog { border: 1px solid var(--border); border-radius: 14px; padding: 1.4rem 1.5rem; width: min(680px, 92vw); max-width: none;
   background: var(--surface); color: var(--text); box-shadow: var(--shadow-pop); }
 .replace-dialog::backdrop { background: rgba(10, 10, 12, .55); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
 .replace-dialog h2 { margin: 0 0 .6rem; font-size: 1.15rem; }
@@ -323,11 +323,12 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
 .bulk-list { max-height: 52vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); margin: .6rem 0; }
 .bulk-list td { vertical-align: top; }
 .bulk-list td.name { max-width: 22rem; overflow-wrap: anywhere; font-size: .84rem; color: var(--muted); }
-.bulk-list .name-input input { min-width: 18rem; font-family: ui-monospace, monospace; font-size: .82rem; }
+.bulk-list .name-input textarea { min-width: 18rem; font-size: .84rem; }
 .b-row-error { color: var(--err); margin: .25rem 0 0; }
-.name-input { display: flex; align-items: center; gap: .35rem; }
-.name-input input { flex: 1; min-width: 0; }
-.name-input span { color: var(--muted); font-family: ui-monospace, monospace; font-size: .85rem; }
+.name-input { display: flex; align-items: flex-start; gap: .35rem; }
+.name-input textarea { flex: 1; min-width: 0; min-height: var(--control-h); padding: .45rem .7rem; resize: none; overflow: hidden;
+  font: .88rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.name-input span { color: var(--muted); font-family: ui-monospace, monospace; font-size: .85rem; padding-top: .55rem; }
 
 /* ─── Stats page: charts ───────────────────────────────────────────────────── */
 .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 1.25rem; }
@@ -477,6 +478,6 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
   /* Dialogs as bottom sheets */
   .replace-dialog { width: 100vw; max-width: 100vw; max-height: 92vh; margin: auto 0 0; border-radius: 16px 16px 0 0;
     padding: 1.1rem 1rem calc(1rem + env(safe-area-inset-bottom)); }
-  .bulk-list .name-input input { min-width: 12rem; }
+  .bulk-list .name-input textarea { min-width: 12rem; }
   .replace-dialog .row-actions button { flex: 1; }
 }
