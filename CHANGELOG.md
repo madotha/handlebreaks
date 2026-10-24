@@ -9,6 +9,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Docker: `WEB_BIND` in `.env` sets who can reach the web UI (default `127.0.0.1` = this machine only; `0.0.0.0` = the whole network, without a login).
+
 - Web UI on phones: bottom tab bar, compact two-line file rows (tap a name for bitrate, duration and date added), stacked queue and preset lists, settings sections as scrollable chips, dialogs as bottom sheets, no horizontal scrolling.
 - Theme toggle in the header: system, light or dark, remembered by the browser and applied before the first paint. A favicon (the logo mark).
 

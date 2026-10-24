@@ -113,7 +113,7 @@ Machine-specific settings live in **`config.env`** next to the scripts. It is gi
 | Automatic rescan, parallel ffprobe calls | `config.env` `SCAN_INTERVAL` (minutes, 0 = off), `FFPROBE_WORKERS` (empty = CPUs) |
 | Per-minute Obsidian status note during encoding | `config.env` `STATUS_NOTE_ENABLED` |
 | Encode inside the Docker container | `config.env` `WORKER_ENABLED`, overridden by env `WORKER_ENABLED` |
-| Data folder, DB file, web address | env `ENCODING_DATA_DIR`, `ENCODING_DB_FILE`, `WEB_HOST`, `WEB_PORT` |
+| Data folder, DB file, web address | env `ENCODING_DATA_DIR`, `ENCODING_DB_FILE`, `WEB_HOST`, `WEB_PORT`; Docker: `.env` `WEB_BIND` (host address of the port mapping, default `127.0.0.1`) and `WEB_PORT` |
 | Host folders mounted into Docker | `.env` (template `.env.example`): `HOST_MEDIA_DIR` (→ `/media`), `HOST_ENCODED_DIR`, `HOST_NOTE_DIR`, `HOST_APP_DIR` |
 | "Already H.265" detection (filename only, stream not probed) | `encoding.py` `HEVC_RE` |
 | Excluded release types | `encoding.py` `BAD_RELEASE_RE` |

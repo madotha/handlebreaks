@@ -230,6 +230,7 @@ open -e .env
 | `HOST_ENCODED_DIR` | Output folder | `/encoded` |
 | `HOST_NOTE_DIR` | Optional: Obsidian folder | `/notes` |
 | `WEB_PORT` | Optional: port on the Mac, default `7979` | `7979` |
+| `WEB_BIND` | Optional: who can reach the web UI. `127.0.0.1` (default) = only this Mac; `0.0.0.0` = every device in your network, at `http://<the Mac's IP>:7979` (plain http, not https). There is no login yet, see [Security](#security). | – |
 | `TZ` | Optional: time zone of the container, e.g. `Europe/Zurich` (default `UTC`). Affects logs and stored times; the web UI always shows times in your browser's time zone. | – |
 
 Shares inside `HOST_MEDIA_DIR` are available in the container as `/media/<folder>`. A share somewhere else (another volume) needs its own mount in a `docker-compose.override.yml` next to `docker-compose.yml` (Docker Compose reads it automatically; it's gitignored):
@@ -505,7 +506,7 @@ Two things to do by hand: run `encoding.py` once (or open the web UI) before the
 
 ## Security
 
-- The web UI has **no login** yet. It only listens on `127.0.0.1` (natively and through Docker's port mapping), so only the machine itself can reach it. Don't expose it on your network or the internet. If you need remote access, put it behind a reverse proxy with authentication, or use an SSH tunnel.
+- The web UI has **no login** yet. By default it only listens on `127.0.0.1` (natively and through Docker's port mapping), so only the machine itself can reach it. `WEB_BIND=0.0.0.0` in `.env` (Docker) or `webui.py --host 0.0.0.0` (native) opens it to your network; then anyone there can use it, so only do that on a trusted network. Never expose it to the internet: for remote access use a VPN such as Tailscale, a reverse proxy with authentication, or an SSH tunnel. It serves plain `http`; `https` needs a reverse proxy.
 - All forms are protected against cross-site requests (CSRF token per session).
 - `config.env` and `.env` contain your paths and, if set, the Plex token. Both are gitignored; keep them that way. The web UI never shows the token.
 - The tool never modifies originals unless you click **Replace…**, and even then it keeps the original by default (in `<output folder>/.replaced/`).

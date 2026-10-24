@@ -21,7 +21,7 @@ services:
     environment:
       TZ: ${TZ:-UTC}                           # local time for logs and stored times (the web UI shows your browser's time anyway)
     ports:
-      - "127.0.0.1:${WEB_PORT:-7979}:7979"     # local only, there is no login yet
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-7979}:7979"   # local only by default: there is no login yet
     volumes:
       - data:/data                             # config.env, encoding.db, queue/, logs/
       - ${HOST_MEDIA_DIR:?set HOST_MEDIA_DIR in .env}:/media:ro   # folder with your shares
