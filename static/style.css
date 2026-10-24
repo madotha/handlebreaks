@@ -85,8 +85,6 @@ td.nowrap { white-space: nowrap; }
 .tree .dirname { font-weight: 600; overflow-wrap: anywhere; }
 .tree .meta { color: var(--muted); font-size: .85rem; white-space: nowrap; }
 .dir-body { padding-left: 1rem; }
-/* Skip layout and painting of folder rows outside the viewport (big levels have hundreds) */
-.dir-body > details.dir:not([open]) { content-visibility: auto; contain-intrinsic-size: auto 2.6rem; }
 .more-dirs { margin: .4rem 0 .4rem .8rem; }
 
 .table-wrap { overflow-x: auto; }
