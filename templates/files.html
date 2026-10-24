@@ -44,10 +44,22 @@
       <option value="">All statuses</option>
       {% for s, label in status_labels.items() if statuses.get(s) %}<option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ label }} ({{ statuses[s]|count }})</option>{% endfor %}
     </select>
+    <select name="added" aria-label="Date added" data-added-select>
+      <option value="">Added: any time</option>
+      {% for key, (label, _) in added_ranges.items() %}<option value="{{ key }}" {% if key == added %}selected{% endif %}>Added: {{ label|lower if key != 'custom' else 'custom range…' }}</option>{% endfor %}
+    </select>
+    <span class="date-range" data-date-range {% if added != 'custom' %}hidden{% endif %}>
+      <input name="from" value="{{ date_from }}" placeholder="dd.mm.yyyy" aria-label="Added from (dd.mm.yyyy)" inputmode="numeric"
+             pattern="\d{1,2}\.\d{1,2}\.\d{4}" title="dd.mm.yyyy, e.g. 23.07.2026" size="10">
+      <span class="muted">to</span>
+      <input name="to" value="{{ date_to }}" placeholder="dd.mm.yyyy" aria-label="Added until (dd.mm.yyyy)" inputmode="numeric"
+             pattern="\d{1,2}\.\d{1,2}\.\d{4}" title="dd.mm.yyyy, e.g. 23.10.2026 (this day is included)" size="10">
+    </span>
     {% for k, v in sort.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}{# keep the column sort #}
     <button>Filter</button>
     {% if filtered or sort %}<a href="{{ url_for('files', sort='none') }}">Reset</a>{% endif %}
   </form>
+  {% if added_error %}<p class="flash error">{{ added_error }}</p>{% endif %}
   <p class="muted">{{ shown|count }} of {{ total|count }} files{% if filtered %} match{% endif %} · <span class="codec codec-good">optimized</span> <span class="codec codec-other">other codec</span></p>
 
   <form id="queue-form" method="post" action="{{ url_for('queue') }}" data-folder-url="{{ url_for('files_folder') }}" data-folder-query="{{ folder_query }}" data-version="{{ folder_version }}">
@@ -67,7 +79,7 @@
       <span class="hint">Tick files, or a folder to select all {{ 'matching ' if filtered }}files in it. Folders load when opened. ↻ scans a file or folder again (re-reads it with ffprobe). The bar shows optimized (green), other codecs (orange) and not probed (gray).</span>
       <nav class="sort-bar" aria-label="Sort the list">
         <span class="muted small">Sort by</span>
-        {% for field, label in [('name', 'File'), ('codec', 'Codec'), ('resolution', 'Resolution'), ('bitrate', 'Bitrate'), ('duration', 'Duration'), ('size', 'Size'), ('status', 'Status')] %}
+        {% for field, label in [('name', 'File'), ('codec', 'Codec'), ('resolution', 'Resolution'), ('bitrate', 'Bitrate'), ('duration', 'Duration'), ('size', 'Size'), ('added', 'Added'), ('status', 'Status')] %}
           <a class="sort-chip{{ ' active' if sort_links[field][1] }}" href="{{ sort_links[field][0] }}"
              aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(sort_links[field][1], 'none') }}"
              title="Sort by {{ label|lower }}: ascending → descending → off">{{ label }}{% if sort_links[field][1] %} {{ sort_links[field][1] }}{% endif %}</a>

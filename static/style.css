@@ -65,6 +65,9 @@ input, select { font: inherit; color: var(--text); background: var(--surface); b
 
 .filters { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: .25rem; }
 .filters input[type=search] { flex: 1 1 220px; }
+.date-range { display: inline-flex; align-items: center; gap: .35rem; }
+.date-range input { width: 7.5rem; }
+td.nowrap { white-space: nowrap; }
 .multi { position: relative; }
 .multi > summary { list-style: none; cursor: pointer; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: .45rem 1.8rem .45rem .6rem; white-space: nowrap; }
 .multi > summary::-webkit-details-marker { display: none; }

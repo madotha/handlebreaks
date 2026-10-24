@@ -25,7 +25,7 @@
 {% if files %}
   <div class="table-wrap files-level">
     <table>
-      <thead><tr><th class="sel"><span class="visually-hidden">Select</span></th><th class="sel"><span class="visually-hidden">Scan</span></th>{% for field, cls in [('name', ''), ('codec', ''), ('resolution', ''), ('bitrate', ''), ('duration', ''), ('size', 'num'), ('status', '')] %}<th class="{{ cls }}" aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(sort_links[field][1], 'none') }}"><a class="sort-link{{ ' active' if sort_links[field][1] }}" href="{{ sort_links[field][0] }}" title="Sort: ascending → descending → off">{{ {'name': 'File'}.get(field, field|capitalize) }}{% if sort_links[field][1] %} {{ sort_links[field][1] }}{% endif %}</a></th>{% endfor %}</tr></thead>
+      <thead><tr><th class="sel"><span class="visually-hidden">Select</span></th><th class="sel"><span class="visually-hidden">Scan</span></th>{% for field, cls in [('name', ''), ('codec', ''), ('resolution', ''), ('bitrate', ''), ('duration', ''), ('size', 'num'), ('added', ''), ('status', '')] %}<th class="{{ cls }}" aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(sort_links[field][1], 'none') }}"><a class="sort-link{{ ' active' if sort_links[field][1] }}" href="{{ sort_links[field][0] }}" title="Sort: ascending → descending → off">{{ {'name': 'File'}.get(field, field|capitalize) }}{% if sort_links[field][1] %} {{ sort_links[field][1] }}{% endif %}</a></th>{% endfor %}</tr></thead>
       <tbody>{% include "_file_rows.html" %}</tbody>
     </table>
     {% if more_url %}

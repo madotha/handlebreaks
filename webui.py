@@ -257,13 +257,21 @@ def sync_replaces():
         for f, job in jobs:
             folders.setdefault(job["key"].rsplit("/", 1)[0], []).append((f, job))
         for folder, items in folders.items():
-            if any(j.get("state") == "done" for _, j in items):
+            done = [j for _, j in items if j.get("state") == "done"]
+            if done:
+                with closing(db()) as con:      # the new file keeps the original's "date added"
+                    added = {j["key"]: con.execute("SELECT added FROM files WHERE key = ?", (j["key"],)).fetchone()
+                             for j in done}
                 try:
                     enc.scan(enc.load_state(), path=folder)
                 except SystemExit as e:
                     if "already running" in str(e):
                         return False
                     print(f"Replace sync of {folder}: {e}", file=sys.stderr)   # e.g. share offline
+                with closing(db()) as con, con:
+                    con.executemany("UPDATE files SET added = ? WHERE key = ?",
+                                    [(added[j["key"]][0], j["new_key"]) for j in done
+                                     if added.get(j["key"]) and added[j["key"]][0] and j.get("new_key")])
             for f, job in items:
                 enc.mark_replace_synced(f, job)
         return True
@@ -400,6 +408,17 @@ def localtime(value):
                                                           dt.strftime("%Y-%m-%d %H:%M"))
 
 
+@app.template_filter("added")
+def added_time(epoch):
+    """Date added (epoch seconds) as a <time> shown by static/time.js as dd.mm.yyyy hh:mm in
+    the viewer's time zone."""
+    if not epoch:
+        return "–"
+    dt = datetime.fromtimestamp(epoch).astimezone()
+    return Markup('<time datetime="{}" data-format="dmy">{}</time>').format(
+        dt.isoformat(timespec="minutes"), dt.strftime("%d.%m.%Y %H:%M"))
+
+
 @app.template_filter("count")
 def fmt_count(n):
     return f"{n:,}"
@@ -478,19 +497,74 @@ def codec_summary(selected):
     return f"{len(selected)} codecs"
 
 
+ADDED_RANGES = {"24h": ("Last 24 hours", 1), "7d": ("Last 7 days", 7), "30d": ("Last 30 days", 30),
+                "custom": ("Custom range", None)}
+
+
+def parse_dmy(text):
+    """dd.mm.yyyy -> datetime (midnight, server time), or None."""
+    try:
+        return datetime.strptime(text.strip(), "%d.%m.%Y")
+    except ValueError:
+        return None
+
+
 def file_filters(src):
     """Filter values from a request (query string or form). codec is a list: codec
-    names, "unknown" (not probed) and the groups in CODEC_GROUPS can be combined."""
+    names, "unknown" (not probed) and the groups in CODEC_GROUPS can be combined.
+    added is one of ADDED_RANGES; "custom" uses from/to (dd.mm.yyyy, either may be
+    empty); invalid dates are left out (see added_problem)."""
     filters = {k: src.get(k, "").strip() for k in ("q", "status") if src.get(k, "").strip()}
     codecs = [c.strip() for c in src.getlist("codec") if c.strip()]
     if codecs:
         filters["codec"] = codecs
+    added = src.get("added", "")
+    if added in ADDED_RANGES:
+        if added != "custom":
+            filters["added"] = added
+        else:
+            dates = {k: src.get(k, "").strip() for k in ("from", "to") if parse_dmy(src.get(k, ""))}
+            if dates:
+                filters.update(added="custom", **dates)
     return filters
+
+
+def added_problem(src):
+    """Message for an invalid custom date range, or None."""
+    if src.get("added") != "custom":
+        return None
+    bad = [src.get(k, "").strip() for k in ("from", "to") if src.get(k, "").strip() and not parse_dmy(src.get(k, ""))]
+    if bad:
+        return f"Not a date: {', '.join(bad)}. Use dd.mm.yyyy, e.g. 23.10.2026."
+    if not any(src.get(k, "").strip() for k in ("from", "to")):
+        return "Enter a start or end date (dd.mm.yyyy) for the custom range."
+    lo, hi = parse_dmy(src.get("from", "")), parse_dmy(src.get("to", ""))
+    if lo and hi and lo > hi:
+        return "The start date is after the end date."
+    return None
+
+
+def added_bounds(filters):
+    """(from, to) as epoch seconds for the date added filter (either may be None), or None."""
+    added = filters.get("added")
+    if added in ("24h", "7d", "30d"):
+        return time.time() - ADDED_RANGES[added][1] * 86400, None
+    if added == "custom":
+        lo, hi = parse_dmy(filters.get("from", "")), parse_dmy(filters.get("to", ""))
+        return (lo.timestamp() if lo else None,
+                (hi + timedelta(days=1)).timestamp() if hi else None)   # "to" includes that whole day
+    return None
 
 
 def filter_sql(filters, path=""):
     """WHERE clause and parameters for the filters, limited to the folder `path`."""
     where, params = [], []
+    bounds = added_bounds(filters)
+    if bounds:
+        for op, value in zip((">=", "<"), bounds):
+            if value is not None:
+                where.append(f"added {op} ?")
+                params.append(value)
     if filters.get("q"):
         where.append("instr(pylower(key), ?) > 0")
         params.append(filters["q"].lower())
@@ -543,11 +617,13 @@ SORT_FIELDS = {
     "bitrate":    ("Bitrate", lambda r: r["bitrate"]),
     "duration":   ("Duration", lambda r: r["duration"]),
     "size":       ("Size", lambda r: r["size"]),
+    "added":      ("Added", lambda r: r["added"]),
     "status":     ("Status", lambda r: list(enc.STATUS_LABELS).index(r["status"])
                    if r["status"] in enc.STATUS_LABELS else len(enc.STATUS_LABELS)),
 }
-# How folders are ordered for a field: by size, by optimized share, otherwise by name
-FOLDER_SORT = {"size": lambda f: f["size"], "status": lambda f: f["share"]}
+# How folders are ordered for a field: by size, by optimized share, by their newest file,
+# otherwise by name
+FOLDER_SORT = {"size": lambda f: f["size"], "status": lambda f: f["share"], "added": lambda f: f["added"]}
 
 
 def sort_args(src, fields=None):
@@ -598,16 +674,17 @@ def tree_level(path, filters, queued, offset=0, sort=None):
             con.execute("CREATE TEMP TABLE q (key TEXT PRIMARY KEY)")
             con.executemany("INSERT OR IGNORE INTO q VALUES (?)", [(k,) for k in queued])
             q_sum = "SUM(key IN (SELECT key FROM q))"
-        for head, count, size, optimized, unknown, in_queue in con.execute(
+        for head, count, size, optimized, unknown, in_queue, added in con.execute(
                 f"SELECT substr(key, ?, instr(substr(key, ?), '/') - 1), COUNT(*), COALESCE(SUM(size), 0), "
-                f"SUM(status = 'h265'), SUM(status != 'h265' AND video_codec IS NULL), {q_sum} "
+                f"SUM(status = 'h265'), SUM(status != 'h265' AND video_codec IS NULL), {q_sum}, MAX(added) "
                 f"FROM files{where}instr(substr(key, ?), '/') > 0 GROUP BY 1", [start, start] + params + [start]):
             folders[head] = {"name": head, "path": f"{path}/{head}" if path else head, "count": count,
-                             "size": size, "optimized": optimized, "unknown": unknown, "selectable": count - in_queue}
+                             "size": size, "optimized": optimized, "unknown": unknown, "selectable": count - in_queue,
+                             "added": added}
         # Files directly in this folder, sorted (only their rows are loaded)
-        here = [dict(zip(("key", "size", "status", "video_codec", "bitrate", "duration", "width", "height"), r))
-                for r in con.execute(f"SELECT key, size, status, video_codec, bitrate, duration, width, height "
-                                     f"FROM files{where}instr(substr(key, ?), '/') = 0", params + [start])]
+        cols = ("key", "size", "status", "video_codec", "bitrate", "duration", "width", "height", "added")
+        here = [dict(zip(cols, r)) for r in con.execute(
+            f"SELECT {', '.join(cols)} FROM files{where}instr(substr(key, ?), '/') = 0", params + [start])]
         keys = [r["key"] for r in sort_rows(here, SORT_FIELDS[sort["sort"]][1], sort["dir"] == "desc",
                                              tiebreak=SORT_FIELDS["name"][1])]
         page = keys[offset:offset + PAGE_SIZE]
@@ -723,6 +800,9 @@ def files():
         optimized_share=opt_size / total_size * 100 if total_size else 0, codecs=codecs,
         statuses=statuses, q=filters.get("q", ""), codec=filters.get("codec", []),
         status=filters.get("status", ""), filtered=bool(filters),
+        added=filters.get("added", request.args.get("added", "") if request.args.get("added") in ADDED_RANGES else ""),
+        date_from=request.args.get("from", "").strip(), date_to=request.args.get("to", "").strip(),
+        added_ranges=ADDED_RANGES, added_error=added_problem(request.args),
         codec_groups=[(k, label, sum(n for c, n in codecs if codec_class(c) == k.split(":")[1]))
                       for k, label in CODEC_GROUPS.items()],
         codec_summary=codec_summary(filters.get("codec", [])),

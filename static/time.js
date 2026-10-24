@@ -8,10 +8,16 @@
     if (isNaN(d)) return iso;
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
+  const formatDmy = function (iso) {             // dd.mm.yyyy hh:mm (date added on the Files page)
+    const d = new Date(iso);
+    if (isNaN(d)) return iso;
+    return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
   window.localizeTimes = function (root) {
     const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     (root || document).querySelectorAll("time[datetime]").forEach((t) => {
-      t.textContent = window.formatLocalTime(t.getAttribute("datetime"));
+      const iso = t.getAttribute("datetime");
+      t.textContent = t.dataset.format === "dmy" ? formatDmy(iso) : window.formatLocalTime(iso);
       t.title = `Your time zone (${zone})`;
     });
   };

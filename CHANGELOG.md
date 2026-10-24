@@ -9,6 +9,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Files page: **Date added** filter (last 24 hours, last 7 days, last 30 days, or a custom range with dd.mm.yyyy dates; the end date is included) and an **Added** column (dd.mm.yyyy hh:mm in the browser's time zone), also as a sort field (folders by their newest file). "Date added" is when a scan first found the file: new column `files.added`, filled once from the file's modification date for files already in the database, and from the file date on a share's first scan. After **Replace…** the new file keeps the original's date (files replaced before this version show their replace date).
+
 - Bulk replace: **Replace selected…** on the Files page (ticked files and folders) and **Replace all finished…** on the Status page open a list of every file with a finished encode, each with its suggested name to edit, and replace them in one go. All names are checked first (nothing starts if one is invalid or two collide). The worker moves all files of a run first and then refreshes Plex once per folder instead of once per file.
 
 - **Replace…** suggests a new file name: the original name with its codec tag (`h264`, `x264`, `H.264`, `AVC`, `XviD` …) changed to the encode's codec, read with ffprobe (`…h264-NTB.mkv` → `…x265-NTB.mkv`); names without a codec tag get it before the release group. New settings (Settings → Replace): `RENAME_CODEC_TAGS` (tag per codec, default `hevc=x265 av1=AV1 vvc=VVC h264=x264`) and `RENAME_GROUP` (optional own release group replacing the original one). The name can still be edited before replacing.

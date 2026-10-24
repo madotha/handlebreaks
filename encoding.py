@@ -344,7 +344,8 @@ CREATE TABLE IF NOT EXISTS results  (at TEXT, status TEXT, key TEXT, PRIMARY KEY
 CREATE TABLE IF NOT EXISTS files (                              -- inventory from the last scan
     key TEXT PRIMARY KEY, size INTEGER, mtime REAL,
     video_codec TEXT, width INTEGER, height INTEGER, duration REAL, bitrate INTEGER,
-    probed_at TEXT, probe_error TEXT, status TEXT
+    probed_at TEXT, probe_error TEXT, status TEXT,
+    added REAL                                                    -- first seen (epoch), see inventory()
 );
 -- narrow index for the counts of the web UI (totals, statuses, codecs, sizes, bitrates)
 CREATE INDEX IF NOT EXISTS files_stats ON files (status, video_codec, size, bitrate);
@@ -356,8 +357,24 @@ def connect():
     con = sqlite3.connect(DB_FILE, timeout=30)
     con.execute("PRAGMA journal_mode=WAL")
     con.executescript(SCHEMA)
+    migrate_added(con)
     migrate_state_json(con)
     return con
+
+
+_ADDED_READY = set()                            # DB files already checked for the "added" column
+
+
+def migrate_added(con):
+    """Add files.added to a database from before it existed, filled from the file date."""
+    if str(DB_FILE) in _ADDED_READY:
+        return
+    if "added" not in {r[1] for r in con.execute("PRAGMA table_info(files)")}:
+        with con:
+            con.execute("ALTER TABLE files ADD COLUMN added REAL")
+            con.execute("UPDATE files SET added = mtime WHERE added IS NULL")
+    con.execute("CREATE INDEX IF NOT EXISTS files_added ON files (added)")
+    _ADDED_READY.add(str(DB_FILE))
 
 
 def migrate_state_json(con):
@@ -447,7 +464,7 @@ def save_state(state):
 
 
 FILE_COLUMNS = ("key", "size", "mtime", "video_codec", "width", "height", "duration",
-                "bitrate", "probed_at", "probe_error", "status")
+                "bitrate", "probed_at", "probe_error", "status", "added")
 
 
 def load_files():
@@ -903,19 +920,24 @@ def probe(path):
     return info
 
 
-def inventory(entries, probe_files, force=False):
+def inventory(entries, probe_files, force=False, first_scan=()):
     """Size, modification time and (if wanted) ffprobe data per file.
     ffprobe only runs for new or changed files (all files with force); the rest comes
-    from the database."""
+    from the database. "added" is when a file was first seen: kept from the database,
+    the scan time for a new file, or its modification date on the first scan of its
+    share (prefix in first_scan), when "now" would say nothing."""
     cached = load_files()
+    now = time.time()
     infos, todo = {}, []
     for key, _, _, full in entries:
         try:
             st = full.stat()
         except OSError:
             continue
-        info = {"key": key, "size": st.st_size, "mtime": st.st_mtime}
         old = cached.get(key)
+        added = old["added"] if old and old["added"] else \
+            min(st.st_mtime, now) if key.split("/", 1)[0] in first_scan else now
+        info = {"key": key, "size": st.st_size, "mtime": st.st_mtime, "added": added}
         if not force and old and old["size"] == st.st_size and old["mtime"] == st.st_mtime and old["probed_at"]:
             info.update({c: old[c] for c in ("video_codec", "width", "height", "duration",
                                               "bitrate", "probed_at", "probe_error")})
@@ -961,7 +983,9 @@ def _scan(state, probe_files, only=None, force=False, path=None):
     known = set(state["known"])
 
     entries = list(walk_library(only, path))
-    infos = inventory(entries, probe_files, force)
+    scanned_before = share_scans()
+    infos = inventory(entries, probe_files, force,
+                      first_scan={p for p in ROOT_CANDIDATES if p not in scanned_before})
 
     offer, waiting, queued, bad, hid_skip, hid_base = [], [], [], [], [], []
     n_total = n_encoded = 0

@@ -2,6 +2,14 @@
 // long file lists, and selection for queueing. A ticked folder is sent as a whole
 // (the server expands it), so files inside it don't need to be loaded.
 (function () {
+  // "Added: custom range…" shows the two date fields
+  const addedSelect = document.querySelector("[data-added-select]");
+  if (addedSelect) {
+    addedSelect.addEventListener("change", () => {
+      document.querySelector("[data-date-range]").hidden = addedSelect.value !== "custom";
+    });
+  }
+
   const form = document.getElementById("queue-form");
   if (!form) return;
   const count = form.querySelector("[data-selected-count]");
@@ -71,6 +79,7 @@
     const cached = fresh ? null : cacheGet(url);
     if (cached !== null) {
       body.innerHTML = cached;
+      if (window.localizeTimes) window.localizeTimes(body);
     } else {
       body.innerHTML = '<p class="muted small loading">Loading…</p>';
       try {
@@ -78,6 +87,7 @@
         if (!r.ok) throw new Error(r.status);
         const html = await r.text();
         body.innerHTML = html;
+        if (window.localizeTimes) window.localizeTimes(body);
         if (!fresh) cachePut(url, html);     // after a rescan the page's version is outdated
       } catch (e) {
         body.innerHTML = '<p class="flash error">Could not load this folder. Reload the page and try again.</p>';
@@ -99,6 +109,7 @@
     tmp.innerHTML = await r.text();
     const parent = toggleOf(btn.closest("details"));
     if (parent && parent.checked) cover(tmp, true);
+    if (window.localizeTimes) window.localizeTimes(tmp);
     tbody.append(...tmp.children);
     const next = r.headers.get("X-Next");
     if (next) {
