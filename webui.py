@@ -945,18 +945,6 @@ def nice_ceil(v):
     return next(m * exp for m in (1, 2, 2.5, 5, 10) if m * exp >= v)
 
 
-def resolution_class(w, h):
-    if not w or not h:
-        return "Unknown"
-    if w >= 3200 or h >= 1800:
-        return "2160p (4K)"
-    if w >= 1800 or h >= 1000:
-        return "1080p"
-    if w >= 1200 or h >= 700:
-        return "720p"
-    return "SD"
-
-
 def chart(title, subtitle, kind, unit, series, rows):
     """rows: [(label, {series_key: value})]. Adds widths and display values for the template.
     kind: bars (horizontal) or columns (vertical); unit: count or size."""
