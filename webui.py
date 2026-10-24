@@ -395,6 +395,7 @@ def index():
 # all: it shows the top folders, and each folder's content is fetched when opened.
 
 PAGE_SIZE = 200                                 # files per "Show more" step
+STARTED = time.time()                           # part of the folder cache version: a restart or update clears it
 FOLDER_PAGE = 100                               # subfolders per "Show more folders" step
 AUTO_OPEN = 300                                 # with a filter, open folders with up to this many matches
 
@@ -661,7 +662,7 @@ def files():
     queued = set(enc.queued_keys())
     # Folder contents only change with the database or the queue: the browser keeps loaded
     # folders for this version (files.js), so reopening them after a reload needs no request
-    version = hashlib.sha1(repr((enc.db_version(), sorted(queued))).encode()).hexdigest()[:12]
+    version = hashlib.sha1(repr((STARTED, enc.db_version(), sorted(queued))).encode()).hexdigest()[:12]
     if filters:
         level = level_context("", filters, queued, sort=sort)
     else:                                       # the unfiltered top level is the same until data changes
