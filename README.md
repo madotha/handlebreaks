@@ -1,6 +1,10 @@
 # Plex Encoding Automation (H.264 → H.265)
 
-Semi-automatic conversion of movies and TV episodes in a Plex library from H.264 (and other older codecs) to H.265/HEVC with HandBrakeCLI. You decide which files get encoded; the tool finds candidates, queues them, encodes them in the background and never touches the originals.
+Semi-automatic conversion of movies and TV episodes in a Plex library from H.264 (and other older codecs) to H.265/HEVC with HandBrakeCLI. You decide which files get encoded; the tool finds candidates, queues them, encodes them in the background, and only replaces an original when you say so (keeping it as a backup by default).
+
+![Files page: the library as a folder tree with the optimized share per folder, codec, resolution, bitrate and status per file, and files selected for queueing](docs/screenshot-files.png)
+
+*The Files page (demo data).*
 
 ## Contents
 
