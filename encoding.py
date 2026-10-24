@@ -617,6 +617,51 @@ def encoded_files(enc_dir):
     return files
 
 
+# Codec tag in release names ("…WEB.h264-GROUP", "x264", "H.264", "AVC", "XviD" …), matched
+# as a separator-delimited token. suggest_name() replaces the last one with the encode's codec.
+OLD_CODEC_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:[xh]\.?26[45]|avc|hevc|xvid|divx|mpeg-?[24]|vc-?1|wmv[0-9]?|av1|vp9)(?![A-Za-z0-9])",
+    re.IGNORECASE)
+DEFAULT_CODEC_TAGS = {"hevc": "x265", "av1": "AV1", "vvc": "VVC", "h264": "x264"}
+GROUP_RE = re.compile(r"-[A-Za-z0-9]+(?=$|[\s.\[{(])")   # release group right after the codec tag
+# Release group at the end of a name, optionally followed by Plex tags: "…-LAMA {edition-Arabic}"
+END_GROUP_RE = re.compile(r"-[A-Za-z0-9]+(?=(?:\s*[\[{(][^\]})]*[\]})])*\s*$)")
+
+
+def codec_tags():
+    """ffprobe codec name -> tag in file names; RENAME_CODEC_TAGS ("hevc=x265 av1=AV1") overrides."""
+    tags = dict(DEFAULT_CODEC_TAGS)
+    for pair in str(CONFIG.get("RENAME_CODEC_TAGS", "")).split():
+        codec, _, tag = pair.partition("=")
+        if codec and tag:
+            tags[codec.lower()] = tag
+    return tags
+
+
+def suggest_name(original_name, encoded_name, codec=None):
+    """Suggested name for an encode replacing original_name: the last codec tag (h264,
+    x264, H.264, AVC, XviD …) becomes the tag of the encode's codec (codec_tags(); an
+    unknown codec counts as hevc), and with RENAME_GROUP set, the release group right
+    after it ("-NTB") becomes "-<RENAME_GROUP>". A name without a codec tag but with a
+    release group at the end gets the tag before the group ("WEBRip-LAMA" ->
+    "WEBRip.x265-LAMA"); other names stay as they are. The extension follows the encode."""
+    stem = Path(original_name).stem
+    ext = Path(encoded_name).suffix
+    m = None
+    for m in OLD_CODEC_RE.finditer(stem):
+        pass
+    tag = codec_tags().get((codec or "hevc").lower())
+    group = str(CONFIG.get("RENAME_GROUP", "")).strip().strip("-")
+    if m and tag:
+        rest = stem[m.end():]
+        if group and GROUP_RE.match(rest):
+            rest = GROUP_RE.sub("-" + group, rest, count=1)
+        stem = stem[:m.start()] + tag + rest
+    elif tag and (g := END_GROUP_RE.search(stem)):
+        stem = stem[:g.start()] + "." + tag + ("-" + group if group else g.group(0)) + stem[g.end():]
+    return stem + ext
+
+
 def check_new_name(new_name, encoded_name):
     """Problem with the chosen file name, or None. The extension must stay the encoded
     file's, because it matches its container."""

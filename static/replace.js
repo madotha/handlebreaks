@@ -12,11 +12,26 @@
     current = { btn, opts };
     $("[data-r-encoded]").textContent = encoded;
     $("[data-r-original]").textContent = btn.dataset.original;
-    $("[data-r-name]").value = encoded.slice(0, dot);
+    const field = $("[data-r-name]");
+    field.value = encoded.slice(0, dot);
     $("[data-r-ext]").textContent = encoded.slice(dot);
     $("[data-r-keep]").checked = true;
     $("[data-r-error]").hidden = true;
     dialog.showModal();
+    suggest(btn, field);
+  }
+
+  // Replace the pre-filled name with the server's suggestion (codec tag of the encode),
+  // unless the name was edited in the meantime
+  async function suggest(btn, field) {
+    const prefilled = field.value;
+    try {
+      const r = await fetch(`${dialog.dataset.suggestUrl}?key=${encodeURIComponent(btn.dataset.key)}`);
+      if (!r.ok) return;
+      const { name } = await r.json();
+      const dot = name.lastIndexOf(".");
+      if (current && current.btn === btn && field.value === prefilled) field.value = name.slice(0, dot);
+    } catch (e) { /* keep the pre-filled name */ }
   }
 
   async function submit(e) {

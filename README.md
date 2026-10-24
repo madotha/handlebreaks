@@ -348,6 +348,8 @@ All machine-specific settings live in `config.env` in the data folder. It is cre
 | `FFPROBE_WORKERS` | How many files ffprobe reads at the same time during scans. Empty (default) = number of CPUs. Lower it if the NAS struggles during scans. |
 | `SCAN_INTERVAL` | Automatic rescan of all shares, in **minutes**: a scan starts once the last scan is that old. `0` (default) = off. See [Automatic rescan](#automatic-rescan). |
 | `WORKER_ENABLED` | Docker only: `1` encodes in the container, `0` only runs web UI and scans |
+| `RENAME_CODEC_TAGS` | Tag per codec for the name suggested by **Replace…**, as `codec=tag` pairs. Empty = `hevc=x265 av1=AV1 vvc=VVC h264=x264`. |
+| `RENAME_GROUP` | Optional: your release group, replacing the original one after the codec tag in the suggested name (e.g. `donm`). Empty = keep it. |
 | `PLEX_URL`, `PLEX_TOKEN` | Optional: Plex server address(es) and token, so Plex is refreshed after **Replace…**. See [Connecting Plex](#connecting-plex). |
 
 Write values in double quotes and use `"$HOME"` rather than `~`. A folder setting can list several paths separated by `:`, and the first one that exists is used. That way one `config.env` works on the Mac and in the container.
@@ -402,7 +404,7 @@ Presets are stored as HandBrake export files in `presets/` in the data folder, n
 
 Finished encodes wait in the output folder for your review. When you're happy with one, click **Replace…** next to the original on the **Files** page, or next to the finished entry on the **Status** page (in the queue and in "Latest results"; entries already replaced show "Replaced"):
 
-1. Choose the file name. It's pre-filled with the encode's name (the original name; the extension follows the encoded container, e.g. `.mp4` → `.mkv`). Keeping the original name is best for Plex.
+1. Choose the file name. It's pre-filled with a suggestion: the original name with its codec tag (`h264`, `x264`, `H.264`, `AVC`, `XviD` …) changed to the encode's codec, e.g. `…WEB.h264-NTB.mkv` → `…WEB.x265-NTB.mkv`. Names without a codec tag get it before the release group (`…WEBRip-LAMA` → `…WEBRip.x265-LAMA`); others keep their name. With `RENAME_GROUP` set, the release group is replaced with yours. The extension follows the encoded container (e.g. `.mp4` → `.mkv`). Edit the name as you like; with the same name Plex analyzes the item again, with a new name it scans the folder.
 2. Choose whether to keep the original in `<output folder>/.replaced/` (default, same folder structure as in the share) or delete it.
 3. **Move and replace**: the encode is moved into the original's folder under the chosen name, and the original is moved away or deleted. The page shows the result. The replace is a job on the server: it finishes even if you reload or leave the page (the file shows **Replacing…** until then), and the web UI checks the folder afterwards on its own, so the list shows the new file either way.
 

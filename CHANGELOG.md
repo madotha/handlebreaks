@@ -9,6 +9,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Replace…** suggests a new file name: the original name with its codec tag (`h264`, `x264`, `H.264`, `AVC`, `XviD` …) changed to the encode's codec, read with ffprobe (`…h264-NTB.mkv` → `…x265-NTB.mkv`); names without a codec tag get it before the release group. New settings (Settings → Replace): `RENAME_CODEC_TAGS` (tag per codec, default `hevc=x265 av1=AV1 vvc=VVC h264=x264`) and `RENAME_GROUP` (optional own release group replacing the original one). The name can still be edited before replacing.
+
 - Stop the running encode from the Status page: **Stop, continue with next** ends the current file (the partial file is deleted, the result is `STOPPED`) and goes on with the queue; **Stop all** also puts the rest of the run back into the queue and pauses it until **Resume** (replace jobs keep running while paused). The worker checks for a stop request (`stop.txt`) every 5 seconds; the pause is the file `paused` in the data folder. A stopped file is offered again and can be queued later. The buttons only appear when the running worker supports stopping (it marks its lock with `.lock/stoppable`); a worker started by an older version shows a note instead, until its run is over.
 
 - **Collapse all** on the Files page (in the sticky sort bar): closes every open folder, forgets them for reloads and unloads their content; folders with ticked files inside stay loaded, so the selection is kept.

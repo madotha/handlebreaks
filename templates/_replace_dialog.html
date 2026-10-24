@@ -1,5 +1,5 @@
 {# Dialog of the "Replace…" buttons (static/replace.js), used on the Files and Status pages. #}
-<dialog class="replace-dialog" data-replace-dialog data-url="{{ url_for('replace') }}" data-csrf="{{ csrf_token() }}">
+<dialog class="replace-dialog" data-replace-dialog data-url="{{ url_for('replace') }}" data-suggest-url="{{ url_for('replace_suggest') }}" data-csrf="{{ csrf_token() }}">
   <form method="dialog" data-replace-form>
     <h2>Replace the original</h2>
     <p class="small">The finished encode <code data-r-encoded></code> is moved into the original's folder, in place of
@@ -7,7 +7,9 @@
     <div class="field">
       <label for="r-name">New file name</label>
       <div class="name-input"><input id="r-name" data-r-name required spellcheck="false" autocomplete="off"><span data-r-ext></span></div>
-      <p class="hint">Keep the original name so Plex keeps the item (afterwards run Analyze on it in Plex); the extension follows the encoded container.</p>
+      <p class="hint" data-r-hint>Suggested from the original name, with its codec tag changed to the encode's codec
+        (<a href="{{ url_for('settings', section='replace') }}">settings</a>). The extension follows the encoded container.
+        With the same name, Plex analyzes the item again; with a new name, it scans the folder and picks up the new file.</p>
     </div>
     <label class="check"><input type="checkbox" data-r-keep checked> Keep the original in <code>_plexEncoding/.replaced/</code> (recommended)</label>
     <p class="flash error" data-r-error hidden></p>

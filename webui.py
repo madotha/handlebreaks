@@ -87,6 +87,15 @@ SETTINGS = {
          f"How many files are read at the same time during scans. Empty or 0 = number of CPUs "
          f"({os.cpu_count()} here). Lower it if the NAS gets slow during scans."),
     ]),
+    "replace": ("Replace", [
+        ("RENAME_CODEC_TAGS", "Codec tags in file names", "text",
+         "\"Replace…\" suggests the original name with its codec tag (h264, x264, H.264, AVC, XviD …) "
+         "replaced by the encode's codec. Format: codec=tag pairs, e.g. \"hevc=x265 av1=AV1\". "
+         "Empty = hevc=x265 av1=AV1 vvc=VVC h264=x264."),
+        ("RENAME_GROUP", "Your release group", "text",
+         "Optional. Replaces the release group after the codec tag, e.g. \"donm\": "
+         "\"…h264-NTB.mkv\" becomes \"…x265-donm.mkv\". Empty = keep the original group."),
+    ]),
     "plex": ("Plex", [
         ("PLEX_URL", "Plex server URL", "text",
          "E.g. http://127.0.0.1:32400. Used after \"Replace…\" to make Plex analyze the item or scan its "
@@ -852,6 +861,18 @@ def live_status():
         "scan": dict({k: SCAN[k] for k in ("running", "label", "summary", "error")},
                      started=(to_datetime(SCAN["started"]) or datetime.now()).isoformat() if SCAN["started"] else None),
     }
+
+
+@app.route("/replace/suggest")
+def replace_suggest():
+    """Suggested file name for replacing key with its finished encode (codec read with ffprobe)."""
+    key = request.args.get("key", "")
+    enc_dir = enc.first_existing(enc.ENCODED_CANDIDATES)
+    encoded = enc.encoded_files(enc_dir).get(Path(key).stem.lower())
+    if not encoded:
+        return {"error": "No finished encode of this file in the output folder."}, 404
+    codec = enc.probe(enc_dir / encoded)["video_codec"] if enc.FFPROBE else None
+    return {"name": enc.suggest_name(key.rsplit("/", 1)[-1], encoded, codec), "codec": codec}
 
 
 @app.route("/replace", methods=["POST"])
