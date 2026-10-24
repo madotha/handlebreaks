@@ -62,7 +62,7 @@
 {% block content %}
 <div class="page-head">
   <h1>Stats</h1>
-  {% if last_scan %}<span class="muted">Last scan: {{ last_scan }}</span>{% endif %}
+  {% if last_scan %}<span class="muted">Last scan: {{ last_scan|localtime }}</span>{% endif %}
 </div>
 
 {% if not tiles %}

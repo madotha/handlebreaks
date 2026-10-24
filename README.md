@@ -164,6 +164,7 @@ open -e .env
 | `HOST_ENCODED_DIR` | Output folder | `/encoded` |
 | `HOST_NOTE_DIR` | Optional: Obsidian folder | `/notes` |
 | `WEB_PORT` | Optional: port on the Mac, default `7979` | `7979` |
+| `TZ` | Optional: time zone of the container, e.g. `Europe/Zurich` (default `UTC`). Affects logs and stored times; the web UI always shows times in your browser's time zone. | – |
 
 Shares inside `HOST_MEDIA_DIR` are available in the container as `/media/<folder>`. A share somewhere else (another volume) needs its own mount in a `docker-compose.override.yml` next to `docker-compose.yml` (Docker Compose reads it automatically; it's gitignored):
 
@@ -257,7 +258,7 @@ In Docker, prefix each command with `docker compose exec encoding`. The numbers 
 | Page | Content |
 |---|---|
 | **Files** | All scanned videos as a folder tree with codec, resolution, bitrate, duration, size and status. Folders load their content when opened, and long file lists show 200 files at a time (**Show more**), so the page stays fast with tens of thousands of files. Codecs are color coded: green for optimized codecs (H.265, AV1, H.266), orange for all others. Every folder shows how many of its files are already optimized, with a green/orange bar and a percentage badge (green when the whole folder is optimized). Totals and the optimized share at the top. Filters: text search, status, and a codec filter that combines any of the codecs found with the groups "All optimized codecs" and "All other codecs". With a filter active, small matching folders open automatically. Select files or whole folders (they don't need to be opened) and click **Queue for encoding**; a folder queues all its files that match the active filters. |
-| **Status** | Current encode with progress, the queue, the latest results and a scan button. Refreshes every 10 seconds. |
+| **Status** | Current encode with progress, fps and time left, and the queue with the state of every entry (waiting, encoding, done, failed, missing, already exists) and its preset. Progress and counts update live every 3 seconds without reloading; the list shows 100 entries at a time, can be filtered by state, and reloads when the next file starts or on **Refresh** — so it stays fast with thousands of queued files. Also the scan state, the automatic rescan schedule and the latest results. |
 | **Stats** | Key figures (optimized share, size still to optimize, median bitrates) and charts of the distribution by codec (count and storage), bitrate, file size, resolution, library folder and status. Every chart has a table view, and hovering a bar shows its values. |
 | **Settings** | The values from `config.env`, in separate sections (Library, Encoding, Obsidian, Worker). Each folder shows whether it exists. Changes apply immediately. |
 
@@ -278,9 +279,19 @@ All machine-specific settings live in `config.env` in the data folder. It is cre
 | `ENCODED_DIR` | Output folder for finished files, created if missing |
 | `NOTE_DIR` | Obsidian folder for "Encoding To-Do.md" and "Encoding Status.md". Leave empty to skip notes. |
 | `STATUS_NOTE_ENABLED` | `1` updates the status note every minute while encoding; `0` turns it off |
+| `SCAN_INTERVAL` | Automatic rescan of all shares, in **minutes**: a scan starts once the last scan is that old. `0` (default) = off. See [Automatic rescan](#automatic-rescan). |
 | `WORKER_ENABLED` | Docker only: `1` encodes in the container, `0` only runs web UI and scans |
 
 Write values in double quotes and use `"$HOME"` rather than `~`. A folder setting can list several paths separated by `:`, and the first one that exists is used. That way one `config.env` works on the Mac and in the container.
+
+### Automatic rescan
+
+Set `SCAN_INTERVAL` to a number of minutes (in the web UI under **Settings → Scans**, or in `config.env`) to rescan all shares automatically, e.g. `SCAN_INTERVAL=30` for every 30 minutes. `0` turns it off, which is the default.
+
+- The web UI checks once a minute whether the last scan (manual or automatic) is at least that old, and then starts a normal scan of all shares: only new or changed files are read with ffprobe. A rescan of an unchanged library mostly costs walking the folders (about 2–3 minutes for 70,000 files over NFS).
+- It runs inside the web UI process, so it works whenever the web UI runs: always in Docker, and natively when the web UI's launchd agent is installed. Without the web UI, schedule `python3 encoding.py scan` yourself (e.g. a launchd job with `StartInterval` or a cron job).
+- If a scan is already running, the automatic one waits for the next check. Changes to the interval apply within a minute, no restart needed.
+- The **Status** page shows when the next automatic scan is due.
 
 ### Shares
 

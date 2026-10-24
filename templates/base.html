@@ -17,7 +17,7 @@
       <a href="{{ url_for('presets_page') }}" {% if request.endpoint in ('presets_page', 'preset_edit') %}aria-current="page"{% endif %}>Presets</a>
       <a href="{{ url_for('settings_index') }}" {% if request.endpoint == 'settings' %}aria-current="page"{% endif %}>Settings</a>
     </nav>
-    {% if scan_state.running %}<span class="pill busy">Scan running since {{ scan_state.started[11:] }}</span>{% endif %}
+    {% if scan_state.running %}<span class="pill busy">Scan running since {{ scan_state.started|localtime }}</span>{% endif %}
   </header>
   <main>
     {% if config_error and request.endpoint != 'settings' %}
@@ -28,5 +28,6 @@
     {% endfor %}
     {% block content %}{% endblock %}
   </main>
+  <script src="{{ url_for('static', filename='time.js') }}"></script>
 </body>
 </html>

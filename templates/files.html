@@ -19,7 +19,7 @@
     <div class="card"><span class="label">Total size</span><span class="value">{{ total_size|size }}</span></div>
     <div class="card"><span class="label">Optimized share (by size)</span><span class="value">{{ '%.0f'|format(optimized_share) }} %</span>
       <span class="meter"><span class="viz-good" style="width: {{ '%.1f'|format(optimized_share) }}%"></span></span></div>
-    <div class="card"><span class="label">Last scan</span><span class="value small">{{ last_scan or '–' }}</span></div>
+    <div class="card"><span class="label">Last scan</span><span class="value small">{{ last_scan|localtime }}</span></div>
   </section>
   {% if unscanned %}<p class="flash info">Not scanned yet: {{ unscanned|join(', ') }}. Start their initial scan under <a href="{{ url_for('settings', section='library') }}">Settings → Library</a>, or scan all shares.</p>{% endif %}
   {% if not ffprobe %}<p class="flash info">ffprobe is not installed. Codec, resolution and bitrate stay empty until ffmpeg is installed.</p>{% endif %}

@@ -22,7 +22,7 @@
           {% set info = share_info.get(hint) %}
           {% if info %}
             <span class="share-scan">
-              <span class="muted small">{% if info.files %}{{ info.files|count }} file{{ '' if info.files == 1 else 's' }} · scanned {{ info.scanned or 'before 3.0' }}{% else %}not scanned yet{% endif %}</span>
+              <span class="muted small">{% if info.files %}{{ info.files|count }} file{{ '' if info.files == 1 else 's' }} · scanned {{ info.scanned|localtime if info.scanned else 'before 3.0' }}{% else %}not scanned yet{% endif %}</span>
               {% if info.files %}
                 <button class="secondary" formaction="{{ url_for('start_scan') }}" name="share" value="{{ hint }}:force"
                         title="Re-read every file of this share with ffprobe" {% if scan_state.running %}disabled{% endif %}
@@ -42,6 +42,9 @@
             {% if typ == 'share_preset' %}<option value="">Default preset ({{ default_preset }})</option>{% endif %}
             {% for pid, name in preset_list %}<option value="{{ pid }}" {% if cfg.get(key) == pid %}selected{% endif %}>{{ name }}</option>{% endfor %}
           </select>
+        {% elif typ == 'minutes' %}
+          <label for="{{ key }}">{{ label }} <code>{{ key }}</code></label>
+          <input id="{{ key }}" name="{{ key }}" type="number" min="0" step="1" value="{{ cfg.get(key) or '0' }}" class="short">
         {% elif typ == 'bool' %}
           <label class="check"><input type="checkbox" name="{{ key }}" value="1" {% if cfg.get(key) == '1' %}checked{% endif %}> {{ label }}</label>
         {% else %}

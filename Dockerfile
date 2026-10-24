@@ -4,7 +4,7 @@
 FROM python:3.13-slim-trixie
 
 RUN apt-get update \
- && apt-get install -y --no-install-recommends handbrake-cli ffmpeg zsh procps \
+ && apt-get install -y --no-install-recommends handbrake-cli ffmpeg zsh procps tzdata \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

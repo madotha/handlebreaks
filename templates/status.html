@@ -1,38 +1,66 @@
 {% extends "base.html" %}
-{% block head %}<meta http-equiv="refresh" content="10">{% endblock %}
 {% block title %}Status{% endblock %}
 {% block content %}
 <div class="page-head">
   <h1>Status</h1>
-  <form method="post" action="{{ url_for('start_scan') }}">
-    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <button {% if scan_state.running %}disabled{% endif %}>Scan now</button>
-  </form>
+  <div class="row-actions">
+    <label class="inline"><input type="checkbox" data-live checked> Live updates</label>
+    <button type="button" class="secondary" data-refresh>Refresh</button>
+    <form method="post" action="{{ url_for('start_scan') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <button {% if scan_state.running %}disabled{% endif %}>Scan now</button>
+    </form>
+  </div>
 </div>
 
-<section class="panel">
+<section class="panel" data-current-panel data-current-key="{{ cur.key if cur else '' }}">
   <h2>Encoding</h2>
-  {% if cur %}
-    <p><strong>File {{ cur.i }} of {{ cur.n }}:</strong> {{ short(cur.key) }}</p>
-    <span class="meter big"><span style="width: {{ cur.pct or 0 }}%"></span></span>
-    <p class="muted">{{ cur.pct or '0' }} % · {{ cur.fps or '–' }} fps · {{ cur.eta or '–' }} left</p>
-  {% else %}
-    <p>No encode running.</p>
-  {% endif %}
+  <div data-current {% if not cur %}hidden{% endif %}>
+    <p><strong>File <span data-cur-i>{{ cur.i if cur }}</span> of <span data-cur-n>{{ cur.n if cur }}</span>:</strong> <span data-cur-name>{{ short(cur.key) if cur }}</span></p>
+    <span class="meter big"><span data-cur-bar style="width: {{ (cur.pct if cur else 0) or 0 }}%"></span></span>
+    <p class="muted"><span data-cur-pct>{{ (cur.pct if cur else '0') or '0' }}</span> % · <span data-cur-fps>{{ (cur.fps if cur else '–') or '–' }}</span> fps · <span data-cur-eta>{{ (cur.eta if cur else '–') or '–' }}</span> left</p>
+  </div>
+  <p data-idle {% if cur %}hidden{% endif %}>No encode running.</p>
 </section>
 
 <section class="panel">
-  <h2>Queue ({{ queue|length }})</h2>
-  {% if queue %}
-    <ol class="plain">{% for k, preset in queue %}<li>{{ short(k) }}{% if preset %} <span class="muted small">· preset {{ preset }}</span>{% endif %}</li>{% endfor %}</ol>
-  {% else %}<p class="muted">Empty.</p>{% endif %}
+  <div class="page-head">
+    <h2>Queue</h2>
+    <form class="filters" method="get" data-queue-filter>
+      <select name="state" aria-label="Show">
+        <option value="">All ({{ q.total|count }})</option>
+        {% for key, label in [('encoding', 'Encoding'), ('waiting', 'Waiting'), ('done', 'Finished in this run')] %}
+          <option value="{{ key }}" {% if q.state == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <noscript><button>Show</button></noscript>
+    </form>
+  </div>
+  <p class="queue-counts">
+    <span class="qstate qstate-encoding"><span data-count="encoding">{{ q.counts.get('encoding', 0) }}</span> encoding</span>
+    <span class="qstate qstate-waiting"><span data-count="waiting">{{ q.counts.get('waiting', 0)|count }}</span> waiting</span>
+    <span class="qstate qstate-ok"><span data-count="OK">{{ q.counts.get('OK', 0)|count }}</span> done</span>
+    <span class="qstate qstate-fail"><span data-count="FAIL">{{ q.counts.get('FAIL', 0)|count }}</span> failed</span>
+    <span class="qstate qstate-missing"><span data-count="MISSING">{{ q.counts.get('MISSING', 0)|count }}</span> missing</span>
+    <span class="qstate qstate-exists"><span data-count="EXISTS">{{ q.counts.get('EXISTS', 0)|count }}</span> already exist</span>
+  </p>
+  <div class="table-wrap">
+    <table class="queue-table">
+      <thead><tr><th class="num">#</th><th>File</th><th>Preset</th><th>State</th></tr></thead>
+      <tbody data-queue-rows>{% with rows=q.rows, states=q.states %}{% include "_queue_rows.html" %}{% endwith %}</tbody>
+    </table>
+  </div>
+  <p class="muted small" data-queue-empty {% if q.rows %}hidden{% endif %}>Nothing queued.</p>
+  {% if q.more_url %}<button type="button" class="secondary" data-queue-more="{{ q.more_url }}">Show more</button>{% endif %}
+  <p class="hint">Finished entries stay in the list until the worker's current run is over. The list shows 100 entries at a time; progress and counts update every few seconds, the list whenever the next file starts.</p>
 </section>
 
 <section class="panel">
   <h2>Scan</h2>
-  <p>Last scan: {{ last_scan or '–' }}</p>
-  {% if scan_state.running %}<p>{{ scan_state.label }}: running since {{ scan_state.started }} …</p>{% endif %}
-  {% if scan_state.summary %}<p class="flash ok">Finished ({{ scan_state.finished }}): {{ scan_state.summary }}</p>{% endif %}
+  <p>Last scan: {{ last_scan|localtime }}</p>
+  <p class="muted">Automatic rescan: {% if auto_interval %}every {{ auto_interval }} min, next {{ 'now' if auto_next <= now() else 'at ' ~ auto_next|localtime }}{% else %}off{% endif %} · <a href="{{ url_for('settings', section='scans') }}">change</a></p>
+  <p data-scan-running {% if not scan_state.running %}hidden{% endif %}><span data-scan-label>{{ scan_state.label }}</span>: running since <span data-scan-started>{{ scan_state.started|localtime }}</span> …</p>
+  {% if scan_state.summary %}<p class="flash ok">Finished ({{ scan_state.finished|localtime }}): {{ scan_state.summary }}</p>{% endif %}
   {% if scan_state.error %}<p class="flash error">{{ scan_state.error }}</p>{% endif %}
 </section>
 
@@ -44,12 +72,12 @@
       <thead><tr><th>Time</th><th>Result</th><th>File</th></tr></thead>
       <tbody>
       {% for at, st, key in results %}
-        <tr><td>{{ at }}</td><td><span class="result result-{{ st|lower }}">{{ st }}</span></td><td class="name" title="{{ key }}">{{ short(key) }}</td></tr>
+        <tr><td>{{ at|localtime }}</td><td><span class="result result-{{ st|lower }}">{{ st }}</span></td><td class="name" title="{{ key }}">{{ short(key) }}</td></tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}<p class="muted">No results yet.</p>{% endif %}
 </section>
-<p class="muted small">Refreshes every 10 seconds.</p>
+<script src="{{ url_for('static', filename='status.js') }}" data-live-url="{{ url_for('status_live') }}" data-queue-url="{{ url_for('status_queue') }}"></script>
 {% endblock %}

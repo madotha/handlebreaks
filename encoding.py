@@ -784,6 +784,38 @@ def current_progress():
     return cur
 
 
+# State of a queued entry (queue_items) -> label; results of encode.sh map to the last four
+QUEUE_STATES = {"encoding": "Encoding", "waiting": "Waiting", "OK": "Done", "FAIL": "Failed",
+                "MISSING": "Missing in library", "EXISTS": "Output already exists"}
+
+
+def queue_items():
+    """Every entry of the current run and the queue, in the order encode.sh works through
+    them: [{"key", "preset", "state"}]. encode.sh takes all batches in processing/ when it
+    starts and numbers their entries (current.txt holds the number of the file being
+    encoded), so earlier entries are finished (state = their result), the current one is
+    "encoding" and the rest, plus everything still in queue/, is "waiting"."""
+    cur = current_progress()
+    current = int(cur["i"]) if cur and cur["i"].isdigit() else None
+    results = load_results() if current else {}
+    items = []
+    for d in (PROC_DIR, QUEUE_DIR):
+        for f in sorted(d.glob("*.txt")) if d.exists() else []:
+            for line in f.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                key, _, preset = line.partition("\t")
+                n = len(items) + 1
+                if d is PROC_DIR and current and n < current:
+                    state = results.get(key.strip(), ("OK",))[0]
+                elif d is PROC_DIR and current and n == current:
+                    state = "encoding"
+                else:
+                    state = "waiting"
+                items.append({"key": key.strip(), "preset": preset.strip(), "state": state})
+    return items
+
+
 def status_text():
     q = queued_keys()
     lines = []

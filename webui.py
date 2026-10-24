@@ -10,6 +10,9 @@ Files       All scanned videos as a folder tree with codec, resolution, bitrate,
             selected and queued for encoding.
 Status      Current encode, queue, latest results, start a scan.
 Stats       Distribution of codecs, bitrates, file sizes, resolutions and statuses.
+
+With SCAN_INTERVAL (minutes) set in config.env, the web UI also rescans all shares
+automatically once the last scan is that old (see auto_scan_loop).
 Settings    The values from config.env, editable in separate sections.
 
 There is no login yet. The web UI therefore listens on 127.0.0.1 by default.
@@ -30,11 +33,14 @@ import re
 import secrets
 import sys
 import threading
+import time
 from collections import Counter
+from datetime import datetime, timedelta
 from contextlib import closing
 from pathlib import Path
 
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, session, url_for
+from markupsafe import Markup
 
 import encoding as enc
 import presets
@@ -68,6 +74,11 @@ SETTINGS = {
     "notes": ("Obsidian", [
         ("NOTE_DIR", "Notes folder", "paths", "For \"Encoding To-Do.md\" and \"Encoding Status.md\". Empty = no notes."),
         ("STATUS_NOTE_ENABLED", "Update the status note every minute while encoding", "bool", ""),
+    ]),
+    "scans": ("Scans", [
+        ("SCAN_INTERVAL", "Automatic rescan interval (minutes)", "minutes",
+         "Rescans all shares when the last scan is this many minutes old; only new or changed "
+         "files are read with ffprobe. 0 = off. Runs while the web UI runs (always in Docker)."),
     ]),
     "worker": ("Worker", [
         ("WORKER_ENABLED", "Encode inside the Docker container", "bool",
@@ -137,6 +148,57 @@ SCAN = {"running": False, "started": None, "finished": None, "error": None, "sum
 SCAN_GUARD = threading.Lock()
 
 
+def start_background_scan(label, only=None, force=False):
+    """Start a scan in a background thread. Returns False if a scan is already running."""
+    with SCAN_GUARD:
+        if SCAN["running"]:
+            return False
+        SCAN.update(running=True, started=enc.now_str(), finished=None, error=None, summary=None, label=label)
+        threading.Thread(target=run_scan, args=(only, force), daemon=True).start()
+        return True
+
+
+def scan_interval(cfg):
+    """SCAN_INTERVAL in minutes; 0 (off) if missing or invalid."""
+    try:
+        return max(int(cfg.get("SCAN_INTERVAL") or 0), 0)
+    except ValueError:
+        return 0
+
+
+def next_auto_scan(cfg):
+    """When the next automatic scan is due (datetime), or None if it's off."""
+    minutes = scan_interval(cfg)
+    if not minutes:
+        return None
+    last = enc.load_state()["last_scan"]
+    try:
+        return datetime.strptime(last, "%Y-%m-%d %H:%M") + timedelta(minutes=minutes)
+    except (TypeError, ValueError):             # never scanned: due now
+        return datetime.now()
+
+
+def auto_scan_tick():
+    """One check of the automatic rescan: start a scan of all shares if one is due."""
+    cfg = enc.load_config()
+    enc.apply_config(cfg)
+    due = next_auto_scan(cfg)
+    if due and datetime.now() >= due:
+        start_background_scan(f"Automatic scan of all shares (every {scan_interval(cfg)} min)")
+
+
+def auto_scan_loop():
+    """Checks once a minute whether an automatic scan is due (SCAN_INTERVAL)."""
+    while True:
+        time.sleep(60)
+        try:
+            auto_scan_tick()
+        except SystemExit as e:                 # e.g. config.env incomplete: try again later
+            print(f"Automatic scan skipped: {e}", file=sys.stderr)
+        except Exception as e:                  # keep the loop alive
+            print(f"Automatic scan failed: {type(e).__name__}: {e}", file=sys.stderr)
+
+
 def run_scan(only=None, force=False):
     try:
         enc.apply_config(enc.load_config())
@@ -159,7 +221,7 @@ def csrf_token():
     return session["csrf"]
 
 
-app.jinja_env.globals.update(csrf_token=csrf_token, settings_sections=SETTINGS, scan_state=SCAN)
+app.jinja_env.globals.update(csrf_token=csrf_token, settings_sections=SETTINGS, scan_state=SCAN, now=datetime.now)
 
 
 @app.before_request
@@ -203,6 +265,27 @@ def codec_class(c):
     if not c or c == UNKNOWN_CODEC:
         return "unknown"
     return "good" if c in enc.OPTIMIZED_CODECS else "other"
+
+
+def to_datetime(value):
+    """Stored time ("YYYY-MM-DD HH:MM", in the server's local time) or datetime -> aware datetime."""
+    if isinstance(value, datetime):
+        return value.astimezone()
+    try:
+        return datetime.strptime(value, "%Y-%m-%d %H:%M").astimezone()
+    except (TypeError, ValueError):
+        return None
+
+
+@app.template_filter("localtime")
+def localtime(value):
+    """A <time> element with the UTC offset; static/time.js shows it in the viewer's time zone
+    (the server, e.g. a Docker container, may run in another zone such as UTC)."""
+    dt = to_datetime(value)
+    if dt is None:
+        return value or "–"
+    return Markup('<time datetime="{}">{}</time>').format(dt.isoformat(timespec="minutes"),
+                                                          dt.strftime("%Y-%m-%d %H:%M"))
 
 
 @app.template_filter("count")
@@ -466,16 +549,67 @@ def queue():
     return safe_next(url_for("files"))
 
 
+QUEUE_PAGE = 100                                # queue entries per page on the Status page
+
+
+def queue_view(state="", offset=0):
+    """Queue entries for the Status page: counts per state and one page of entries
+    (optionally only one state). Computed from the queue files on every call."""
+    items = enc.queue_items()
+    counts = Counter(i["state"] for i in items)
+    shown = [i for i in items if not state or i["state"] == state or
+             (state == "done" and i["state"] not in ("waiting", "encoding"))]
+    page = shown[offset:offset + QUEUE_PAGE]
+    names = {}
+    rows = []
+    for n, item in enumerate(page, offset + 1):
+        pid = item["preset"]
+        if pid and pid not in names:
+            names[pid] = presets.name_of(pid)
+        rows.append(dict(item, n=n, short=enc.short(item["key"]), preset_name=names.get(pid, "")))
+    nxt = offset + QUEUE_PAGE
+    return {"rows": rows, "counts": counts, "total": len(items), "shown_total": len(shown),
+            "more_url": url_for("status_queue", state=state, offset=nxt) if nxt < len(shown) else None,
+            "states": enc.QUEUE_STATES, "state": state}
+
+
+def live_status():
+    """Small snapshot for the Status page's live updates."""
+    cur = enc.current_progress()
+    view_counts = Counter(i["state"] for i in enc.queue_items())
+    return {
+        "current": dict(cur, short=enc.short(cur["key"])) if cur else None,
+        "counts": dict(view_counts),
+        "scan": dict({k: SCAN[k] for k in ("running", "label", "summary", "error")},
+                     started=(to_datetime(SCAN["started"]) or datetime.now()).isoformat() if SCAN["started"] else None),
+    }
+
+
 @app.route("/status")
 def status():
-    cur = enc.current_progress()
-    entries = enc.queued_entries()
-    keys = [k for k, _ in entries]
-    if cur and cur["key"] in keys:
-        entries = entries[keys.index(cur["key"]) + 1:]
-    queue = [(k, presets.name_of(pid) if pid else "") for k, pid in entries]
-    return render_template("status.html", cur=cur, queue=queue, results=enc.recent_results(20),
-                           short=enc.short, last_scan=enc.load_state()["last_scan"])
+    cfg = enc.parse_config(enc.CONFIG_FILE) if enc.CONFIG_FILE.exists() else {}
+    state = request.args.get("state", "")
+    return render_template("status.html", cur=enc.current_progress(), q=queue_view(state),
+                           results=enc.recent_results(20), auto_interval=scan_interval(cfg),
+                           auto_next=next_auto_scan(cfg), short=enc.short,
+                           last_scan=enc.load_state()["last_scan"])
+
+
+@app.route("/status/live")
+def status_live():
+    return live_status()
+
+
+@app.route("/status/queue")
+def status_queue():
+    """One page of queue rows (for "Show more", the state filter and refreshing)."""
+    state = request.args.get("state", "")
+    offset = max(int(request.args.get("offset", 0) or 0), 0)
+    view = queue_view(state, offset)
+    resp = app.make_response(render_template("_queue_rows.html", **view))
+    resp.headers["X-Next"] = view["more_url"] or ""
+    resp.headers["X-Shown-Total"] = str(view["shown_total"])
+    return resp
 
 
 @app.route("/scan", methods=["POST"])
@@ -492,14 +626,11 @@ def start_scan():
     only, force = ([prefix] if prefix else None), mode == "force"
     name = enc.SHARE_NAMES.get(prefix, prefix)
     label = f"{'Full rescan' if force else 'Scan'} of {name}" if prefix else "Scan of all shares"
-    with SCAN_GUARD:
-        if SCAN["running"]:
-            flash("A scan is already running.", "error")
-        else:
-            SCAN.update(running=True, started=enc.now_str(), finished=None, error=None, summary=None, label=label)
-            threading.Thread(target=run_scan, args=(only, force), daemon=True).start()
-            flash(f"{label} started. Files are read with ffprobe, which can take a while"
-                  + (" (about 0.1 s per file)." if force or prefix else "."), "ok")
+    if not start_background_scan(label, only, force):
+        flash("A scan is already running.", "error")
+    else:
+        flash(f"{label} started. Files are read with ffprobe, which can take a while"
+              + (" (about 0.1 s per file)." if force or prefix else "."), "ok")
     return safe_next(url_for("status"))
 
 
@@ -782,6 +913,10 @@ def settings(section):
                 errors[key] = "Choose a preset."
             elif key == "ENCODED_DIR" and not val:
                 errors[key] = "This folder is required."
+            elif typ == "minutes" and not re.fullmatch(r"\d{1,6}", val or "0"):
+                errors[key] = "Enter a whole number of minutes (0 = off)."
+            if typ == "minutes":
+                val = str(int(val)) if re.fullmatch(r"\d{1,6}", val) else (val or "0")
             if not key.startswith("SHARE_new"):
                 updates[key] = val
         # Shares whose folder was cleared are removed (commented out, number stays reserved)
@@ -826,6 +961,7 @@ def main():
     ap.add_argument("--port", type=int, default=int(os.environ.get("WEB_PORT", "7979")))
     args = ap.parse_args()
     print(f"Web UI: http://{args.host}:{args.port}", file=sys.stderr)
+    threading.Thread(target=auto_scan_loop, daemon=True).start()
     try:
         from waitress import serve
     except ImportError:

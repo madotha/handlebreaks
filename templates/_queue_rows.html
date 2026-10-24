@@ -1,0 +1,9 @@
+{# One page of queue entries; also returned on its own for "Show more" and refreshing. #}
+{% for r in rows %}
+  <tr class="{{ 'is-current' if r.state == 'encoding' }}">
+    <td class="num muted">{{ r.n }}</td>
+    <td class="name" title="{{ r.key }}">{{ r.short }}</td>
+    <td class="small">{{ r.preset_name or "Share's preset" }}</td>
+    <td><span class="qstate qstate-{{ r.state|lower }}">{{ states.get(r.state, r.state) }}</span></td>
+  </tr>
+{% endfor %}

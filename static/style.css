@@ -115,6 +115,7 @@ h3.field-group { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem
 .share-scan button { font-size: .8rem; padding: .3rem .7rem; }
 h3.field-group:first-of-type { border-top: 0; padding-top: 0; margin-top: .4rem; }
 select { max-width: 100%; }
+.field input.short { width: 8rem; }
 .preset-list td { white-space: normal; vertical-align: top; }
 .badge { font-size: .75rem; padding: .1rem .45rem; border-radius: 4px; background: var(--info-bg); }
 .row-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
@@ -129,6 +130,14 @@ textarea.json { width: 100%; min-height: 28rem; font: .8rem/1.4 ui-monospace, SF
 .new-preset { display: grid; gap: .8rem; }
 .new-preset form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
 .new-preset input[type=text] { flex: 1 1 14rem; }
+.queue-counts { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0 0 .6rem; }
+.qstate { font-size: .78rem; padding: .1rem .5rem; border-radius: 4px; background: var(--bg); white-space: nowrap; }
+.qstate-encoding { background: var(--info-bg); font-weight: 600; }
+.qstate-ok { background: var(--ok-bg); color: var(--ok); }
+.qstate-fail, .qstate-missing { background: var(--err-bg); color: var(--err); }
+.qstate-exists { background: var(--warn-bg); color: var(--warn); }
+.queue-table tr.is-current td { background: var(--info-bg); }
+.page-head .filters { margin: 0; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .card .sub { display: block; color: var(--muted); font-size: .8rem; margin-top: .2rem; }
 
