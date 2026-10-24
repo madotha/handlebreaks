@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Status{% endblock %}
 {% block content %}
+<p class="scan-msg" data-replace-msg role="status" hidden></p>
 <div class="page-head">
   <h1>Status</h1>
   <div class="row-actions">
@@ -71,13 +72,15 @@
     <table>
       <thead><tr><th>Time</th><th>Result</th><th>File</th></tr></thead>
       <tbody>
-      {% for at, st, key in results %}
-        <tr><td>{{ at|localtime }}</td><td><span class="result result-{{ st|lower }}">{{ st }}</span></td><td class="name" title="{{ key }}">{{ short(key) }}</td></tr>
+      {% for r in results %}
+        <tr><td>{{ r.at|localtime }}</td><td><span class="result result-{{ r.status|lower }}">{{ r.status }}</span> {% include "_replace_button.html" %}</td><td class="name" title="{{ r.key }}">{{ short(r.key) }}</td></tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}<p class="muted">No results yet.</p>{% endif %}
 </section>
+{% include "_replace_dialog.html" %}
+<script src="{{ url_for('static', filename='replace.js') }}"></script>
 <script src="{{ url_for('static', filename='status.js') }}" data-live-url="{{ url_for('status_live') }}" data-queue-url="{{ url_for('status_queue') }}"></script>
 {% endblock %}

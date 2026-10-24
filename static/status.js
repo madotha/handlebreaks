@@ -82,6 +82,13 @@
     }
   }
 
+  // "Replace…" on finished encodes (static/replace.js); reload the page when done
+  const msg = $("[data-replace-msg]");
+  window.ReplaceDialog.attach(document, {
+    say(text, kind) { msg.hidden = false; msg.className = "scan-msg " + kind; msg.textContent = text; },
+    done: () => setTimeout(() => location.reload(), 2500),
+  });
+
   setInterval(() => { if (liveBox.checked && !document.hidden) poll(false); }, 3000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden && liveBox.checked) poll(false); });
   $("[data-refresh]").addEventListener("click", () => poll(true));

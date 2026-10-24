@@ -4,6 +4,7 @@
     <td class="num muted">{{ r.n }}</td>
     <td class="name" title="{{ r.key }}">{{ r.short }}</td>
     <td class="small">{{ r.preset_name or "Share's preset" }}</td>
-    <td><span class="qstate qstate-{{ r.state|lower }}">{{ states.get(r.state, r.state) }}</span></td>
+    <td><span class="qstate qstate-{{ r.state|lower }}">{{ states.get(r.state, r.state) }}</span>
+      {% include "_replace_button.html" %}</td>
   </tr>
 {% endfor %}

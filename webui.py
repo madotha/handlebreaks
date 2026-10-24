@@ -655,6 +655,19 @@ def queue():
 QUEUE_PAGE = 100                                # queue entries per page on the Status page
 
 
+def replace_info(rows):
+    """Add "encoded" (finished encode still in the output folder: Replace… possible) and
+    "replaced" (already replaced by a replace job) to rows of successfully encoded files."""
+    encoded = enc.encoded_files(enc.first_existing(enc.ENCODED_CANDIDATES))
+    replaced = enc.replaced_keys()
+    for r in rows:
+        if r.get("state", r.get("status")) == "OK":
+            r["encoded"] = encoded.get(Path(r["key"]).stem.lower())
+            r["replaced"] = not r["encoded"] and r["key"] in replaced
+            r["original"] = r["key"].rsplit("/", 1)[-1]
+    return rows
+
+
 def queue_view(state="", offset=0):
     """Queue entries for the Status page: counts per state and one page of entries
     (optionally only one state). Computed from the queue files on every call."""
@@ -670,6 +683,7 @@ def queue_view(state="", offset=0):
         if pid and pid not in names:
             names[pid] = presets.name_of(pid)
         rows.append(dict(item, n=n, short=enc.short(item["key"]), preset_name=names.get(pid, "")))
+    replace_info(rows)
     nxt = offset + QUEUE_PAGE
     return {"rows": rows, "counts": counts, "total": len(items), "shown_total": len(shown),
             "more_url": url_for("status_queue", state=state, offset=nxt) if nxt < len(shown) else None,
@@ -716,8 +730,9 @@ def replace_state(job_id):
 def status():
     cfg = enc.parse_config(enc.CONFIG_FILE) if enc.CONFIG_FILE.exists() else {}
     state = request.args.get("state", "")
+    results = replace_info([{"at": at, "status": st, "key": key} for at, st, key in enc.recent_results(20)])
     return render_template("status.html", cur=enc.current_progress(), q=queue_view(state),
-                           results=enc.recent_results(20), auto_interval=scan_interval(cfg),
+                           results=results, auto_interval=scan_interval(cfg),
                            auto_next=next_auto_scan(cfg), short=enc.short,
                            last_scan=enc.load_state()["last_scan"])
 

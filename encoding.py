@@ -580,6 +580,19 @@ def replace_status(job_id):
     return {"state": "failed", "message": "Unknown job."}
 
 
+def replaced_keys():
+    """Keys whose original was replaced by a finished replace job."""
+    keys = set()
+    for f in REPLACE_DONE.glob("*.json") if REPLACE_DONE.exists() else []:
+        try:
+            job = json.loads(f.read_text(encoding="utf-8"))
+        except ValueError:
+            continue
+        if job.get("state") == "done":
+            keys.add(job["key"])
+    return keys
+
+
 def move_file(src, dst, attempts=6, wait=10):
     """Move a file, retrying while a NAS briefly refuses it (e.g. its media indexer)."""
     for attempt in range(1, attempts + 1):

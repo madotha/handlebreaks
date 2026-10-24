@@ -1,0 +1,19 @@
+{# Dialog of the "Replace…" buttons (static/replace.js), used on the Files and Status pages. #}
+<dialog class="replace-dialog" data-replace-dialog data-url="{{ url_for('replace') }}" data-csrf="{{ csrf_token() }}">
+  <form method="dialog" data-replace-form>
+    <h2>Replace the original</h2>
+    <p class="small">The finished encode <code data-r-encoded></code> is moved into the original's folder, in place of
+      <code data-r-original></code>.</p>
+    <div class="field">
+      <label for="r-name">New file name</label>
+      <div class="name-input"><input id="r-name" data-r-name required spellcheck="false" autocomplete="off"><span data-r-ext></span></div>
+      <p class="hint">Keep the original name so Plex keeps the item (afterwards run Analyze on it in Plex); the extension follows the encoded container.</p>
+    </div>
+    <label class="check"><input type="checkbox" data-r-keep checked> Keep the original in <code>_plexEncoding/.replaced/</code> (recommended)</label>
+    <p class="flash error" data-r-error hidden></p>
+    <div class="row-actions">
+      <button value="ok" data-r-ok>Move and replace</button>
+      <button value="cancel" class="secondary" formnovalidate>Cancel</button>
+    </div>
+  </form>
+</dialog>

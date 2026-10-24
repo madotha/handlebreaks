@@ -334,7 +334,7 @@ Presets are stored as HandBrake export files in `presets/` in the data folder, n
 
 ### Replacing originals
 
-Finished encodes wait in the output folder for your review. When you're happy with one, click **Replace…** next to the original on the **Files** page:
+Finished encodes wait in the output folder for your review. When you're happy with one, click **Replace…** next to the original on the **Files** page, or next to the finished entry on the **Status** page (in the queue and in "Latest results"; entries already replaced show "Replaced"):
 
 1. Choose the file name. It's pre-filled with the encode's name (the original name; the extension follows the encoded container, e.g. `.mp4` → `.mkv`). Keeping the original name is best for Plex.
 2. Choose whether to keep the original in `<output folder>/.replaced/` (default, same folder structure as in the share) or delete it.

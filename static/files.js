@@ -2,7 +2,6 @@
 // long file lists, and selection for queueing. A ticked folder is sent as a whole
 // (the server expands it), so files inside it don't need to be loaded.
 (function () {
-  const script = document.currentScript;
   const form = document.getElementById("queue-form");
   if (!form) return;
   const count = form.querySelector("[data-selected-count]");
@@ -155,54 +154,10 @@
     await load(parent);
   }
 
-  // "Replace…": rename, then let the worker move the encode in place of the original
-  const dialog = document.querySelector("[data-replace-dialog]");
-  let replacing = null;
-  form.addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-replace]");
-    if (!btn || !dialog) return;
-    e.preventDefault();
-    const encoded = btn.dataset.encoded;
-    const dot = encoded.lastIndexOf(".");
-    replacing = btn;
-    dialog.querySelector("[data-r-encoded]").textContent = encoded;
-    dialog.querySelector("[data-r-original]").textContent = btn.dataset.original;
-    dialog.querySelector("[data-r-name]").value = encoded.slice(0, dot);
-    dialog.querySelector("[data-r-ext]").textContent = encoded.slice(dot);
-    dialog.querySelector("[data-r-keep]").checked = true;
-    dialog.querySelector("[data-r-error]").hidden = true;
-    dialog.showModal();
-  });
-  if (dialog) dialog.querySelector("[data-r-ok]").addEventListener("click", async (e) => {
-    e.preventDefault();
-    const btn = replacing;
-    const name = dialog.querySelector("[data-r-name]").value.trim() + dialog.querySelector("[data-r-ext]").textContent;
-    const body = new FormData();
-    body.append("csrf", form.querySelector('input[name="csrf"]').value);
-    body.append("key", btn.dataset.key);
-    body.append("new_name", name);
-    if (dialog.querySelector("[data-r-keep]").checked) body.append("keep_original", "1");
-    const r = await fetch(script.dataset.replaceUrl, { method: "POST", body, headers: { Accept: "application/json" } });
-    const res = await r.json();
-    if (res.error) {
-      const err = dialog.querySelector("[data-r-error]");
-      err.textContent = res.error;
-      err.hidden = false;
-      return;
-    }
-    dialog.close();
-    const levelBody = btn.closest(".dir-body");
-    const folder = btn.dataset.key.split("/").slice(0, -1).join("/");
-    say(`Replacing ${btn.dataset.original} … waiting for the worker`, "busy");
-    for (let i = 0; i < 600; i++) {                 // up to ~20 minutes (e.g. a copy across disks)
-      await new Promise((ok) => setTimeout(ok, 2000));
-      const st = await (await fetch(res.status_url)).json();
-      if (st.state === "pending") continue;
-      say(st.message, st.state === "done" ? "ok" : "error");
-      if (st.state === "done") await rescan(folder, levelBody);
-      return;
-    }
-    say("The worker hasn't picked up the replace job yet. Is it running? See the Status page.", "error");
+  // "Replace…" (static/replace.js): afterwards check the folder again and reload it
+  window.ReplaceDialog.attach(form, {
+    say,
+    done: (btn) => rescan(btn.dataset.key.split("/").slice(0, -1).join("/"), btn.closest(".dir-body")),
   });
 
   form.addEventListener("change", update);
