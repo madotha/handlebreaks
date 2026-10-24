@@ -6,6 +6,7 @@
   if (!form) return;
   const count = form.querySelector("[data-selected-count]");
   const button = form.querySelector("[data-queue-button]");
+  const bulkButton = form.querySelector("[data-bulk-replace]");
   const toggleOf = (details) => details && details.querySelector(":scope > summary .dir-toggle");
 
   // Inputs below a ticked folder are ticked and disabled: the folder covers them,
@@ -26,6 +27,7 @@
     count.textContent = n.toLocaleString();
     button.disabled = n === 0;
     button.dataset.count = n;
+    bulkButton.disabled = n === 0;
   }
 
   // Folders only open when clicked: every page load starts collapsed. Open folders are
@@ -221,6 +223,11 @@
     openSet.clear();
     update();
     syncCollapse();
+  });
+
+  // "Replace selected…" (static/bulkreplace.js): the ticked files and folders, with the filters
+  bulkButton.addEventListener("click", () => {
+    window.BulkReplace.open(new FormData(form), { say, done: () => location.reload() });
   });
 
   form.addEventListener("change", update);

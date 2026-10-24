@@ -121,6 +121,14 @@
     done: () => setTimeout(() => location.reload(), 2500),
   });
 
+  // "Replace all finished…" (static/bulkreplace.js)
+  const all = new FormData();
+  all.append("all", "1");
+  $("[data-bulk-replace-all]").addEventListener("click", () => window.BulkReplace.open(all, {
+    say(text, kind) { msg.hidden = false; msg.className = "scan-msg " + kind; msg.textContent = text; },
+    done: () => location.reload(),
+  }));
+
   setInterval(() => { if (liveBox.checked && !document.hidden) poll(false); }, 3000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden && liveBox.checked) poll(false); });
   $("[data-refresh]").addEventListener("click", () => poll(true));

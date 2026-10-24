@@ -680,8 +680,12 @@ def request_replace(key, encoded_name, new_name, keep_original=True):
     problem = check_new_name(new_name, encoded_name)
     if problem:
         raise SystemExit(problem)
-    job_id = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     REPLACE_DIR.mkdir(parents=True, exist_ok=True)
+    job_id = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    n = 0
+    while (REPLACE_DIR / f"{job_id}.json").exists() or (REPLACE_DONE / f"{job_id}.json").exists():
+        n += 1                                  # several jobs in the same microsecond (bulk replace)
+        job_id = f"{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}-{n}"
     job = {"id": job_id, "key": key, "encoded": encoded_name, "new_name": new_name,
            "keep_original": bool(keep_original), "requested": now_str()}
     tmp = DATA_DIR / f".replace-{job_id}.tmp"
@@ -790,26 +794,37 @@ def replace_one(job):
             move_file(backup, original)
         raise
     kept = f" The original is kept in {backup}." if backup else " The original was deleted."
-    refreshed = plex.notify_replaced(CONFIG, original, target)   # "" if Plex isn't configured
-    return f"Replaced {original.name} with {target.name}.{kept}{refreshed}", f"{job['key'].split('/', 1)[0]}/" + \
-        str(target.relative_to(root))
+    return (f"Replaced {original.name} with {target.name}.{kept}",
+            f"{job['key'].split('/', 1)[0]}/" + str(target.relative_to(root)), original, target)
 
 
 def run_replace_jobs():
-    """Carry out all pending replace jobs. Returns how many ran."""
+    """Carry out all pending replace jobs: move all files first, then tell Plex, with one
+    folder scan per folder for jobs that ran together (e.g. a bulk replace). Returns how
+    many ran."""
     jobs = sorted(REPLACE_DIR.glob("*.json")) if REPLACE_DIR.exists() else []
     if jobs:
         REPLACE_DONE.mkdir(parents=True, exist_ok=True)
+    moved = []
     for path in jobs:
         job = json.loads(path.read_text(encoding="utf-8"))
         try:
-            message, new_key = replace_one(job)
+            message, new_key, original, target = replace_one(job)
             result = dict(job, state="done", message=message, new_key=new_key, finished=now_str())
+            moved.append((REPLACE_DONE / path.name, result, original, target))
         except Exception as e:
             result = dict(job, state="failed", message=f"Not replaced: {e}", finished=now_str())
-        print(f"{now_str()} replace {job['key']}: {result['message']}")
+            print(f"{now_str()} replace {job['key']}: {result['message']}")
+        # the result is written right away, so a job never runs twice
         write_text_atomic(REPLACE_DONE / path.name, json.dumps(result, ensure_ascii=False))
         path.unlink(missing_ok=True)
+    notes = plex.notify_replaced_many(CONFIG, [(o, t) for _, _, o, t in moved])   # "" if Plex isn't configured
+    for (done, result, _, _), note in zip(moved, notes):
+        result["message"] += note
+        print(f"{now_str()} replace {result['key']}: {result['message']}")
+        if note:                                # keep "synced" if the web UI marked it meanwhile
+            saved = json.loads(done.read_text(encoding="utf-8"))
+            write_text_atomic(done, json.dumps(dict(saved, message=result["message"]), ensure_ascii=False))
     return len(jobs)
 
 

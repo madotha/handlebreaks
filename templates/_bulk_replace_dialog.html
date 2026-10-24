@@ -1,0 +1,22 @@
+{# Dialog for replacing several originals at once (static/bulkreplace.js), Files and Status pages. #}
+<dialog class="replace-dialog bulk-dialog" data-bulk-dialog data-preview-url="{{ url_for('replace_preview') }}"
+        data-submit-url="{{ url_for('replace_bulk') }}" data-csrf="{{ csrf_token() }}">
+  <form method="dialog">
+    <h2>Replace originals</h2>
+    <p class="small" data-b-summary>Looking for finished encodes …</p>
+    <div class="table-wrap bulk-list" hidden>
+      <table>
+        <thead><tr><th>Original</th><th>New name</th></tr></thead>
+        <tbody data-b-rows></tbody>
+      </table>
+    </div>
+    <p class="hint">Suggested from each original name, with its codec tag changed to the encode's codec
+      (<a href="{{ url_for('settings', section='replace') }}">settings</a>). Plex is refreshed once per folder.</p>
+    <label class="check"><input type="checkbox" data-b-keep checked> Keep the originals in <code>.replaced/</code> in the output folder (recommended)</label>
+    <p class="flash error" data-b-error hidden></p>
+    <div class="row-actions">
+      <button value="ok" data-b-ok disabled>Replace</button>
+      <button value="cancel" class="secondary" formnovalidate>Cancel</button>
+    </div>
+  </form>
+</dialog>

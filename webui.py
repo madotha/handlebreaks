@@ -38,6 +38,7 @@ import threading
 import time
 import urllib.parse
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from contextlib import closing
 from pathlib import Path
@@ -873,6 +874,70 @@ def replace_suggest():
         return {"error": "No finished encode of this file in the output folder."}, 404
     codec = enc.probe(enc_dir / encoded)["video_codec"] if enc.FFPROBE else None
     return {"name": enc.suggest_name(key.rsplit("/", 1)[-1], encoded, codec), "codec": codec}
+
+
+BULK_REPLACE_MAX = 500                          # files per bulk replace
+
+
+@app.route("/replace/preview", methods=["POST"])
+def replace_preview():
+    """Files for a bulk replace (JSON): the ticked files and folders of the Files page
+    (folders expanded with the submitted filters) or, with all=1, every file awaiting
+    review; each with its finished encode and suggested name. Files without a finished
+    encode, or with a replace already pending, are left out."""
+    with closing(db()) as con:
+        if request.form.get("all"):
+            keys = [k for (k,) in con.execute("SELECT key FROM files WHERE status = 'waiting'")]
+        else:
+            keys = request.form.getlist("key")
+            filters = file_filters(request.form)
+            for folder in (f.strip("/") for f in request.form.getlist("folder")):
+                clause, params = filter_sql(filters, folder)
+                keys += [k for (k,) in con.execute(f"SELECT key FROM files{clause}", params)]
+    keys = sorted(set(keys), key=natural)
+    enc_dir = enc.first_existing(enc.ENCODED_CANDIDATES)
+    encoded = enc.encoded_files(enc_dir)
+    pending = enc.pending_replaces()
+    rows = [(k, encoded[Path(k).stem.lower()]) for k in keys
+            if Path(k).stem.lower() in encoded and k not in pending][:BULK_REPLACE_MAX]
+    with ThreadPoolExecutor(enc.PROBE_WORKERS) as pool:   # the codec decides the suggested tag
+        codecs = list(pool.map(lambda e: enc.probe(enc_dir / e)["video_codec"] if enc.FFPROBE else None,
+                               [e for _, e in rows]))
+    items = [{"key": k, "short": enc.short(k), "original": k.rsplit("/", 1)[-1], "encoded": e,
+              "suggested": enc.suggest_name(k.rsplit("/", 1)[-1], e, c)} for (k, e), c in zip(rows, codecs)]
+    return {"items": items, "left_out": len(keys) - len(items), "limit": BULK_REPLACE_MAX}
+
+
+@app.route("/replace/bulk", methods=["POST"])
+def replace_bulk():
+    """Replace several originals at once (key and new_name lists in the same order). All
+    rows are checked first; with any problem nothing is started (JSON: errors per key)."""
+    keys, names = request.form.getlist("key"), [n.strip() for n in request.form.getlist("new_name")]
+    if not keys or len(keys) != len(names) or len(keys) > BULK_REPLACE_MAX:
+        return {"error": "Nothing to replace."}, 400
+    with closing(db()) as con:
+        marks = ", ".join("?" * len(keys))
+        known = {k for (k,) in con.execute(f"SELECT key FROM files WHERE key IN ({marks})", keys)}
+    encoded = enc.encoded_files(enc.first_existing(enc.ENCODED_CANDIDATES))
+    pending = enc.pending_replaces()
+    errors, targets, jobs = {}, {}, []
+    for key, name in zip(keys, names):
+        enc_name = encoded.get(Path(key).stem.lower())
+        target = (key.rsplit("/", 1)[0], name.lower())
+        problem = ("Unknown file. Scan again and retry." if key not in known else
+                   "Already being replaced." if key in pending else
+                   "No finished encode of this file in the output folder." if not enc_name else
+                   enc.check_new_name(name, enc_name) or
+                   ("Same name as another file in this list." if target in targets else None))
+        if problem:
+            errors[key] = problem
+        targets[target] = key
+        jobs.append((key, enc_name, name))
+    if errors:
+        return {"errors": errors}, 400
+    keep = bool(request.form.get("keep_original"))
+    return {"jobs": [{"key": k, "status_url": url_for("replace_state", job_id=enc.request_replace(k, e, n, keep))}
+                     for k, e, n in jobs]}
 
 
 @app.route("/replace", methods=["POST"])

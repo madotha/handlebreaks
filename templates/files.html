@@ -63,6 +63,7 @@
         </select>
       </label>
       <button data-queue-button>Queue for encoding</button>
+      <button type="button" class="secondary" data-bulk-replace disabled title="Replace the originals of the selected files that have a finished encode">Replace selected…</button>
       <span class="hint">Tick files, or a folder to select all {{ 'matching ' if filtered }}files in it. Folders load when opened. ↻ scans a file or folder again (re-reads it with ffprobe). The bar shows optimized (green), other codecs (orange) and not probed (gray).</span>
       <nav class="sort-bar" aria-label="Sort the list">
         <span class="muted small">Sort by</span>
@@ -82,7 +83,9 @@
     <noscript><p class="flash info">Opening folders needs JavaScript.</p></noscript>
   </form>
   {% include "_replace_dialog.html" %}
+  {% include "_bulk_replace_dialog.html" %}
   <script src="{{ url_for('static', filename='replace.js') }}"></script>
+  <script src="{{ url_for('static', filename='bulkreplace.js') }}"></script>
   <script src="{{ url_for('static', filename='files.js') }}"></script>
 {% endif %}
 {% endblock %}

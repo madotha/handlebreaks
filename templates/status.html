@@ -94,6 +94,8 @@
 <section class="panel">
   <div class="page-head">
     <h2>Latest results</h2>
+    <div class="row-actions">
+    <button type="button" class="secondary" data-bulk-replace-all title="Replace the originals of all files with a finished encode">Replace all finished…</button>
     {% if results %}
     <form method="post" action="{{ url_for('results_clear') }}"
           onsubmit="return confirm('Clear the whole results history? This forgets every encode result (done, failed …), deletes finished batch files, logs of failed encodes and results of replace jobs. Encoded files are not touched.')">
@@ -101,6 +103,7 @@
       <button class="secondary">Clear results history</button>
     </form>
     {% endif %}
+    </div>
   </div>
   {% if results %}
   <div class="table-wrap">
@@ -116,6 +119,8 @@
   {% else %}<p class="muted">No results yet.</p>{% endif %}
 </section>
 {% include "_replace_dialog.html" %}
+{% include "_bulk_replace_dialog.html" %}
 <script src="{{ url_for('static', filename='replace.js') }}"></script>
+<script src="{{ url_for('static', filename='bulkreplace.js') }}"></script>
 <script src="{{ url_for('static', filename='status.js') }}" data-live-url="{{ url_for('status_live') }}" data-queue-url="{{ url_for('status_queue') }}"></script>
 {% endblock %}

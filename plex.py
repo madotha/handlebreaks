@@ -101,21 +101,41 @@ def notify_replaced(cfg, original, target):
     """Tell Plex that target replaced original (both full paths). Returns a short message
     for the user, or "" if Plex isn't configured. Never raises: the file is already
     replaced, so a Plex problem only ends up in the message."""
+    return notify_replaced_many(cfg, [(original, target)])[0]
+
+
+def notify_replaced_many(cfg, pairs):
+    """Like notify_replaced for several (original, target) pairs, with one folder scan per
+    folder instead of one per file. Returns one message per pair."""
     if not cfg.get("PLEX_URL") or not cfg.get("PLEX_TOKEN"):
-        return ""
+        return [""] * len(pairs)
     plex = Plex(cfg["PLEX_URL"], cfg["PLEX_TOKEN"])
-    try:
-        found = plex.locate(target)
-        if not found:
-            return " Plex: the folder isn't in a Plex library (or Plex sees it under another path), nothing to refresh."
-        key, title, _ = found
-        if Path(original).name == Path(target).name:
-            item = plex.find_item(target)
-            if item:
-                plex.analyze(item["ratingKey"])
-                return f" Plex: analyzing \"{item.get('title')}\" in \"{title}\" (same file name, so the item keeps its history)."
-            # not in Plex yet: a folder scan adds it
-        plex.scan_folder(key, Path(target).parent)
-        return f" Plex: scanning the folder in \"{title}\" for the new file."
-    except PlexError as e:
-        return f" Plex: not refreshed ({e})."
+    messages = [""] * len(pairs)
+    scans = {}                                  # (section key, folder) -> [pair index]
+    for i, (original, target) in enumerate(pairs):
+        try:
+            found = plex.locate(target)
+            if not found:
+                messages[i] = " Plex: the folder isn't in a Plex library (or Plex sees it under another path), nothing to refresh."
+                continue
+            key, title, _ = found
+            if Path(original).name == Path(target).name:
+                item = plex.find_item(target)
+                if item:
+                    plex.analyze(item["ratingKey"])
+                    messages[i] = f" Plex: analyzing \"{item.get('title')}\" in \"{title}\" (same file name, so the item keeps its history)."
+                    continue
+                # not in Plex yet: a folder scan adds it
+            scans.setdefault((key, title, str(Path(target).parent)), []).append(i)
+        except PlexError as e:
+            messages[i] = f" Plex: not refreshed ({e})."
+    for (key, title, folder), idx in scans.items():
+        try:
+            plex.scan_folder(key, folder)
+            msg = f" Plex: scanning the folder in \"{title}\" for the new file" + \
+                (f" (one scan for {len(idx)} files)." if len(idx) > 1 else ".")
+        except PlexError as e:
+            msg = f" Plex: not refreshed ({e})."
+        for i in idx:
+            messages[i] = msg
+    return messages

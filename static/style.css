@@ -41,6 +41,8 @@ button { background: var(--accent); color: var(--accent-text); border: 0; border
 button:disabled { opacity: .5; cursor: default; }
 input, select { font: inherit; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: .45rem .6rem; }
 
+/* The hidden attribute always wins, also over display: flex/grid of a class */
+[hidden] { display: none !important; }
 .flash { padding: .6rem .8rem; border-radius: 6px; margin: 0 0 1rem; }
 .flash.ok { background: var(--ok-bg); color: var(--ok); }
 .flash.error { background: var(--err-bg); color: var(--err); }
@@ -160,6 +162,12 @@ textarea.json { width: 100%; min-height: 28rem; font: .8rem/1.4 ui-monospace, SF
   background: var(--surface); color: var(--text); }
 .replace-dialog::backdrop { background: rgba(0,0,0,.35); }
 .replace-dialog h2 { margin-top: 0; }
+.bulk-dialog { max-width: min(980px, 94vw); width: 100%; }
+.bulk-list { max-height: 50vh; overflow: auto; }
+.bulk-list td { vertical-align: top; }
+.bulk-list td.name { max-width: 22rem; overflow-wrap: anywhere; }
+.bulk-list .name-input input { min-width: 18rem; font-family: ui-monospace, monospace; font-size: .82rem; }
+.b-row-error { color: var(--err); margin: .2rem 0 0; }
 .replace-dialog code { overflow-wrap: anywhere; }
 .name-input { display: flex; align-items: center; gap: .3rem; }
 .name-input input { flex: 1; }
