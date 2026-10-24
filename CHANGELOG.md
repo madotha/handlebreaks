@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-24
+
 ### Added
 
 - Web UI on port 7979 (`webui.py`, Flask + waitress), with three pages:

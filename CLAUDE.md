@@ -22,7 +22,13 @@ The repo is meant to be installed on any machine and may be published. It must s
   - MINOR: new backward-compatible features, subcommands or options.
   - PATCH: bug fixes and small adjustments, including changes to filters or presets that don't change the behaviour of the interface.
 - Every user-visible change gets an entry under `## [Unreleased]` in `CHANGELOG.md` ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format: Added, Changed, Deprecated, Removed, Fixed, Security). Pure doc or repo housekeeping doesn't need one.
-- To release, bump `__version__`, rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD`, add a fresh empty `[Unreleased]` section, commit, and tag `vX.Y.Z` (annotated).
+- To release:
+  1. Bump `__version__`.
+  2. Rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD` and add a fresh empty `[Unreleased]` section.
+  3. Commit as `Release vX.Y.Z`.
+  4. Tag that commit with an annotated tag `vX.Y.Z` (`git tag -a vX.Y.Z -m "vX.Y.Z"`).
+
+  Every release commit must carry its tag. Never bump the version without tagging, and never tag a commit that isn't a release.
 
 ## Overview
 
