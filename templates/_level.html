@@ -1,8 +1,7 @@
 {# One level of the folder tree: subfolders (content loaded when opened) and files. #}
 {% set scan_url = url_for('start_scan') %}
 {% for f in folders %}
-  {% set open = filters and f.count <= auto_open %}
-  <details class="dir" data-path="{{ f.path }}" {% if open %}open{% endif %}>
+  <details class="dir" data-path="{{ f.path }}">
     <summary>
       <input type="checkbox" class="dir-toggle" name="folder" value="{{ f.path }}" data-count="{{ f.selectable }}"
              aria-label="Select folder"{% if not f.selectable %} disabled data-locked{% endif %}>

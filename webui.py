@@ -436,7 +436,6 @@ def index():
 PAGE_SIZE = 200                                 # files per "Show more" step
 STARTED = time.time()                           # part of the folder cache version: a restart or update clears it
 FOLDER_PAGE = 100                               # subfolders per "Show more folders" step
-AUTO_OPEN = 300                                 # with a filter, open folders with up to this many matches
 
 
 _CACHE = {}
@@ -647,7 +646,7 @@ def level_context(path, filters, queued, offset=0, sort=None, dir_offset=0):
             f["replacing"] = f["key"] in pending
     return {"folders": folders, "files": files, "total_files": total, "shown_files": min(nxt, total),
             "more_url": more, "more_dirs_url": more_dirs, "shown_dirs": min(dir_nxt, total_dirs),
-            "total_dirs": total_dirs, "filters": filters, "queued": queued, "auto_open": AUTO_OPEN,
+            "total_dirs": total_dirs, "filters": filters, "queued": queued,
             "status_labels": enc.STATUS_LABELS, "sort": sort, "sort_links": sort_links(filters, sort),
             "link_args": dict(filters, **sort),      # query of folder URLs: filters + sort
             "folder_query": urllib.parse.urlencode(dict(filters, **sort), doseq=True)}
