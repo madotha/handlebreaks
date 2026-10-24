@@ -733,11 +733,16 @@ def level_context(path, filters, queued, offset=0, sort=None, dir_offset=0):
     total_dirs = len(folders)
     if path:                                    # the top level (shares) is never paged
         folders = folders[dir_offset:dir_nxt]
-    if any(f["status"] == "waiting" for f in files):  # finished encodes, for the Replace button
+    # Finished encodes, for the Replace button. A file whose encode is in the output folder is
+    # awaiting review even if the database still says "queued": only the next scan updates
+    # that status (the worker doesn't write to the database).
+    if any(f["status"] in ("waiting", "queued") for f in files):
         encoded = enc.encoded_files(enc.first_existing(enc.ENCODED_CANDIDATES))
         pending = enc.pending_replaces()
         for f in files:
-            f["encoded"] = encoded.get(Path(f["name"]).stem.lower()) if f["status"] == "waiting" else None
+            f["encoded"] = encoded.get(Path(f["name"]).stem.lower()) if f["status"] in ("waiting", "queued") else None
+            if f["encoded"]:
+                f["status"] = "waiting"
             f["replacing"] = f["key"] in pending
     return {"folders": folders, "files": files, "total_files": total, "shown_files": min(nxt, total),
             "more_url": more, "more_dirs_url": more_dirs, "shown_dirs": min(dir_nxt, total_dirs),
@@ -974,8 +979,8 @@ def replace_preview():
     review; each with its finished encode and suggested name. Files without a finished
     encode, or with a replace already pending, are left out."""
     with closing(db()) as con:
-        if request.form.get("all"):
-            keys = [k for (k,) in con.execute("SELECT key FROM files WHERE status = 'waiting'")]
+        if request.form.get("all"):             # every file with an encode, whatever the status says
+            keys = [k for (k,) in con.execute("SELECT key FROM files WHERE status != 'h265'")]
         else:
             keys = request.form.getlist("key")
             filters = file_filters(request.form)

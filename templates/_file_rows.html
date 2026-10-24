@@ -1,6 +1,6 @@
 {# File rows of one folder level; also returned on their own for "Show more". #}
 {% for f in files %}
-  {% set is_queued = f.key in queued %}
+  {% set is_queued = f.key in queued and not f.encoded %}
   <tr>
     <td class="sel"><input type="checkbox" name="key" value="{{ f.key }}" aria-label="Select {{ f.name }}" {% if is_queued %}disabled data-locked title="Already queued"{% endif %}></td>
     <td class="sel"><button class="icon-btn" formaction="{{ url_for('start_scan') }}" name="path" value="{{ f.key }}" data-scan-path
