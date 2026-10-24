@@ -14,6 +14,7 @@
       <a href="{{ url_for('files') }}" {% if request.endpoint == 'files' %}aria-current="page"{% endif %}>Files</a>
       <a href="{{ url_for('status') }}" {% if request.endpoint == 'status' %}aria-current="page"{% endif %}>Status</a>
       <a href="{{ url_for('stats') }}" {% if request.endpoint == 'stats' %}aria-current="page"{% endif %}>Stats</a>
+      <a href="{{ url_for('presets_page') }}" {% if request.endpoint in ('presets_page', 'preset_edit') %}aria-current="page"{% endif %}>Presets</a>
       <a href="{{ url_for('settings_index') }}" {% if request.endpoint == 'settings' %}aria-current="page"{% endif %}>Settings</a>
     </nav>
     {% if scan_state.running %}<span class="pill busy">Scan running since {{ scan_state.started[11:] }}</span>{% endif %}

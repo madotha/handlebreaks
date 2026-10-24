@@ -5,6 +5,9 @@ state.json*
 encoding.db
 encoding.db-*
 .scan.lock
+.migrate.lock
+presets/
+config.env.v2.bak
 .secret_key
 queue/
 processing/

@@ -6,12 +6,12 @@
 #
 # To keep encoding natively on the Mac, add docker-compose.hybrid.yml.
 #
-# More library folders (MOVIES_DIR_2, SHOWS_DIR_2, …): mount them in a local
-# docker-compose.override.yml (gitignored, picked up automatically), e.g.
+# Shares inside HOST_MEDIA_DIR appear as /media/<folder>. Shares elsewhere: mount
+# them in a local docker-compose.override.yml (gitignored, picked up automatically), e.g.
 #   services:
 #     encoding:
 #       volumes:
-#         - /Volumes/Archive/Movies:/media/Movies 2:ro
+#         - /Volumes/Archive/Shows:/media/Archive:ro
 services:
   encoding:
     build: .
@@ -22,8 +22,7 @@ services:
       - "127.0.0.1:${WEB_PORT:-7979}:7979"     # local only, there is no login yet
     volumes:
       - data:/data                             # config.env, encoding.db, queue/, logs/
-      - ${HOST_MOVIES_DIR:?set HOST_MOVIES_DIR in .env}:/media/Movies:ro
-      - ${HOST_SHOWS_DIR:?set HOST_SHOWS_DIR in .env}:/media/Shows:ro
+      - ${HOST_MEDIA_DIR:?set HOST_MEDIA_DIR in .env}:/media:ro   # folder with your shares
       - ${HOST_ENCODED_DIR:?set HOST_ENCODED_DIR in .env}:/encoded
       - ${HOST_NOTE_DIR:-notes}:/notes         # optional, otherwise an empty volume
 

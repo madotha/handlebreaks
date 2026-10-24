@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}{{ p.PresetName }}{% endblock %}
+{% macro select(name, options, current) %}
+  <select id="{{ name }}" name="{{ name }}">
+    {% if current and current not in options %}<option value="{{ current }}" selected>{{ current }} ({{ 'uses ' ~ aliases[current] ~ ' here' if current in aliases else 'not supported here' }})</option>{% endif %}
+    {% for o in options %}<option value="{{ o }}" {% if o == current %}selected{% endif %}>{{ o }}</option>{% endfor %}
+  </select>
+{% endmacro %}
+{% macro choice(name, options, current) %}
+  <select id="{{ name }}" name="{{ name }}">
+    {% for value, label in options.items() %}<option value="{{ value }}" {% if value == current %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <h1>{{ p.PresetName }} {% if is_default %}<span class="badge">default</span>{% endif %}</h1>
+  <div class="row-actions">
+    <a class="button" href="{{ url_for('preset_export', pid=pid) }}">Export</a>
+    <a class="button" href="{{ url_for('presets_page') }}">All presets</a>
+  </div>
+</div>
+<p class="muted">Used by: {{ shares|join(', ') if shares else 'no share' }}{% if not caps.available %} · HandBrakeCLI isn't installed here, so the options below are a generic list and changes can't be checked.{% endif %}</p>
+{% if error %}<p class="flash error">{{ error }}</p>{% endif %}
+
+<form method="post" class="panel">
+  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+  <input type="hidden" name="mode" value="form">
+  <fieldset><legend>General</legend>
+    <div class="grid-2">
+      <div class="field"><label for="PresetName">Name</label><input id="PresetName" name="PresetName" value="{{ p.PresetName }}" required></div>
+      <div class="field"><label for="FileFormat">Container</label>{{ select('FileFormat', caps.formats, p.FileFormat) }}</div>
+    </div>
+    <div class="field"><label for="PresetDescription">Description</label><input id="PresetDescription" name="PresetDescription" value="{{ p.PresetDescription or '' }}"></div>
+    <label class="check"><input type="checkbox" name="ChapterMarkers" value="1" {% if p.ChapterMarkers %}checked{% endif %}> Chapter markers</label>
+  </fieldset>
+
+  <fieldset><legend>Video</legend>
+    <div class="grid-2">
+      <div class="field"><label for="VideoEncoder">Encoder</label>{{ select('VideoEncoder', caps.video_encoders, p.VideoEncoder) }}</div>
+      <div class="field"><label for="VideoPreset">Encoder speed</label>
+        <select id="VideoPreset" name="VideoPreset" data-current="{{ p.VideoPreset or '' }}"><option value="{{ p.VideoPreset or '' }}">{{ p.VideoPreset or '–' }}</option></select>
+        <p class="hint">Slower = smaller files at the same quality.</p></div>
+      <div class="field"><label for="QualityMode">Quality</label>
+        <select id="QualityMode" name="QualityMode">
+          <option value="rf" {% if p.VideoQualityType != 1 %}selected{% endif %}>Constant quality (RF)</option>
+          <option value="bitrate" {% if p.VideoQualityType == 1 %}selected{% endif %}>Average bitrate</option>
+        </select></div>
+      <div class="field" data-mode="rf"><label for="VideoQualitySlider">RF value</label>
+        <input id="VideoQualitySlider" name="VideoQualitySlider" type="number" step="0.5" min="0" max="51" value="{{ p.VideoQualitySlider }}">
+        <p class="hint">Lower = better quality, bigger files. Typical for x265: 20–24.</p></div>
+      <div class="field" data-mode="bitrate"><label for="VideoAvgBitrate">Bitrate (kbit/s)</label>
+        <input id="VideoAvgBitrate" name="VideoAvgBitrate" type="number" min="100" step="100" value="{{ p.VideoAvgBitrate }}"></div>
+      <div class="field"><label for="Resolution">Maximum resolution</label>
+        <select id="Resolution" name="Resolution">
+          {% if resolution not in resolutions %}<option value="{{ resolution }}" selected>{{ resolution }} (keep)</option>{% endif %}
+          {% for label in resolutions %}<option value="{{ label }}" {% if label == resolution %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select><p class="hint">Larger sources are scaled down, smaller ones never up.</p></div>
+      <div class="field"><label for="VideoFramerate">Frame rate</label>
+        <select id="VideoFramerate" name="VideoFramerate">
+          {% for f in framerates %}<option value="{{ f }}" {% if (p.VideoFramerate or 'auto') == f %}selected{% endif %}>{{ 'Same as source' if f == 'auto' else f ~ ' fps (peak)' }}</option>{% endfor %}
+        </select></div>
+    </div>
+  </fieldset>
+
+  <fieldset><legend>Audio</legend>
+    <div class="grid-2">
+      <div class="field"><label for="AudioTrackSelectionBehavior">Tracks</label>{{ choice('AudioTrackSelectionBehavior', track_behaviors, p.AudioTrackSelectionBehavior or 'first') }}</div>
+      <div class="field"><label for="AudioLanguageList">Languages</label><input id="AudioLanguageList" name="AudioLanguageList" value="{{ (p.AudioLanguageList or [])|join(', ') }}" placeholder="any">
+        <p class="hint">ISO 639-2 codes, e.g. <code>ger, eng</code>. Empty = any language.</p></div>
+      <div class="field"><label for="AudioEncoder">Encoder</label>{{ select('AudioEncoder', caps.audio_encoders, audio.AudioEncoder) }}
+        <p class="hint"><code>copy:…</code> keeps the original track.</p></div>
+      <div class="field"><label for="AudioBitrate">Bitrate (kbit/s)</label><input id="AudioBitrate" name="AudioBitrate" type="number" min="32" step="16" value="{{ audio.AudioBitrate or '' }}"></div>
+      <div class="field"><label for="AudioMixdown">Mixdown</label>{{ select('AudioMixdown', caps.mixdowns, audio.AudioMixdown) }}</div>
+    </div>
+  </fieldset>
+
+  <fieldset><legend>Subtitles</legend>
+    <div class="grid-2">
+      <div class="field"><label for="SubtitleTrackSelectionBehavior">Tracks</label>{{ choice('SubtitleTrackSelectionBehavior', track_behaviors, p.SubtitleTrackSelectionBehavior or 'none') }}</div>
+      <div class="field"><label for="SubtitleLanguageList">Languages</label><input id="SubtitleLanguageList" name="SubtitleLanguageList" value="{{ (p.SubtitleLanguageList or [])|join(', ') }}" placeholder="any"></div>
+      <div class="field"><label for="SubtitleBurnBehavior">Burn in</label>{{ choice('SubtitleBurnBehavior', burn_behaviors, p.SubtitleBurnBehavior or 'none') }}</div>
+    </div>
+  </fieldset>
+  <button>Save</button>
+  <span class="hint">{% if caps.available %}HandBrakeCLI checks the preset before it's saved.{% endif %} All other settings of the preset stay as they are.</span>
+</form>
+
+<details class="panel">
+  <summary><strong>Advanced: edit the full preset as JSON</strong></summary>
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="mode" value="json">
+    <p class="hint">Every HandBrake setting, in the format of the HandBrake app's preset export. Saving replaces the preset.</p>
+    <textarea class="json" name="json" spellcheck="false" aria-label="Preset JSON">{{ json_text }}</textarea>
+    <button>Save JSON</button>
+  </form>
+</details>
+
+<script>
+  // Encoder speed options depend on the encoder; show the matching ones
+  (function () {
+    const presets = {{ caps.encoder_presets|tojson }};
+    const enc = document.getElementById("VideoEncoder"), sp = document.getElementById("VideoPreset");
+    function fill() {
+      const list = presets[enc.value] || [];
+      const current = sp.value || sp.dataset.current;
+      sp.innerHTML = "";
+      (list.length ? list : [current || ""]).forEach((v) => sp.add(new Option(v || "–", v, false, v === current)));
+      if (list.length && !list.includes(current)) sp.value = list.includes("medium") ? "medium" : list[Math.floor(list.length / 2)];
+    }
+    enc.addEventListener("change", fill);
+    fill();
+    const mode = document.getElementById("QualityMode");
+    const sync = () => document.querySelectorAll("[data-mode]").forEach((el) => { el.hidden = el.dataset.mode !== mode.value; });
+    mode.addEventListener("change", sync);
+    sync();
+  })();
+</script>
+{% endblock %}

@@ -12,11 +12,37 @@
   <form class="panel" method="post">
     <h2>{{ title }}</h2>
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ request.path }}">
+    <button class="visually-hidden" tabindex="-1" aria-hidden="true">Save</button>{# default for Enter: save, not scan #}
     {% if not config_exists %}<p class="flash info">{{ config_file }} doesn't exist yet. Saving creates it from the template.</p>{% endif %}
 
     {% for key, label, typ, hint in fields %}
+      {% if typ == 'heading' %}
+        <h3 class="field-group">{{ label }}
+          {% set info = share_info.get(hint) %}
+          {% if info %}
+            <span class="share-scan">
+              <span class="muted small">{% if info.files %}{{ info.files|count }} file{{ '' if info.files == 1 else 's' }} · scanned {{ info.scanned or 'before 3.0' }}{% else %}not scanned yet{% endif %}</span>
+              {% if info.files %}
+                <button class="secondary" formaction="{{ url_for('start_scan') }}" name="share" value="{{ hint }}:force"
+                        title="Re-read every file of this share with ffprobe" {% if scan_state.running %}disabled{% endif %}
+                        onclick="return confirm('Re-read all {{ info.files }} files of this share with ffprobe? This takes about {{ ((info.files * 0.03) / 60)|round(0, 'ceil')|int }} min or more.')">Full rescan</button>
+              {% else %}
+                <button formaction="{{ url_for('start_scan') }}" name="share" value="{{ hint }}" {% if scan_state.running %}disabled{% endif %}>Initial scan</button>
+              {% endif %}
+            </span>
+          {% endif %}
+        </h3>
+        {% if errors.get(key) %}<p class="flash error">{{ errors[key] }}</p>{% endif %}
+      {% else %}
       <div class="field">
-        {% if typ == 'bool' %}
+        {% if typ in ('preset', 'share_preset') %}
+          <label for="{{ key }}">{{ label }} <code>{{ key }}</code></label>
+          <select id="{{ key }}" name="{{ key }}">
+            {% if typ == 'share_preset' %}<option value="">Default preset ({{ default_preset }})</option>{% endif %}
+            {% for pid, name in preset_list %}<option value="{{ pid }}" {% if cfg.get(key) == pid %}selected{% endif %}>{{ name }}</option>{% endfor %}
+          </select>
+        {% elif typ == 'bool' %}
           <label class="check"><input type="checkbox" name="{{ key }}" value="1" {% if cfg.get(key) == '1' %}checked{% endif %}> {{ label }}</label>
         {% else %}
           <label for="{{ key }}">{{ label }} <code>{{ key }}</code></label>
@@ -30,7 +56,9 @@
           <ul class="checks">{% for p, ok in checks[key] %}<li class="{{ 'ok' if ok else 'missing' }}">{{ '✓' if ok else '✗' }} {{ p }}</li>{% endfor %}</ul>
         {% endif %}
       </div>
+      {% endif %}
     {% endfor %}
+    {% if section == 'encoding' %}<p class="hint"><a href="{{ url_for('presets_page') }}">Manage presets</a></p>{% endif %}
     <button>Save</button>
     <p class="hint">Saved to <code>{{ config_file }}</code>. <code>$HOME</code> is allowed, but no other <code>$</code>, no quotes and no backslash.</p>
   </form>

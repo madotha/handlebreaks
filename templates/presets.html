@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Presets{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Presets</h1>
+  <span class="muted">{% if caps.available %}HandBrake preset format {{ caps.version.VersionMajor if caps.version else '?' }}{% else %}HandBrakeCLI not found: built-in presets and checks unavailable{% endif %}</span>
+</div>
+
+<section class="panel">
+  <div class="table-wrap">
+    <table class="preset-list">
+      <thead><tr><th>Preset</th><th>Settings</th><th>Used by</th><th></th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td><a href="{{ url_for('preset_edit', pid=r.id) }}"><strong>{{ r.name }}</strong></a>
+            {% if r.default %}<span class="badge">default</span>{% endif %}
+            {% if r.description %}<br><span class="muted small">{{ r.description }}</span>{% endif %}</td>
+          <td class="small">{{ r.summary }}</td>
+          <td class="small">{{ r.shares|join(', ') if r.shares else '–' }}</td>
+          <td>
+            <div class="row-actions">
+              <a class="button" href="{{ url_for('preset_edit', pid=r.id) }}">Edit</a>
+              <a class="button" href="{{ url_for('preset_export', pid=r.id) }}">Export</a>
+              {% if not r.default %}
+                <form method="post" action="{{ url_for('preset_default', pid=r.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="secondary">Make default</button></form>
+                <form method="post" action="{{ url_for('preset_delete', pid=r.id) }}" onsubmit="return confirm('Delete this preset?')"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="danger">Delete</button></form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>New preset</h2>
+  <div class="new-preset">
+    {% if builtins %}
+    <form method="post" action="{{ url_for('preset_new') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="source" value="builtin">
+      <label class="inline">From HandBrake
+        <select name="builtin" required>
+          {% for category, items in builtins.items() %}
+            <optgroup label="{{ category }}">{% for name, description in items %}<option value="{{ name }}" title="{{ description }}">{{ name }}</option>{% endfor %}</optgroup>
+          {% endfor %}
+        </select>
+      </label>
+      <input type="text" name="name" placeholder="Name (optional)" aria-label="Name of the new preset">
+      <button>Create</button>
+    </form>
+    {% endif %}
+    {% if rows %}
+    <form method="post" action="{{ url_for('preset_new') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="source" value="copy">
+      <label class="inline">Copy of
+        <select name="copy">{% for r in rows %}<option value="{{ r.id }}">{{ r.name }}</option>{% endfor %}</select>
+      </label>
+      <input type="text" name="name" placeholder="Name (optional)" aria-label="Name of the copy">
+      <button>Copy</button>
+    </form>
+    {% endif %}
+    <form method="post" action="{{ url_for('preset_new') }}" enctype="multipart/form-data">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="source" value="import">
+      <label class="inline">Import file <input type="file" name="file" accept=".json,application/json"></label>
+      <button>Import</button>
+    </form>
+    <p class="hint">Import a preset exported from the HandBrake app (Presets → Export). Built-in presets and the options in the editor come from the installed HandBrakeCLI, so they always match its version.</p>
+  </div>
+</section>
+{% endblock %}

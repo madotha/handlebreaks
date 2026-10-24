@@ -63,6 +63,16 @@ input, select { font: inherit; color: var(--text); background: var(--surface); b
 
 .filters { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-bottom: .25rem; }
 .filters input[type=search] { flex: 1 1 220px; }
+.multi { position: relative; }
+.multi > summary { list-style: none; cursor: pointer; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: .45rem 1.8rem .45rem .6rem; white-space: nowrap; }
+.multi > summary::-webkit-details-marker { display: none; }
+.multi > summary::after { content: "▾"; position: absolute; right: .6rem; color: var(--muted); }
+.multi-menu { position: absolute; z-index: 5; top: calc(100% + 4px); left: 0; min-width: 16rem; max-height: 22rem; overflow: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .4rem; box-shadow: 0 6px 20px rgba(0,0,0,.12); }
+.multi-menu label { display: flex; align-items: center; gap: .5rem; padding: .3rem .4rem; border-radius: 4px; cursor: pointer; }
+.multi-menu label:hover { background: var(--bg); }
+.multi-menu label .muted { margin-left: auto; font-size: .8rem; }
+.multi-menu hr { border: 0; border-top: 1px solid var(--border); margin: .3rem 0; }
 
 .tree details.dir { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; margin: .4rem 0; }
 .tree details.dir details.dir { border-color: transparent; margin: 0; border-radius: 0; border-top: 1px solid var(--border); }
@@ -98,6 +108,27 @@ td.name { white-space: normal; overflow-wrap: anywhere; min-width: 16rem; }
 .checks .missing { color: var(--muted); }
 ol.plain { margin: 0; padding-left: 1.4rem; }
 
+label.inline { display: flex; align-items: center; gap: .4rem; font-size: .9rem; color: var(--muted); }
+h3.field-group { font-size: .95rem; margin: 1.4rem 0 .6rem; padding-top: .8rem; border-top: 1px solid var(--border); }
+h3.field-group { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; }
+.share-scan { margin-left: auto; display: flex; align-items: center; gap: .6rem; font-weight: 400; }
+.share-scan button { font-size: .8rem; padding: .3rem .7rem; }
+h3.field-group:first-of-type { border-top: 0; padding-top: 0; margin-top: .4rem; }
+select { max-width: 100%; }
+.preset-list td { white-space: normal; vertical-align: top; }
+.badge { font-size: .75rem; padding: .1rem .45rem; border-radius: 4px; background: var(--info-bg); }
+.row-actions { display: flex; gap: .4rem; flex-wrap: wrap; }
+.row-actions form { display: inline; }
+.row-actions button, .row-actions a.button { font-size: .8rem; padding: .3rem .6rem; }
+a.button { display: inline-block; text-decoration: none; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: .5rem 1rem; }
+button.danger { background: var(--err-bg); color: var(--err); }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 0 1rem; }
+fieldset { border: 1px solid var(--border); border-radius: 8px; padding: .8rem 1rem; margin: 0 0 1rem; }
+legend { font-weight: 600; padding: 0 .3rem; }
+textarea.json { width: 100%; min-height: 28rem; font: .8rem/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: .6rem; }
+.new-preset { display: grid; gap: .8rem; }
+.new-preset form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.new-preset input[type=text] { flex: 1 1 14rem; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .card .sub { display: block; color: var(--muted); font-size: .8rem; margin-top: .2rem; }
 
@@ -105,6 +136,10 @@ ol.plain { margin: 0; padding-left: 1.4rem; }
 th.sel, td.sel { width: 2rem; padding-right: 0; }
 .tree summary { align-items: center; justify-content: flex-start; }
 .tree summary .meta { margin-left: auto; }
+.tree .dirnote { color: var(--muted); font-size: .8rem; margin-left: .5rem; }
+.tree .loading { margin: .4rem .8rem; }
+.files-level > button { margin: .5rem .6rem .8rem; }
+button.secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); font-weight: 500; }
 .action-bar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center;
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .5rem .8rem; margin: .5rem 0; }
 .action-bar .hint { margin: 0; }

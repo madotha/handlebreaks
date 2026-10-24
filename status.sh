@@ -29,9 +29,9 @@ while true; do
     print "Speed: ${fps:-–} fps   Time left for this file: ${eta:-–}\n"
 
     print "Still to do:"
-    cat "$BASE"/processing/*.txt(N) "$BASE"/queue/*.txt(N) 2>/dev/null | awk -v cur="$key" '
-      $0==cur {seen=1; next}
-      seen && NF { n=split($0,a,"/"); print "  • " a[n]; c++ }
+    cat "$BASE"/processing/*.txt(N) "$BASE"/queue/*.txt(N) 2>/dev/null | awk -F'\t' -v cur="$key" '
+      $1==cur {seen=1; next}
+      seen && NF { n=split($1,a,"/"); print "  • " a[n]; c++ }
       END { if (!c) print "  (none)" }'
   else
     print "No encode running."

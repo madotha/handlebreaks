@@ -1,40 +1,6 @@
 {% extends "base.html" %}
 {% block title %}Files{% endblock %}
 
-{% macro folder(name, node, depth) %}
-  <details class="dir" {% if filtered or depth == 0 %}open{% endif %}>
-    <summary>
-      <input type="checkbox" class="dir-toggle" aria-label="Select all files in {{ name }}" title="Select all files in this folder">
-      <span class="dirname">{{ name }}</span><span class="meta">{{ node.count }} files · {{ node.size|size }}</span>
-    </summary>
-    <div class="dir-body">
-      {% for sub, child in node.dirs|dictsort %}{{ folder(sub, child, depth + 1) }}{% endfor %}
-      {% if node.files %}
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th class="sel"><span class="visually-hidden">Select</span></th><th>File</th><th>Codec</th><th>Resolution</th><th>Bitrate</th><th>Duration</th><th class="num">Size</th><th>Status</th></tr></thead>
-          <tbody>
-          {% for f in node.files %}
-            {% set is_queued = f.key in queued %}
-            <tr>
-              <td class="sel"><input type="checkbox" name="key" value="{{ f.key }}" aria-label="Select {{ f.name }}" {% if is_queued %}disabled title="Already queued"{% endif %}></td>
-              <td class="name" title="{{ f.key }}">{{ f.name }}</td>
-              <td>{% if f.video_codec %}<span class="codec codec-{{ codec_class(f.video_codec) }}" title="{{ f.video_codec }}">{{ f.video_codec|codec_name }}</span>{% elif f.probe_error %}<span class="muted" title="{{ f.probe_error }}">Error</span>{% else %}<span class="muted">–</span>{% endif %}</td>
-              <td>{% if f.width %}{{ f.width }}×{{ f.height }}{% else %}–{% endif %}</td>
-              <td>{{ f.bitrate|bitrate }}</td>
-              <td>{{ f.duration|duration }}</td>
-              <td class="num">{{ f.size|size }}</td>
-              <td><span class="status status-{{ 'queued' if is_queued else f.status }}">{{ status_labels['queued'] if is_queued else status_labels.get(f.status, f.status) }}</span></td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% endif %}
-    </div>
-  </details>
-{% endmacro %}
-
 {% block content %}
 <div class="page-head">
   <h1>Files</h1>
@@ -55,34 +21,53 @@
       <span class="meter"><span class="viz-good" style="width: {{ '%.1f'|format(optimized_share) }}%"></span></span></div>
     <div class="card"><span class="label">Last scan</span><span class="value small">{{ last_scan or '–' }}</span></div>
   </section>
+  {% if unscanned %}<p class="flash info">Not scanned yet: {{ unscanned|join(', ') }}. Start their initial scan under <a href="{{ url_for('settings', section='library') }}">Settings → Library</a>, or scan all shares.</p>{% endif %}
   {% if not ffprobe %}<p class="flash info">ffprobe is not installed. Codec, resolution and bitrate stay empty until ffmpeg is installed.</p>{% endif %}
 
   <form class="filters" method="get">
     <input type="search" name="q" value="{{ q }}" placeholder="Search name or folder" aria-label="Search">
-    <select name="codec" aria-label="Codec">
-      <option value="">All codecs</option>
-      {% for c, n in codecs %}<option value="{{ c }}" {% if c == codec %}selected{% endif %}>{{ c|codec_name }} ({{ n }})</option>{% endfor %}
-    </select>
+    <details class="multi">
+      <summary>{{ codec_summary }}</summary>
+      <div class="multi-menu">
+        {% for key, label, n in codec_groups if n %}
+          <label><input type="checkbox" name="codec" value="{{ key }}" {% if key in codec %}checked{% endif %}>
+            <span class="codec codec-{{ key.split(':')[1] }}">{{ label }}</span> <span class="muted">{{ n|count }}</span></label>
+        {% endfor %}
+        <hr>
+        {% for c, n in codecs %}
+          <label><input type="checkbox" name="codec" value="{{ c }}" {% if c in codec %}checked{% endif %}>
+            <span class="codec codec-{{ codec_class(c) }}">{{ c|codec_name }}</span> <span class="muted">{{ n|count }}</span></label>
+        {% endfor %}
+      </div>
+    </details>
     <select name="status" aria-label="Status">
       <option value="">All statuses</option>
-      {% for s, label in status_labels.items() if statuses.get(s) %}<option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ label }} ({{ statuses[s] }})</option>{% endfor %}
+      {% for s, label in status_labels.items() if statuses.get(s) %}<option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ label }} ({{ statuses[s]|count }})</option>{% endfor %}
     </select>
     <button>Filter</button>
     {% if filtered %}<a href="{{ url_for('files') }}">Reset</a>{% endif %}
   </form>
-  <p class="muted">{{ shown }} of {{ total }} files · <span class="codec codec-good">optimized</span> <span class="codec codec-other">other codec</span></p>
+  <p class="muted">{{ shown|count }} of {{ total|count }} files{% if filtered %} match{% endif %} · <span class="codec codec-good">optimized</span> <span class="codec codec-other">other codec</span></p>
 
   <form id="queue-form" method="post" action="{{ url_for('queue') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <input type="hidden" name="next" value="{{ request.full_path }}">
+    {% for k, v in filters.items() %}{% for item in (v if v is not string else [v]) %}<input type="hidden" name="{{ k }}" value="{{ item }}">{% endfor %}{% endfor %}
     <div class="action-bar">
       <span><strong data-selected-count>0</strong> selected</span>
+      <label class="inline">Preset
+        <select name="preset" aria-label="Preset for this queue">
+          <option value="">Share's preset</option>
+          {% for pid, name in preset_list %}<option value="{{ pid }}">{{ name }}</option>{% endfor %}
+        </select>
+      </label>
       <button data-queue-button>Queue for encoding</button>
-      <span class="hint">Select files or whole folders. Files already in the queue can't be selected.</span>
+      <span class="hint">Tick files, or a folder to select all {{ 'matching ' if filtered }}files in it. Folders load when opened.</span>
     </div>
     <div class="tree">
-      {% for name, node in tree.dirs|dictsort %}{{ folder(name, node, 0) }}{% endfor %}
+      {% include "_level.html" %}
     </div>
+    <noscript><p class="flash info">Opening folders needs JavaScript.</p></noscript>
   </form>
   <script src="{{ url_for('static', filename='files.js') }}"></script>
 {% endif %}

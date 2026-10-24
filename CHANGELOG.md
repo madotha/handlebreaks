@@ -9,15 +9,27 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Presets page in the web UI. You can create presets from HandBrake's built-in presets, as copies, or by importing HandBrake export files (including files with several presets or folders). Each preset can be edited in a form for the common settings or as full JSON, exported, made the default, or deleted. HandBrakeCLI checks a preset before it's saved. The editor's choices (encoders, encoder speeds, containers, mixdowns) and the built-in list come from the installed HandBrakeCLI, so they follow its version.
+- A preset per share (`SHARE_N_PRESET`) and a default preset (`DEFAULT_PRESET`).
+- A preset override when queueing: a **Preset** choice next to "Queue for encoding" on the Files page, and `queue … --preset <id>` in the CLI. The Status page shows overrides in the queue.
+- Scanning single shares: "Initial scan" for new shares and "Full rescan" (re-reads every file with ffprobe) for existing ones under Settings → Library, and `scan --share N [--force]` in the CLI. Other shares keep their data, and the numbered list still covers the whole library. The Files page lists shares that haven't been scanned yet.
+- Output files get the extension of the preset's container (`.mkv`, `.mp4`, `.webm`).
 - Queue files from the web UI: on the Files page, select single files or whole folders and click "Queue for encoding". Any scanned file can be queued, not only the offered ones.
 - Stats page in the web UI with key figures and charts of the distribution by codec (count and storage), bitrate, file size, resolution, library section and status. Each chart has a table view.
 - Several library folders per section: `MOVIES_DIR_2`, `MOVIES_DIR_3`, … and `SHOWS_DIR_2`, … (also editable under Settings → Library). Each folder gets its own key prefix ("Movies 2", …), so files with the same relative path in different folders never clash, and movies and TV shows stay separate. Existing installs keep their keys.
+- Codec filter on the Files page with multiple selection: any of the codecs found, plus "All optimized codecs" and "All other codecs".
 - Readable codec names in the web UI (e.g. "H.264 (AVC)") and color-coded codec badges: green for optimized codecs (H.265, AV1, H.266), orange for all others.
 
 ### Changed
 
+- **Breaking:** the library is now a list of shares (`SHARE_1`, `SHARE_2`, … with `SHARE_N_NAME`) instead of movie and TV show folders, and presets live in a preset store (`presets/` in the data folder) instead of `PRESET_FILE`/`PRESET_NAME`. A version 2.x `config.env` and all stored data (database, queue, results) are migrated automatically on the first run; the old file is kept as `config.env.v2.bak`.
+- **Breaking (Docker):** `HOST_MOVIES_DIR`/`HOST_SHOWS_DIR` are replaced by `HOST_MEDIA_DIR`, mounted read-only at `/media`.
+- Batch lines can carry a preset id after a tab (`key<TAB>preset`); `encode.sh`, `status.sh` and the CLI read both forms.
+- The "Storage by library folder" chart is now "Storage by share".
 - Files whose video track is AV1 or H.266 (VVC) now count as already optimized and are no longer offered for encoding, just like H.265.
 - Files queued with `queue` (CLI or web UI) show as queued right away, without waiting for the next scan.
+- The Files page loads the folder tree on demand: it shows the top folders, loads a folder's content when it's opened, and lists 200 files at a time ("Show more"). Filters and totals are computed in the database. Large libraries (tested with about 72,000 files) no longer produce a page of tens of megabytes. Folders and files are sorted naturally ("Season 2" before "Season 10"), and extra library folders show their folder name next to "Movies 2" etc.
+- Ticking a folder queues all its files that match the active filters without loading them; queueing more than 200 files asks for confirmation.
 - The "Storage by library section" chart is now "Storage by library folder" and shows each folder separately.
 - Short file names in the CLI, notes and web UI show the folder for extra library folders, e.g. "Movies 2: Film › Film.mkv".
 - Batch files get microseconds in their name, so two batches written in the same second can't overwrite each other.

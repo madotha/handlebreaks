@@ -19,6 +19,9 @@ logs/
 .lock
 .secret_key
 .scan.lock
+.migrate.lock
+presets/
+config.env.v2.bak
 TODO.md
 docker-compose*.yml
 local.plex-encoding*.plist

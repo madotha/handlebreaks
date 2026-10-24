@@ -1,0 +1,28 @@
+{# One level of the folder tree: subfolders (content loaded when opened) and files. #}
+{% for f in folders %}
+  {% set open = filters and f.count <= auto_open %}
+  <details class="dir" {% if open %}open{% endif %}>
+    <summary>
+      <input type="checkbox" class="dir-toggle" name="folder" value="{{ f.path }}" data-count="{{ f.selectable }}"
+             aria-label="Select all files in {{ f.name }}" title="Select all {{ f.selectable|count }} files in this folder"
+             {% if not f.selectable %}disabled data-locked{% endif %}>
+      <span class="dirname">{{ f.name }}</span>{% if f.note %}<span class="dirnote">{{ f.note }}</span>{% endif %}
+      <span class="meta">{{ f.count|count }} {{ 'file' if f.count == 1 else 'files' }} · {{ f.size|size }}</span>
+    </summary>
+    <div class="dir-body" data-src="{{ url_for('files_folder', path=f.path, **filters) }}">
+      <p class="muted small loading">Loading…</p>
+    </div>
+  </details>
+{% endfor %}
+{% if files %}
+  <div class="table-wrap files-level">
+    <table>
+      <thead><tr><th class="sel"><span class="visually-hidden">Select</span></th><th>File</th><th>Codec</th><th>Resolution</th><th>Bitrate</th><th>Duration</th><th class="num">Size</th><th>Status</th></tr></thead>
+      <tbody>{% include "_file_rows.html" %}</tbody>
+    </table>
+    {% if more_url %}
+      <button type="button" class="secondary" data-more="{{ more_url }}">Show more <span data-more-label>({{ shown_files|count }} of {{ total_files|count }})</span></button>
+    {% endif %}
+  </div>
+{% endif %}
+{% if not folders and not files %}<p class="muted small">No matching files.</p>{% endif %}

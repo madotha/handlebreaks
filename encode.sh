@@ -8,7 +8,8 @@
 #
 # Per file:
 #   1. Read the original from the library
-#   2. Encode it with your preset to <output>/.inprogress/<name>.mkv
+#   2. Encode it to <output>/.inprogress/<name>.<ext> with the preset chosen when
+#      queueing, otherwise the share's preset (SHARE_N_PRESET), otherwise DEFAULT_PRESET
 #   3. Only when finished, move it to <output>/<name>.mkv
 #      (so an aborted encode never counts as finished)
 #   4. Log the result in logs/results.tsv (OK, FAIL, MISSING, EXISTS)
@@ -39,21 +40,23 @@ first_existing() {
   print -r -- "${ps[1]:-}"
 }
 
-# Library folders: MOVIES_DIR, MOVIES_DIR_2, … and SHOWS_DIR, SHOWS_DIR_2, …
-# Each one is a key prefix ("Movies", "Movies 2", …) mapped to its folder.
-typeset -A ROOTS
-for section var in Movies MOVIES_DIR Shows SHOWS_DIR; do
-  for name in ${(k)parameters[(I)${var}(|_<2->)]}; do
-    [[ -n "${(P)name}" ]] || continue
-    if [[ "$name" == "$var" ]]; then prefix="$section"; else prefix="$section ${name##*_}"; fi
-    ROOTS[$prefix]=$(first_existing "${(P)name}")
-  done
+# Shares: SHARE_1, SHARE_2, … Each one is a key prefix ("share1", …) mapped to its
+# folder and its preset (SHARE_N_PRESET, empty = DEFAULT_PRESET).
+typeset -A ROOTS SHARE_PRESET
+for name in ${(k)parameters[(I)SHARE_<1->]}; do
+  [[ -n "${(P)name}" ]] || continue
+  ROOTS[share${name#SHARE_}]=$(first_existing "${(P)name}")
+  pvar="${name}_PRESET"; SHARE_PRESET[share${name#SHARE_}]="${(P)pvar:-}"
 done
 OUT=$(first_existing "${ENCODED_DIR:-}")
-PRESET_FILE="${PRESET_FILE:-$BASE/preset.json}"
-PRESET_NAME="${PRESET_NAME:-}"                   # internal name of the preset
-if [[ -z "${ROOTS[Movies]:-}" || -z "${ROOTS[Shows]:-}" || -z "$OUT" || -z "$PRESET_NAME" ]]; then
-  log "config.env is incomplete (MOVIES_DIR, SHOWS_DIR, ENCODED_DIR, PRESET_NAME)"; sleep 300; exit 1
+PRESET_DIR="$DATA/presets"
+DEFAULT_PRESET="${DEFAULT_PRESET:-}"
+if (( ${+MOVIES_DIR} || ${+SHOWS_DIR} )) && (( ${#ROOTS} == 0 )); then
+  log "config.env is from version 2.x: run 'python3 encoding.py status' or open the web UI once to migrate it"
+  sleep 300; exit 1
+fi
+if (( ${#ROOTS} == 0 )) || [[ -z "$OUT" || -z "$DEFAULT_PRESET" ]]; then
+  log "config.env is incomplete (SHARE_1, ENCODED_DIR, DEFAULT_PRESET)"; sleep 300; exit 1
 fi
 mkdir -p "$OUT/.inprogress"
 
@@ -127,7 +130,8 @@ log "Starting: $total file(s)"
 
 i=0
 for b in $batches; do
-  while IFS= read -r key || [[ -n "$key" ]]; do
+  # A batch line is "key" or "key<TAB>preset id" (preset chosen when queueing)
+  while IFS=$'\t' read -r key override || [[ -n "$key" ]]; do
     [[ -z "$key" ]] && continue
     i=$(( i + 1 ))
     prefix="${key%%/*}"
@@ -140,19 +144,30 @@ for b in $batches; do
       log "Missing in library: $key"; result MISSING "$key"; continue
     fi
 
+    preset_id="${override:-${SHARE_PRESET[$prefix]:-$DEFAULT_PRESET}}"
+    preset_file="$PRESET_DIR/$preset_id.json"
+    # Name and container of the preset (HandBrake export JSON with one preset)
+    preset_info=$(python3 -c 'import json, sys
+p = json.load(open(sys.argv[1]))["PresetList"][0]
+print(p["PresetName"]); print({"av_mp4": "mp4", "av_webm": "webm"}.get(p.get("FileFormat"), "mkv"))' "$preset_file" 2>/dev/null)
+    if [[ -z "$preset_info" ]]; then
+      log "Preset '$preset_id' not found or unreadable: $key"; result FAIL "$key"; continue
+    fi
+    preset_name="${preset_info%$'\n'*}"; ext="${preset_info##*$'\n'}"
+
     stem="${${src:t}:r}"
-    out="$OUT/$stem.mkv"
-    tmp="$OUT/.inprogress/$stem.mkv"
+    out="$OUT/$stem.$ext"
+    tmp="$OUT/.inprogress/$stem.$ext"
     if [[ -e "$out" ]]; then
       log "Already exists: $out"; result EXISTS "$key"; continue
     fi
 
     print -r -- "$key	$i	$total	$(date +%s)" > "$LOGS/current.txt"
-    log "[$i/$total] $key"
+    log "[$i/$total] $key (preset: $preset_name)"
     rm -f "$tmp"
     # Progress (stdout) to progress.log, HandBrake log (stderr) to handbrake-last.log
     : > "$LOGS/progress.log"
-    HandBrakeCLI --preset-import-file "$PRESET_FILE" -Z "$PRESET_NAME" \
+    HandBrakeCLI --preset-import-file "$preset_file" -Z "$preset_name" \
                  -i "$src" -o "$tmp" \
                  > "$LOGS/progress.log" 2> "$LOGS/handbrake-last.log" < /dev/null &
     hbpid=$!

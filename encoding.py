@@ -33,9 +33,12 @@ Each folder setting may list several paths separated by ":", e.g. the real macOS
 path and a fallback path inside the Docker container or another environment
 (~/media/...). The script uses the first path that exists.
 
-Each section can have several library folders: MOVIES_DIR, MOVIES_DIR_2, MOVIES_DIR_3, …
-and SHOWS_DIR, SHOWS_DIR_2, … Their files are keyed as "Movies/…", "Movies 2/…" etc.,
-so keep each folder's number when editing config.env.
+The library consists of shares: SHARE_1, SHARE_2, … each with a name (SHARE_1_NAME)
+and an optional HandBrake preset (SHARE_1_PRESET, otherwise DEFAULT_PRESET). Files
+are keyed by the share number ("share3/…"), so keep each share's number when editing
+config.env. Presets live in presets/ in the data folder (see presets.py). A config.env
+from version 2.x (MOVIES_DIR/SHOWS_DIR, PRESET_FILE/PRESET_NAME) is migrated
+automatically on first run; the old file is kept as config.env.v2.bak.
 
 The data folder is the folder of this script, unless the environment variable
 ENCODING_DATA_DIR points elsewhere (e.g. /data in the Docker container). It holds
@@ -46,10 +49,13 @@ Examples
 --------
     python3 encoding.py scan
     python3 encoding.py scan --no-probe       # without ffprobe (faster)
+    python3 encoding.py scan --share 3        # only share 3 (e.g. a new share)
+    python3 encoding.py scan --share 3 --force   # share 3, re-read every file with ffprobe
     python3 encoding.py queue all             # everything from the last list
     python3 encoding.py queue all -3 -7 --skip-rest
                                               # everything except 3 and 7, and hide those
     python3 encoding.py queue 1,2,5-8
+    python3 encoding.py queue 4 --preset my-preset   # with a different preset (id from presets/)
     python3 encoding.py skip 4
     python3 encoding.py skipped               # list hidden files
     python3 encoding.py unskip 2              # show no. 2 from "skipped" again
@@ -73,6 +79,8 @@ from contextlib import closing, contextmanager
 from datetime import datetime
 from pathlib import Path
 
+import presets
+
 # ─── Configuration ────────────────────────────────────────────────────────────
 
 BASE = Path(__file__).resolve().parent          # program folder, e.g. ~/scripts/encoding
@@ -82,22 +90,22 @@ EXAMPLE_CONFIG = BASE / "config.example.env"
 DB_FILE = Path(os.environ.get("ENCODING_DB_FILE") or DATA_DIR / "encoding.db")
 
 # For each location a list of possible paths, set from config.env (apply_config)
-ROOT_CANDIDATES = {}
+ROOT_CANDIDATES = {}                            # key prefix ("share3") -> paths
+SHARE_NAMES = {}                                # key prefix -> display name
 ENCODED_CANDIDATES = []
 NOTE_DIR_CANDIDATES = []
 NOTE_NAME = "Encoding To-Do.md"
 
-# Library sections: section -> config.env setting. Each section can have several
-# library folders: MOVIES_DIR, MOVIES_DIR_2, MOVIES_DIR_3, … Every folder gets its
-# own key prefix ("Movies", "Movies 2", …), so the number must not change later.
-SECTIONS = {"Movies": "MOVIES_DIR", "Shows": "SHOWS_DIR"}
-# Version 1.x used German folder labels as key prefixes. Only used to import old
-# data (state.json, results.tsv), so these words must stay as they are.
+# Version 1.x used German folder labels as key prefixes, version 2.x "Movies",
+# "Movies 2", "Shows", … Only used to import old data (state.json, results.tsv,
+# config.env), so these words must stay as they are.
 LEGACY_PREFIXES = {"Filme/": "Movies/", "Serien/": "Shows/"}
+V2_SECTIONS = {"Movies": "MOVIES_DIR", "Shows": "SHOWS_DIR"}
 LEGACY_NOTE_HEADING = "Noch zu encoden"     # section heading in the predecessor's note (import-legacy)
 
 STATE_FILE   = DATA_DIR / "state.json"    # only used to import data from version 1.x
 SCAN_LOCK    = DATA_DIR / ".scan.lock"
+MIGRATE_LOCK = DATA_DIR / ".migrate.lock"
 QUEUE_DIR    = DATA_DIR / "queue"         # new batches (picked up by encode.sh)
 PROC_DIR     = DATA_DIR / "processing"    # batch being encoded
 LOG_DIR      = DATA_DIR / "logs"
@@ -159,11 +167,49 @@ def parse_config(path, expand=True):
 
 
 def load_config():
-    """Read config.env."""
+    """Read config.env. Migrates a version 2.x config.env first, and makes sure there
+    is at least one preset and a DEFAULT_PRESET."""
     if not CONFIG_FILE.exists():
         raise SystemExit(f"ERROR: {CONFIG_FILE} is missing. Copy the template: "
                          f"cp config.example.env config.env, then adjust it.")
-    return parse_config(CONFIG_FILE)
+    cfg = parse_config(CONFIG_FILE)
+    if needs_v2_migration(cfg) or not cfg.get("DEFAULT_PRESET") or not presets.all_presets():
+        with file_lock(MIGRATE_LOCK):
+            cfg = parse_config(CONFIG_FILE)
+            if needs_v2_migration(cfg):
+                migrate_v2(cfg)
+            cfg = parse_config(CONFIG_FILE)
+            pid = presets.bootstrap()
+            if not cfg.get("DEFAULT_PRESET") or not presets.exists(cfg["DEFAULT_PRESET"]):
+                write_config({"DEFAULT_PRESET": pid or presets.all_presets()[0][0]})
+            cfg = parse_config(CONFIG_FILE)
+    return cfg
+
+
+def write_config(updates, note="removed, number stays reserved"):
+    """Replace values in config.env, keeping comments and order. A value of None
+    comments the setting out (with `note`), so a removed share's number stays reserved.
+    New settings of a share are added next to it."""
+    src = CONFIG_FILE if CONFIG_FILE.exists() else EXAMPLE_CONFIG
+    lines = src.read_text(encoding="utf-8").splitlines()
+    setting = lambda line: (m := re.match(r"\s*([A-Z_][A-Z0-9_]*)=", line)) and m.group(1)
+    done = set()
+    for i, line in enumerate(lines):
+        key = setting(line)
+        if key in updates:
+            lines[i] = (f"# {line.strip()}   # {note}" if updates[key] is None
+                        else f'{key}="{updates[key]}"')
+            done.add(key)
+    for key, value in updates.items():
+        if key in done or value is None:
+            continue
+        m = re.match(r"(SHARE_\d+)", key)
+        same = [i for i, line in enumerate(lines) if m and (setting(line) or "").startswith(m.group(1))]
+        if not same:                            # new share: after the last share
+            same = [i for i, line in enumerate(lines) if m and re.match(r"SHARE_\d+", setting(line) or "")]
+        lines.insert(same[-1] + 1 if same else len(lines), f'{key}="{value}"')
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    write_text_atomic(CONFIG_FILE, "\n".join(lines) + "\n")
 
 
 def path_list(value):
@@ -171,32 +217,89 @@ def path_list(value):
     return [os.path.expanduser(p) for p in value.split(":") if p]
 
 
-def library_roots(cfg):
-    """Library folders from config.env: [(prefix, section, setting, value)], in a stable order.
-    MOVIES_DIR -> "Movies", MOVIES_DIR_2 -> "Movies 2", …; empty settings are ignored."""
-    roots = []
-    for section, base in SECTIONS.items():
+def shares(cfg):
+    """Shares from config.env: [{"n", "prefix", "name", "paths", "preset"}], by number.
+    Shares with an empty path are ignored."""
+    out = []
+    for n in sorted(int(m.group(1)) for k in cfg if (m := re.fullmatch(r"SHARE_(\d+)", k))):
+        value = cfg.get(f"SHARE_{n}", "")
+        if not value:
+            continue
+        paths = path_list(value)
+        root = first_existing(paths)
+        name = cfg.get(f"SHARE_{n}_NAME") or (root or Path(paths[0])).name or f"Share {n}"
+        out.append({"n": n, "prefix": f"share{n}", "name": name, "paths": paths,
+                    "preset": cfg.get(f"SHARE_{n}_PRESET", "")})
+    return out
+
+
+def next_share_number():
+    """Next free share number. Numbers of removed shares (commented out) are never
+    reused, because file keys contain them."""
+    text = CONFIG_FILE.read_text(encoding="utf-8") if CONFIG_FILE.exists() else ""
+    used = [int(n) for n in re.findall(r"^#?\s*SHARE_(\d+)=", text, re.M)]
+    return max([0] + used) + 1
+
+
+def apply_config(cfg):
+    global ROOT_CANDIDATES, SHARE_NAMES, ENCODED_CANDIDATES, NOTE_DIR_CANDIDATES
+    found = shares(cfg)
+    missing = ([] if found else ["SHARE_1"]) + ([] if cfg.get("ENCODED_DIR") else ["ENCODED_DIR"])
+    if missing:
+        raise SystemExit(f"ERROR: {CONFIG_FILE} is missing: {', '.join(missing)}")
+    ROOT_CANDIDATES = {s["prefix"]: s["paths"] for s in found}
+    SHARE_NAMES = {s["prefix"]: s["name"] for s in found}
+    ENCODED_CANDIDATES = path_list(cfg["ENCODED_DIR"])
+    NOTE_DIR_CANDIDATES = path_list(cfg.get("NOTE_DIR", ""))
+
+
+# ─── Migration from version 2.x ───────────────────────────────────────────────
+
+def needs_v2_migration(cfg):
+    return any(k in cfg for k in V2_SECTIONS.values()) and not any(re.fullmatch(r"SHARE_\d+", k) for k in cfg)
+
+
+def migrate_v2(cfg):
+    """Turn the Movies/Shows folders of version 2.x into shares (in the order Movies,
+    Movies 2, …, Shows, Shows 2, …), move PRESET_FILE/PRESET_NAME into the preset store,
+    and rewrite every stored key ("Movies 2/…" -> "share2/…")."""
+    old = []
+    for section, base in V2_SECTIONS.items():
         numbered = sorted((int(m.group(1)), k) for k in cfg
                           if (m := re.fullmatch(rf"{base}_(\d+)", k)) and int(m.group(1)) >= 2)
         for n, key in [(1, base)] + numbered:
             if cfg.get(key):
-                roots.append((section if n == 1 else f"{section} {n}", section, key, cfg[key]))
-    return roots
+                old.append((section if n == 1 else f"{section} {n}", key))
+    raw = parse_config(CONFIG_FILE, expand=False)
+    prefix_map, updates = {}, {}
+    for n, (prefix, key) in enumerate(old, 1):
+        paths = path_list(cfg[key])
+        root = first_existing(paths)
+        prefix_map[prefix] = f"share{n}"
+        updates[f"SHARE_{n}"] = raw[key]
+        updates[f"SHARE_{n}_NAME"] = (root.name if root else prefix)
+    pid = presets.bootstrap(cfg.get("PRESET_FILE") or None, cfg.get("PRESET_NAME") or None)
+    if pid:
+        updates["DEFAULT_PRESET"] = pid
+    shutil.copy2(CONFIG_FILE, CONFIG_FILE.with_name("config.env.v2.bak"))
+    write_config({k: None for k in raw if re.fullmatch(r"(MOVIES|SHOWS)_DIR(_\d+)?|PRESET_FILE|PRESET_NAME", k)},
+                 note="version 2.x setting, migrated to SHARE_* and DEFAULT_PRESET")
+    write_config(updates)
 
-
-def section_of(key):
-    """Section ("Movies" or "Shows") of a file key such as "Movies 2/Film/Film.mkv"."""
-    return key.split("/", 1)[0].split(" ", 1)[0]
-
-
-def apply_config(cfg):
-    global ROOT_CANDIDATES, ENCODED_CANDIDATES, NOTE_DIR_CANDIDATES
-    missing = [k for k in (*SECTIONS.values(), "ENCODED_DIR") if not cfg.get(k)]
-    if missing:
-        raise SystemExit(f"ERROR: {CONFIG_FILE} is missing: {', '.join(missing)}")
-    ROOT_CANDIDATES = {prefix: path_list(value) for prefix, _, _, value in library_roots(cfg)}
-    ENCODED_CANDIDATES = path_list(cfg["ENCODED_DIR"])
-    NOTE_DIR_CANDIDATES = path_list(cfg.get("NOTE_DIR", ""))
+    with closing(connect()) as con, con:
+        con.execute("INSERT OR REPLACE INTO meta VALUES ('v2_prefix_map', ?)", (json.dumps(prefix_map),))
+        for table in ("files", "skipped", "known", "results"):
+            for oldp, newp in prefix_map.items():
+                con.execute(f"UPDATE {table} SET key = ? || substr(key, ?) WHERE key >= ? AND key < ?",
+                            (newp, len(oldp) + 1, oldp + "/", oldp + "0"))
+        offer = json.loads(dict(con.execute("SELECT key, value FROM meta")).get("last_offer") or "[]")
+        con.execute("INSERT OR REPLACE INTO meta VALUES ('last_offer', ?)",
+                    (json.dumps([legacy_key(k, prefix_map) for k in offer], ensure_ascii=False),))
+    for d in (QUEUE_DIR, PROC_DIR):                # batches not encoded yet
+        for f in d.glob("*.txt") if d.exists() else []:
+            lines = [legacy_key(l, prefix_map) for l in f.read_text(encoding="utf-8").splitlines() if l.strip()]
+            write_text_atomic(f, "\n".join(lines) + "\n")
+    print(f"Migrated config.env to shares ({len(old)} share(s)); old file: config.env.v2.bak.", file=sys.stderr)
 
 
 def first_existing(candidates):
@@ -241,13 +344,15 @@ def migrate_state_json(con):
     if not STATE_FILE.exists():
         return
     old = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+    pmap = stored_prefix_map(con)
+    legacy = lambda k: legacy_key(k, pmap)
     with con:
         con.executemany("INSERT OR IGNORE INTO baseline VALUES (?)", [(r,) for r in old.get("baseline", [])])
         con.executemany("INSERT OR IGNORE INTO skipped VALUES (?, ?)",
-                        [(legacy_key(k), v) for k, v in old.get("skipped", {}).items()])
-        con.executemany("INSERT OR IGNORE INTO known VALUES (?)", [(legacy_key(k),) for k in old.get("known", [])])
+                        [(legacy(k), v) for k, v in old.get("skipped", {}).items()])
+        con.executemany("INSERT OR IGNORE INTO known VALUES (?)", [(legacy(k),) for k in old.get("known", [])])
         con.executemany("INSERT OR REPLACE INTO meta VALUES (?, ?)", [
-            ("last_offer", json.dumps([legacy_key(k) for k in old.get("last_offer", [])], ensure_ascii=False)),
+            ("last_offer", json.dumps([legacy(k) for k in old.get("last_offer", [])], ensure_ascii=False)),
             ("last_scan", old.get("last_scan")),
         ])
     try:
@@ -257,12 +362,22 @@ def migrate_state_json(con):
         pass                                    # imported by another process at the same time
 
 
-def legacy_key(key):
-    """Translate a key from version 1.x (German section prefix) to the current prefix."""
+def legacy_key(key, prefix_map=None):
+    """Translate a key from version 1.x ("Filme/…") or 2.x ("Movies 2/…") to the
+    current share prefix. prefix_map is the 2.x mapping stored by migrate_v2()."""
     for old, new in LEGACY_PREFIXES.items():
         if key.startswith(old):
-            return new + key[len(old):]
+            key = new + key[len(old):]
+            break
+    head, sep, rest = key.partition("/")
+    if prefix_map and sep and head in prefix_map:
+        return f"{prefix_map[head]}/{rest}"
     return key
+
+
+def stored_prefix_map(con):
+    row = con.execute("SELECT value FROM meta WHERE key = 'v2_prefix_map'").fetchone()
+    return json.loads(row[0]) if row and row[0] else {}
 
 
 def load_state():
@@ -302,9 +417,14 @@ def load_files():
         return {r[0]: dict(zip(FILE_COLUMNS, r)) for r in rows}
 
 
-def save_files(infos):
+def save_files(infos, prefixes=None):
+    """Replace the inventory with infos; with prefixes, only the rows of those shares."""
     with closing(connect()) as con, con:
-        con.execute("DELETE FROM files")
+        if prefixes:
+            for prefix in prefixes:
+                con.execute("DELETE FROM files WHERE key >= ? AND key < ?", (prefix + "/", prefix + "0"))
+        else:
+            con.execute("DELETE FROM files")
         con.executemany(
             f"INSERT INTO files ({', '.join(FILE_COLUMNS)}) VALUES ({', '.join('?' * len(FILE_COLUMNS))})",
             [tuple(i.get(c) for c in FILE_COLUMNS) for i in infos.values()],
@@ -323,6 +443,15 @@ def scan_lock():
         yield
 
 
+@contextmanager
+def file_lock(path):
+    """Exclusive lock held while the block runs (waits for other processes)."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield
+
+
 def write_text_atomic(path, text):
     tmp = path.with_name("." + path.name + ".tmp")
     tmp.write_text(text, encoding="utf-8")
@@ -331,14 +460,23 @@ def write_text_atomic(path, text):
 
 # ─── Queue and results (shared with encode.sh) ────────────────────────────────
 
-def queued_keys():
-    """All keys waiting in queue/ or processing/ to be encoded."""
-    keys = []
+def queued_entries():
+    """All (key, preset id or "") waiting in queue/ or processing/ to be encoded.
+    A batch line is "key" or "key<TAB>preset id" (preset chosen when queueing)."""
+    entries = []
     for d in (PROC_DIR, QUEUE_DIR):
         if d.exists():
             for f in sorted(d.glob("*.txt")):
-                keys += [l.strip() for l in f.read_text(encoding="utf-8").splitlines() if l.strip()]
-    return keys
+                for line in f.read_text(encoding="utf-8").splitlines():
+                    if line.strip():
+                        key, _, preset = line.rstrip("\n").partition("\t")
+                        entries.append((key.strip(), preset.strip()))
+    return entries
+
+
+def queued_keys():
+    """All keys waiting in queue/ or processing/ to be encoded."""
+    return [k for k, _ in queued_entries()]
 
 
 def load_results():
@@ -346,7 +484,8 @@ def load_results():
     New lines from logs/results.tsv (written by encode.sh) are imported into the database first."""
     with closing(connect()) as con:
         if RESULTS_FILE.exists():
-            rows = [(p[0], p[1], legacy_key(p[2])) for p in (l.split("\t") for l in
+            pmap = stored_prefix_map(con)
+            rows = [(p[0], p[1], legacy_key(p[2], pmap)) for p in (l.split("\t") for l in
                     RESULTS_FILE.read_text(encoding="utf-8").splitlines()) if len(p) >= 3]
             with con:
                 con.executemany("INSERT OR IGNORE INTO results (at, status, key) VALUES (?, ?, ?)", rows)
@@ -376,10 +515,13 @@ def encoded_stems(enc_dir):
 
 # ─── Scan ─────────────────────────────────────────────────────────────────────
 
-def walk_library():
-    """Yields (key, relative_path, file_name, full_path) for every video."""
+def walk_library(prefixes=None):
+    """Yields (key, relative_path, file_name, full_path) for every video (of the given
+    shares only, if prefixes is set)."""
     missing = []
     for label, cands in ROOT_CANDIDATES.items():
+        if prefixes and label not in prefixes:
+            continue
         root = first_existing(cands)
         if root is None:
             missing.append(label)
@@ -395,7 +537,8 @@ def walk_library():
                 rel = str(full.relative_to(root))
                 yield f"{label}/{rel}", rel, fn, full
     if missing:
-        raise SystemExit(f"ERROR: {', '.join(missing)} not reachable. Is the NAS mounted?")
+        names = ", ".join(SHARE_NAMES.get(m, m) for m in missing)
+        raise SystemExit(f"ERROR: {names} not reachable. Is the NAS mounted?")
 
 
 def to_num(value, typ):
@@ -430,9 +573,10 @@ def probe(path):
     return info
 
 
-def inventory(entries, probe_files):
+def inventory(entries, probe_files, force=False):
     """Size, modification time and (if wanted) ffprobe data per file.
-    ffprobe only runs for new or changed files; the rest comes from the database."""
+    ffprobe only runs for new or changed files (all files with force); the rest comes
+    from the database."""
     cached = load_files()
     infos, todo = {}, []
     for key, _, _, full in entries:
@@ -442,7 +586,7 @@ def inventory(entries, probe_files):
             continue
         info = {"key": key, "size": st.st_size, "mtime": st.st_mtime}
         old = cached.get(key)
-        if old and old["size"] == st.st_size and old["mtime"] == st.st_mtime and old["probed_at"]:
+        if not force and old and old["size"] == st.st_size and old["mtime"] == st.st_mtime and old["probed_at"]:
             info.update({c: old[c] for c in ("video_codec", "width", "height", "duration",
                                               "bitrate", "probed_at", "probe_error")})
         elif probe_files and FFPROBE:
@@ -460,12 +604,21 @@ def inventory(entries, probe_files):
     return infos
 
 
-def scan(state, probe_files=True):
+def scan(state, probe_files=True, only=None, force=False):
+    """Scan all shares, or only the shares whose prefixes are in `only` (the others keep
+    the data of their last scan). force re-reads every scanned file with ffprobe."""
     with scan_lock():
-        return _scan(state, probe_files)
+        return _scan(state, probe_files, only, force)
 
 
-def _scan(state, probe_files):
+def share_scans():
+    """Key prefix -> time of the last scan of that share."""
+    with closing(connect()) as con:
+        return {k[len("share_scan:"):]: v for k, v in con.execute(
+            "SELECT key, value FROM meta WHERE key LIKE 'share_scan:%'")}
+
+
+def _scan(state, probe_files, only=None, force=False):
     enc_dir = first_existing(ENCODED_CANDIDATES)
     done_stems = encoded_stems(enc_dir)
     in_queue = set(queued_keys())
@@ -474,8 +627,8 @@ def _scan(state, probe_files):
     skipped = state["skipped"]
     known = set(state["known"])
 
-    entries = list(walk_library())
-    infos = inventory(entries, probe_files)
+    entries = list(walk_library(only))
+    infos = inventory(entries, probe_files, force)
 
     offer, waiting, queued, bad, hid_skip, hid_base = [], [], [], [], [], []
     n_total = n_encoded = 0
@@ -510,7 +663,21 @@ def _scan(state, probe_files):
         else:
             offer.append(key)
             info["status"] = "offer"
-    save_files(infos)
+    save_files(infos, only)
+    scanned = only or list(ROOT_CANDIDATES)
+    with closing(connect()) as con, con:
+        con.executemany("INSERT OR REPLACE INTO meta VALUES (?, ?)",
+                        [(f"share_scan:{p}", now_str()) for p in scanned])
+    if only:                                    # the list covers all shares: others from their last scan
+        offer, waiting, queued, bad, hid_skip, hid_base = [], [], [], [], [], []
+        n_total = n_encoded = 0
+        lists = {"offer": offer, "waiting": waiting, "queued": queued, "bad": bad,
+                 "skipped": hid_skip, "baseline": hid_base}
+        for key, info in load_files().items():
+            n_total += 1
+            n_encoded += info["status"] == "h265"
+            if info["status"] in lists:
+                lists[info["status"]].append(key)
 
     offer.sort(key=str.lower)
     flags = {}
@@ -521,8 +688,9 @@ def _scan(state, probe_files):
         elif k not in known:
             flags[k] = "🆕"
 
-    # Forget skipped files that no longer exist
-    state["skipped"] = {k: v for k, v in skipped.items() if k in all_unencoded}
+    # Forget skipped files that no longer exist (in the scanned shares)
+    state["skipped"] = {k: v for k, v in skipped.items()
+                        if k in all_unencoded or (only and k.split("/", 1)[0] not in only)}
     state["known"] = sorted(known | set(offer))
     state["last_offer"] = offer
     state["last_scan"] = now_str()
@@ -548,11 +716,12 @@ def _scan(state, probe_files):
 # ─── Obsidian note ────────────────────────────────────────────────────────────
 
 def short(key):
-    """Short, readable form: folder of the show/movie + file name. Files from an
-    additional library folder ("Movies 2", …) are prefixed with its name."""
+    """Short, readable form: share name, folder of the show/movie and file name."""
     parts = key.split("/")
-    tag = f"{parts[0]}: " if " " in parts[0] else ""
-    return f"{tag}{parts[1]} › {parts[-1]}" if len(parts) > 2 else key
+    share = SHARE_NAMES.get(parts[0], parts[0])
+    if len(parts) > 2:
+        return f"{share}: {parts[1]} › {parts[-1]}"
+    return f"{share}: {parts[-1]}" if len(parts) == 2 else key
 
 
 def write_note(s):
@@ -663,9 +832,11 @@ def parse_selection(tokens, n):
     return sorted(sel)
 
 
-def write_batch(keys):
-    """Queue the given keys as a new batch. Keys already queued are left out.
-    Returns the keys that were actually queued."""
+def write_batch(keys, preset=None):
+    """Queue the given keys as a new batch, optionally with a preset id that overrides
+    the share's preset. Keys already queued are left out. Returns the keys queued."""
+    if preset and not presets.exists(preset):
+        raise SystemExit(f"Unknown preset: {preset}")
     already = set(queued_keys())
     chosen = [k for k in dict.fromkeys(keys) if k not in already]
     if not chosen:
@@ -673,7 +844,7 @@ def write_batch(keys):
     QUEUE_DIR.mkdir(parents=True, exist_ok=True)
     batch = QUEUE_DIR / f"batch-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.txt"
     tmp = DATA_DIR / f".{batch.name}.tmp"         # same disk as queue/, so os.replace is atomic
-    tmp.write_text("\n".join(chosen) + "\n", encoding="utf-8")
+    tmp.write_text("".join(f"{k}\t{preset}\n" if preset else f"{k}\n" for k in chosen), encoding="utf-8")
     os.replace(tmp, batch)                       # only now does the worker see the batch
     with closing(connect()) as con, con:         # show them as queued before the next scan
         con.executemany("UPDATE files SET status = 'queued' WHERE key = ?", [(k,) for k in chosen])
@@ -682,12 +853,19 @@ def write_batch(keys):
 
 def cmd_queue(state, args):
     skip_rest = "--skip-rest" in args
+    preset = None
+    if "--preset" in args:
+        i = args.index("--preset")
+        if i + 1 >= len(args):
+            raise SystemExit("--preset needs a preset id (see the presets/ folder or the web UI).")
+        preset = args[i + 1]
+        args = args[:i] + args[i + 2:]
     args = [a for a in args if a != "--skip-rest"]
     offer = state["last_offer"]
     if not offer:
         raise SystemExit("The last list is empty. Run 'scan' first.")
     nums = parse_selection(args, len(offer))
-    chosen = write_batch([offer[i - 1] for i in nums])
+    chosen = write_batch([offer[i - 1] for i in nums], preset)
     skipped_now = []
     if skip_rest:
         for i, k in enumerate(offer, 1):
@@ -767,7 +945,15 @@ def main():
     state = load_state()
 
     if cmd == "scan":
-        s = scan(state, probe_files="--no-probe" not in rest)
+        only = None
+        if "--share" in rest:
+            i = rest.index("--share")
+            n = rest[i + 1] if i + 1 < len(rest) else ""
+            if f"share{n}" not in ROOT_CANDIDATES:
+                raise SystemExit(f"Unknown share: {n!r}. Shares: " +
+                                 ", ".join(f"{p[5:]} ({SHARE_NAMES[p]})" for p in ROOT_CANDIDATES))
+            only = [f"share{n}"]
+        s = scan(state, probe_files="--no-probe" not in rest, only=only, force="--force" in rest)
         if "--json" in rest:
             print(json.dumps(s, indent=1, ensure_ascii=False))
             return

@@ -31,13 +31,17 @@ import secrets
 import sys
 import threading
 from collections import Counter
+from contextlib import closing
+from pathlib import Path
 
-from flask import Flask, abort, flash, g, redirect, render_template, request, session, url_for
+from flask import Flask, Response, abort, flash, g, redirect, render_template, request, session, url_for
 
 import encoding as enc
+import presets
 
 app = Flask(__name__)
-app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_HTTPONLY=True)
+app.config.update(SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_HTTPONLY=True,
+                  MAX_CONTENT_LENGTH=5 * 1024 * 1024)      # preset uploads
 
 
 def secret_key():
@@ -58,8 +62,8 @@ app.secret_key = secret_key()
 SETTINGS = {
     "library": ("Library", []),                 # fields built from config.env (library_fields)
     "encoding": ("Encoding", [
-        ("PRESET_FILE", "Preset file", "path", "Exported from the HandBrake app. Empty = preset.json in the program folder."),
-        ("PRESET_NAME", "Preset name", "preset", "Internal name (PresetName) of the preset in the file."),
+        ("DEFAULT_PRESET", "Default preset", "preset",
+         "Used for every share without its own preset. Manage presets on the Presets page."),
     ]),
     "notes": ("Obsidian", [
         ("NOTE_DIR", "Notes folder", "paths", "For \"Encoding To-Do.md\" and \"Encoding Status.md\". Empty = no notes."),
@@ -86,59 +90,27 @@ def raw_config():
     return enc.parse_config(src, expand=False)
 
 
-def write_config(updates):
-    """Replace values in config.env, keeping comments and order. A value of None
-    comments the setting out, so a removed library folder's number stays reserved.
-    New library folders are added below their section."""
-    src = enc.CONFIG_FILE if enc.CONFIG_FILE.exists() else enc.EXAMPLE_CONFIG
-    lines = src.read_text(encoding="utf-8").splitlines()
-    setting = lambda line: (m := re.match(r"\s*([A-Z_][A-Z0-9_]*)=", line)) and m.group(1)
-    done = set()
-    for i, line in enumerate(lines):
-        key = setting(line)
-        if key in updates:
-            lines[i] = (f"# {line.strip()}   # removed, number stays reserved" if updates[key] is None
-                        else f'{key}="{updates[key]}"')
-            done.add(key)
-    for key, value in updates.items():
-        if key in done or value is None:
-            continue
-        base = next((b for b in enc.SECTIONS.values() if key.startswith(b + "_")), None)
-        same = [i for i, line in enumerate(lines) if base and (setting(line) or "").startswith(base)]
-        lines.insert(same[-1] + 1 if same else len(lines), f'{key}="{value}"')
-    enc.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    enc.write_text_atomic(enc.CONFIG_FILE, "\n".join(lines) + "\n")
-
-
 def library_fields(cfg):
-    """Settings fields of the library section: every library folder from config.env,
-    one empty field per section to add another folder, and the output folder."""
+    """Settings fields of the library section: name, folder and preset of every share,
+    an empty group to add a share, and the output folder."""
     fields = []
-    for section, base in enc.SECTIONS.items():
-        name = "movies" if section == "Movies" else "TV shows"
-        keys = [key for _, sec, key, _ in enc.library_roots(cfg) if sec == section]
-        if base not in keys:
-            keys.insert(0, base)
-        for key in keys:
-            if key == base:
-                fields.append((key, section, "paths", f"Folder with the {name}. Read only, never modified."))
-            else:
-                prefix = f"{section} {key.rsplit('_', 1)[1]}"
-                fields.append((key, prefix, "paths", f"Additional folder with {name}, shown as "
-                               f"\"{prefix}\". Clear the field to remove it."))
-        fields.append((f"{base}_new", f"Add another {name} folder", "paths_new",
-                       f"Optional. Saved as \"{section} {next_number(cfg, base)}\"."))
-    fields.append(("ENCODED_DIR", "Output folder", "paths", "Finished files land here and wait for your review."))
+    for sh in enc.shares(enc.parse_config(enc.CONFIG_FILE)) if enc.CONFIG_FILE.exists() else []:
+        n = sh["n"]
+        fields += [
+            (f"SHARE_{n}", f"Share {n}", "heading", f"share{n}"),
+            (f"SHARE_{n}_NAME", "Name", "text", "Shown in the web UI, the notes and the CLI."),
+            (f"SHARE_{n}", "Folder", "paths", "Read only, never modified. Clear it to remove the share."),
+            (f"SHARE_{n}_PRESET", "Preset", "share_preset", ""),
+        ]
+    fields += [
+        ("SHARE_new", f"Add a share (saved as share {enc.next_share_number()})", "heading", ""),
+        ("SHARE_new_NAME", "Name", "text", "Optional. Defaults to the folder name."),
+        ("SHARE_new", "Folder", "paths_new", "Optional."),
+        ("SHARE_new_PRESET", "Preset", "share_preset", ""),
+        ("ENCODED", "Output", "heading", ""),
+        ("ENCODED_DIR", "Output folder", "paths", "Finished files land here and wait for your review."),
+    ]
     return fields
-
-
-def next_number(cfg, base):
-    """Next free number for an additional library folder. Numbers of removed folders
-    (commented out in config.env) are never reused, because file keys contain them."""
-    used = [int(m.group(1)) for k in cfg if (m := re.fullmatch(rf"{base}_(\d+)", k))]
-    if enc.CONFIG_FILE.exists():
-        used += [int(n) for n in re.findall(rf"^#?\s*{base}_(\d+)=", enc.CONFIG_FILE.read_text(), re.M)]
-    return max([1] + used) + 1
 
 
 def path_checks(value):
@@ -146,26 +118,31 @@ def path_checks(value):
     return [(p, os.path.exists(p)) for p in enc.path_list(os.path.expandvars(value))]
 
 
-def preset_names(cfg):
-    path = os.path.expandvars(cfg.get("PRESET_FILE") or "") or str(enc.BASE / "preset.json")
-    try:
-        data = json.loads(open(path, encoding="utf-8").read())
-        return [p.get("PresetName") for p in data.get("PresetList", []) if p.get("PresetName")]
-    except (OSError, ValueError):
-        return []
+def share_info():
+    """Key prefix -> {"files": number of files in the inventory, "scanned": last scan time}."""
+    with closing(db()) as con:
+        counts = dict(con.execute("SELECT substr(key, 1, instr(key, '/') - 1), COUNT(*) FROM files GROUP BY 1"))
+    scans = enc.share_scans()
+    return {p: {"files": counts.get(p, 0), "scanned": scans.get(p)} for p in enc.ROOT_CANDIDATES}
+
+
+def preset_choices():
+    """[(id, name)] of all presets, for dropdowns."""
+    return [(pid, p.get("PresetName", pid)) for pid, p in presets.all_presets()]
+
 
 # ─── Background scan ──────────────────────────────────────────────────────────
 
-SCAN = {"running": False, "started": None, "finished": None, "error": None, "summary": None}
+SCAN = {"running": False, "started": None, "finished": None, "error": None, "summary": None, "label": None}
 SCAN_GUARD = threading.Lock()
 
 
-def run_scan():
+def run_scan(only=None, force=False):
     try:
         enc.apply_config(enc.load_config())
-        s = enc.scan(enc.load_state())
-        SCAN.update(error=None, summary=f"{s['videos_total']} videos, {s['already_h265']} already H.265, "
-                                        f"{len(s['offer'])} offered")
+        s = enc.scan(enc.load_state(), only=only, force=force)
+        SCAN.update(error=None, summary=f"{SCAN['label']}: {s['videos_total']:,} videos in the library, "
+                                        f"{s['already_h265']:,} already optimized, {len(s['offer']):,} offered")
     except SystemExit as e:
         SCAN.update(error=str(e), summary=None)
     except Exception as e:                      # show errors in the UI instead of swallowing them
@@ -267,42 +244,178 @@ def index():
     return redirect(url_for("files"))
 
 
-def new_node():
-    return {"dirs": {}, "files": [], "count": 0, "size": 0}
+# ─── Files: folder tree, loaded one level at a time ───────────────────────────
+# Large libraries have tens of thousands of files, so the page never renders them
+# all: it shows the top folders, and each folder's content is fetched when opened.
+
+PAGE_SIZE = 200                                 # files per "Show more" step
+AUTO_OPEN = 300                                 # with a filter, open folders with up to this many matches
+
+
+def natural(name):
+    """Sort key that orders "Season 2" before "Season 10"."""
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
+
+
+CODEC_GROUPS = {"group:good": "All optimized codecs", "group:other": "All other codecs"}
+
+
+def codec_summary(selected):
+    """Label of the codec filter button: "All codecs", one name, or "N codecs"."""
+    if not selected:
+        return "All codecs"
+    if len(selected) == 1:
+        return CODEC_GROUPS.get(selected[0]) or codec_name(selected[0])
+    return f"{len(selected)} codecs"
+
+
+def file_filters(src):
+    """Filter values from a request (query string or form). codec is a list: codec
+    names, "unknown" (not probed) and the groups in CODEC_GROUPS can be combined."""
+    filters = {k: src.get(k, "").strip() for k in ("q", "status") if src.get(k, "").strip()}
+    codecs = [c.strip() for c in src.getlist("codec") if c.strip()]
+    if codecs:
+        filters["codec"] = codecs
+    return filters
+
+
+def filter_sql(filters, path=""):
+    """WHERE clause and parameters for the filters, limited to the folder `path`."""
+    where, params = [], []
+    if filters.get("q"):
+        where.append("instr(pylower(key), ?) > 0")
+        params.append(filters["q"].lower())
+    if filters.get("codec"):                    # any of the selected codecs or groups
+        good = sorted(enc.OPTIMIZED_CODECS)
+        names = [c for c in filters["codec"] if c != UNKNOWN_CODEC and c not in CODEC_GROUPS]
+        alts = []
+        if names:
+            alts.append(f"video_codec IN ({', '.join('?' * len(names))})")
+            params += names
+        if UNKNOWN_CODEC in filters["codec"]:
+            alts.append("video_codec IS NULL")
+        if "group:good" in filters["codec"]:
+            alts.append(f"video_codec IN ({', '.join('?' * len(good))})")
+            params += good
+        if "group:other" in filters["codec"]:
+            alts.append(f"(video_codec IS NOT NULL AND video_codec NOT IN ({', '.join('?' * len(good))}))")
+            params += good
+        where.append("(" + " OR ".join(alts) + ")")
+    if filters.get("status"):
+        where.append("status = ?")
+        params.append(filters["status"])
+    if path:                                    # all keys below path/ ("0" sorts right after "/")
+        where.append("key >= ? AND key < ?")
+        params += [path + "/", path + "0"]
+    return (" WHERE " + " AND ".join(where)) if where else "", params
+
+
+def db():
+    con = enc.connect()
+    con.create_function("pylower", 1, str.lower, deterministic=True)   # Unicode-aware, unlike lower()
+    return con
+
+
+def root_folders():
+    """Key prefix -> (share name, folder name on disk), e.g. "share4" -> ("Anime", "anime-movies")."""
+    out = {}
+    for prefix, cands in enc.ROOT_CANDIDATES.items():
+        root = enc.first_existing(cands)
+        out[prefix] = (enc.SHARE_NAMES.get(prefix, prefix), (root or Path(cands[0])).name if cands else "")
+    return out
+
+
+def tree_level(path, filters, queued, offset=0):
+    """Direct subfolders and files of `path` ("" = top level) that match the filters.
+    Returns (folders, files of the requested page, number of files in total)."""
+    clause, params = filter_sql(filters, path)
+    plen = len(path) + 1 if path else 0
+    folders, keys = {}, []
+    with closing(db()) as con:
+        for key, size in con.execute(f"SELECT key, size FROM files{clause}", params):
+            head, sep, _ = key[plen:].partition("/")
+            if not sep:
+                keys.append(key)
+                continue
+            f = folders.get(head)
+            if f is None:
+                f = folders[head] = {"name": head, "path": f"{path}/{head}" if path else head,
+                                     "count": 0, "size": 0, "selectable": 0}
+            f["count"] += 1
+            f["size"] += size or 0
+            f["selectable"] += key not in queued
+        keys.sort(key=natural)
+        page = keys[offset:offset + PAGE_SIZE]
+        rows = {}
+        if page:
+            cols = ", ".join(enc.FILE_COLUMNS)
+            marks = ", ".join("?" * len(page))
+            rows = {r[0]: dict(zip(enc.FILE_COLUMNS, r))
+                    for r in con.execute(f"SELECT {cols} FROM files WHERE key IN ({marks})", page)}
+    if not path:                                # top level: shares, shown by name
+        for prefix, (name, folder) in root_folders().items():
+            if prefix in folders:
+                folders[prefix]["name"] = name
+                if folder != name:
+                    folders[prefix]["note"] = folder
+    files = [dict(rows[k], name=k[plen:]) for k in page if k in rows]
+    return sorted(folders.values(), key=lambda f: natural(f["name"])), files, len(keys)
+
+
+def level_context(path, filters, queued, offset=0):
+    folders, files, total = tree_level(path, filters, queued, offset)
+    nxt = offset + PAGE_SIZE
+    more = url_for("files_folder", path=path, offset=nxt, rows=1, **filters) if nxt < total else None
+    return {"folders": folders, "files": files, "total_files": total, "shown_files": min(nxt, total),
+            "more_url": more, "filters": filters, "queued": queued, "auto_open": AUTO_OPEN,
+            "status_labels": enc.STATUS_LABELS}
 
 
 @app.route("/files")
 def files():
-    rows = list(enc.load_files().values()) if not g.config_error else []
-    q = request.args.get("q", "").strip().lower()
-    codec = request.args.get("codec", "")
-    status = request.args.get("status", "")
-
-    codecs = Counter((r["video_codec"] or UNKNOWN_CODEC) for r in rows)
-    statuses = Counter(r["status"] for r in rows)
-    total_size = sum(r["size"] or 0 for r in rows)
-    hevc_size = sum(r["size"] or 0 for r in rows if r["status"] == "h265")
-
-    shown = [r for r in rows
-             if (not q or q in r["key"].lower())
-             and (not codec or (r["video_codec"] or UNKNOWN_CODEC) == codec)
-             and (not status or r["status"] == status)]
-
-    tree = new_node()
-    for r in sorted(shown, key=lambda r: r["key"].lower()):
-        node = tree
-        for part in r["key"].split("/")[:-1]:
-            node = node["dirs"].setdefault(part, new_node())
-            node["count"] += 1
-            node["size"] += r["size"] or 0
-        node["files"].append(dict(r, name=r["key"].rsplit("/", 1)[-1]))
-
+    filters = file_filters(request.args)
+    empty = render_template("files.html", total=0, filters=filters)
+    if g.config_error:
+        return empty
+    with closing(db()) as con:
+        total, total_size, opt_size = con.execute(
+            "SELECT COUNT(*), COALESCE(SUM(size), 0), COALESCE(SUM(CASE WHEN status = 'h265' THEN size END), 0) "
+            "FROM files").fetchone()
+        if not total:
+            return empty
+        codecs = con.execute(f"SELECT COALESCE(video_codec, '{UNKNOWN_CODEC}'), COUNT(*) FROM files "
+                             "GROUP BY 1 ORDER BY 2 DESC").fetchall()
+        statuses = dict(con.execute("SELECT status, COUNT(*) FROM files GROUP BY status").fetchall())
+        clause, params = filter_sql(filters)
+        shown = con.execute(f"SELECT COUNT(*) FROM files{clause}", params).fetchone()[0]
+    queued = set(enc.queued_keys())
     return render_template(
-        "files.html", tree=tree, shown=len(shown), total=len(rows), total_size=total_size,
-        optimized_share=(hevc_size / total_size * 100) if total_size else 0, codecs=codecs.most_common(),
-        statuses=statuses, status_labels=enc.STATUS_LABELS, q=q, codec=codec, status=status,
-        filtered=bool(q or codec or status), last_scan=enc.load_state()["last_scan"] if rows else None,
-        ffprobe=bool(enc.FFPROBE), queued=set(enc.queued_keys()))
+        "files.html", total=total, total_size=total_size, shown=shown,
+        optimized_share=opt_size / total_size * 100 if total_size else 0, codecs=codecs,
+        statuses=statuses, q=filters.get("q", ""), codec=filters.get("codec", []),
+        status=filters.get("status", ""), filtered=bool(filters),
+        codec_groups=[(k, label, sum(n for c, n in codecs if codec_class(c) == k.split(":")[1]))
+                      for k, label in CODEC_GROUPS.items()],
+        codec_summary=codec_summary(filters.get("codec", [])),
+        last_scan=enc.load_state()["last_scan"], ffprobe=bool(enc.FFPROBE), preset_list=preset_choices(),
+        unscanned=[enc.SHARE_NAMES[p] for p, i in share_info().items() if not i["files"]],
+        **level_context("", filters, queued))
+
+
+@app.route("/files/folder")
+def files_folder():
+    """Content of one folder for the tree: subfolders and the first page of files,
+    or with rows=1 only the next page of file rows ("Show more")."""
+    if g.config_error:
+        abort(409, g.config_error)
+    path = request.args.get("path", "").strip("/")
+    offset = max(int(request.args.get("offset", 0) or 0), 0)
+    ctx = level_context(path, file_filters(request.args), set(enc.queued_keys()), offset)
+    if request.args.get("rows"):
+        resp = app.make_response(render_template("_file_rows.html", **ctx))
+        resp.headers["X-Next"] = ctx["more_url"] or ""
+        return resp
+    return render_template("_level.html", **ctx)
 
 
 def safe_next(default):
@@ -312,19 +425,34 @@ def safe_next(default):
 
 @app.route("/queue", methods=["POST"])
 def queue():
+    """Queue the selected files, plus every file (matching the active filters) in the
+    selected folders."""
     keys = request.form.getlist("key")
-    known = enc.load_files()
-    unknown = [k for k in keys if k not in known]   # only files from the last scan can be queued
-    if unknown:
-        abort(400, "Unknown file selected. Scan again and retry.")
+    folders = [f.strip("/") for f in request.form.getlist("folder")]
+    filters = file_filters(request.form)
+    with closing(db()) as con:
+        if keys:
+            marks = ", ".join("?" * len(keys))
+            known = {k for (k,) in con.execute(f"SELECT key FROM files WHERE key IN ({marks})", keys)}
+            if set(keys) - known:                   # only files from the last scan can be queued
+                abort(400, "Unknown file selected. Scan again and retry.")
+        for folder in folders:
+            clause, params = filter_sql(filters, folder)
+            found = [k for (k,) in con.execute(f"SELECT key FROM files{clause}", params)]
+            if not folder or not found:
+                abort(400, "Unknown folder selected. Scan again and retry.")
+            keys += sorted(found, key=natural)
+    preset = request.form.get("preset", "").strip() or None
+    if preset and not presets.exists(preset):
+        abort(400, "Unknown preset.")
     if not keys:
         flash("No files selected.", "error")
     else:
-        chosen = enc.write_batch(keys)
+        chosen = enc.write_batch(keys, preset)
         skipped = len(set(keys)) - len(chosen)
-        msg = f"{len(chosen)} file(s) queued."
+        msg = f"{len(chosen):,} file(s) queued" + (f" with preset \"{presets.name_of(preset)}\"." if preset else ".")
         if skipped:
-            msg += f" {skipped} already in the queue."
+            msg += f" {skipped:,} already in the queue."
         flash(msg, "ok" if chosen else "error")
     return safe_next(url_for("files"))
 
@@ -332,25 +460,37 @@ def queue():
 @app.route("/status")
 def status():
     cur = enc.current_progress()
-    queue = enc.queued_keys()
-    if cur and cur["key"] in queue:
-        queue = queue[queue.index(cur["key"]) + 1:]
+    entries = enc.queued_entries()
+    keys = [k for k, _ in entries]
+    if cur and cur["key"] in keys:
+        entries = entries[keys.index(cur["key"]) + 1:]
+    queue = [(k, presets.name_of(pid) if pid else "") for k, pid in entries]
     return render_template("status.html", cur=cur, queue=queue, results=enc.recent_results(20),
                            short=enc.short, last_scan=enc.load_state()["last_scan"])
 
 
 @app.route("/scan", methods=["POST"])
 def start_scan():
+    """Scan all shares (new or changed files only), or with share=shareN one share:
+    an initial scan of a new share, or with share=shareN:force a full rescan that
+    re-reads every file of the share with ffprobe."""
     if g.config_error:
         flash(g.config_error, "error")
         return redirect(url_for("settings", section="library"))
+    prefix, _, mode = request.form.get("share", "").partition(":")
+    if prefix and prefix not in enc.ROOT_CANDIDATES:
+        abort(400, "Unknown share.")
+    only, force = ([prefix] if prefix else None), mode == "force"
+    name = enc.SHARE_NAMES.get(prefix, prefix)
+    label = f"{'Full rescan' if force else 'Scan'} of {name}" if prefix else "Scan of all shares"
     with SCAN_GUARD:
         if SCAN["running"]:
             flash("A scan is already running.", "error")
         else:
-            SCAN.update(running=True, started=enc.now_str(), finished=None, error=None, summary=None)
-            threading.Thread(target=run_scan, daemon=True).start()
-            flash("Scan started. New files are read with ffprobe, which can take a while.", "ok")
+            SCAN.update(running=True, started=enc.now_str(), finished=None, error=None, summary=None, label=label)
+            threading.Thread(target=run_scan, args=(only, force), daemon=True).start()
+            flash(f"{label} started. Files are read with ffprobe, which can take a while"
+                  + (" (about 0.1 s per file)." if force or prefix else "."), "ok")
     return safe_next(url_for("status"))
 
 
@@ -430,7 +570,8 @@ def stats():
         sb = next(lbl for lo, hi, lbl in SIZE_BINS if lo <= gb < hi)
         size.setdefault(sb, Counter())[cls] += 1
         res.setdefault(resolution_class(r["width"], r["height"]), Counter())[cls] += 1
-        sections.setdefault(r["key"].split("/", 1)[0], Counter())[cls] += r["size"] or 0
+        sections.setdefault(enc.SHARE_NAMES.get(r["key"].split("/", 1)[0], r["key"].split("/", 1)[0]),
+                            Counter())[cls] += r["size"] or 0
         status[r["status"]] += 1
 
     def codec_rows(counter):
@@ -449,7 +590,7 @@ def stats():
               CLASS_SERIES, [(lbl, size.get(lbl, {})) for _, _, lbl in SIZE_BINS]),
         chart("Resolution", "Number of files per resolution", "bars", "count",
               CLASS_SERIES, [(r_, res[r_]) for r_ in res_order if r_ in res]),
-        chart("Storage by library folder", "Total file size per library folder", "bars", "size",
+        chart("Storage by share", "Total file size per share", "bars", "size",
               CLASS_SERIES, sorted(sections.items())),
         chart("Status", "Number of files per status after the last scan", "bars", "count",
               [("single", "Files")],
@@ -475,6 +616,131 @@ def stats():
     return render_template("stats.html", charts=charts, tiles=tiles, last_scan=enc.load_state()["last_scan"])
 
 
+# ─── Presets ──────────────────────────────────────────────────────────────────
+
+def preset_usage():
+    """Preset id -> names of the shares that use it (DEFAULT_PRESET for shares without one)."""
+    cfg = enc.parse_config(enc.CONFIG_FILE) if enc.CONFIG_FILE.exists() else {}
+    usage = {}
+    for sh in enc.shares(cfg):
+        usage.setdefault(sh["preset"] or cfg.get("DEFAULT_PRESET", ""), []).append(sh["name"])
+    return usage, cfg.get("DEFAULT_PRESET", "")
+
+
+@app.route("/presets")
+def presets_page():
+    usage, default = preset_usage()
+    rows = [{"id": pid, "name": p.get("PresetName", pid), "description": p.get("PresetDescription", ""),
+             "summary": presets.summary(p), "shares": usage.get(pid, []), "default": pid == default}
+            for pid, p in presets.all_presets()]
+    builtins = {}
+    for category, name, description in presets.builtin_presets():
+        builtins.setdefault(category, []).append((name, description))
+    return render_template("presets.html", rows=rows, builtins=builtins, caps=presets.capabilities())
+
+
+@app.route("/presets/new", methods=["POST"])
+def preset_new():
+    source, name = request.form.get("source"), request.form.get("name", "").strip()
+    try:
+        if source == "builtin":
+            builtin = request.form.get("builtin", "")
+            preset = presets.from_builtin(builtin, name or builtin)
+        elif source == "copy":
+            preset = presets.load(request.form.get("copy", ""))
+            preset["PresetName"] = name or f"{preset['PresetName']} (copy)"
+        elif source == "import":
+            upload = request.files.get("file")
+            if not upload or not upload.filename:
+                raise presets.PresetError("Choose a preset file to import.")
+            ids = presets.import_data(upload.read())
+            flash(f"Imported {len(ids)} preset(s).", "ok")
+            return redirect(url_for("preset_edit", pid=ids[0]) if len(ids) == 1 else url_for("presets_page"))
+        else:
+            abort(400)
+        pid = presets.new_id(preset["PresetName"])
+        presets.save(pid, dict(preset, Default=False))
+    except presets.PresetError as e:
+        flash(str(e), "error")
+        return redirect(url_for("presets_page"))
+    flash(f"Preset \"{preset['PresetName']}\" created.", "ok")
+    return redirect(url_for("preset_edit", pid=pid))
+
+
+@app.route("/presets/<pid>", methods=["GET", "POST"])
+def preset_edit(pid):
+    if not presets.exists(pid):
+        abort(404)
+    preset, error, json_text = presets.load(pid), None, None
+    if request.method == "POST":
+        try:
+            if request.form.get("mode") == "json":
+                json_text = request.form.get("json", "")
+                try:
+                    new = json.loads(json_text)
+                except ValueError as e:
+                    raise presets.PresetError(f"Invalid JSON: {e}")
+                if isinstance(new, dict) and isinstance(new.get("PresetList"), list) and new["PresetList"]:
+                    new = new["PresetList"][0]         # a whole export file was pasted
+            else:
+                new = presets.apply_form(preset, request.form)
+            presets.check(new)
+            problem = presets.verify(new)
+            if problem:
+                raise presets.PresetError(problem)
+            presets.save(pid, new)
+            flash(f"Preset \"{new['PresetName']}\" saved.", "ok")
+            return redirect(url_for("preset_edit", pid=pid))
+        except (presets.PresetError, ValueError, TypeError) as e:
+            error = str(e)
+    usage, default = preset_usage()
+    caps = presets.capabilities()
+    audio = (preset.get("AudioList") or [{}])[0]
+    return render_template(
+        "preset_edit.html", pid=pid, p=preset, audio=audio, caps=caps, error=error,
+        json_text=json_text or json.dumps(preset, indent=2, ensure_ascii=False),
+        resolution=presets.resolution_of(preset), resolutions=presets.RESOLUTIONS,
+        framerates=presets.FRAMERATES, track_behaviors=presets.TRACK_BEHAVIORS,
+        burn_behaviors=presets.BURN_BEHAVIORS, shares=usage.get(pid, []), is_default=pid == default,
+        aliases=presets.AUDIO_ALIASES)
+
+
+@app.route("/presets/<pid>/export")
+def preset_export(pid):
+    if not presets.exists(pid):
+        abort(404)
+    name = re.sub(r"[^\w.-]+", "_", presets.name_of(pid))
+    return Response(presets.export_bytes(pid), mimetype="application/json",
+                    headers={"Content-Disposition": f'attachment; filename="{name}.json"'})
+
+
+@app.route("/presets/<pid>/default", methods=["POST"])
+def preset_default(pid):
+    if not presets.exists(pid):
+        abort(404)
+    enc.write_config({"DEFAULT_PRESET": pid})
+    flash(f"\"{presets.name_of(pid)}\" is now the default preset.", "ok")
+    return redirect(url_for("presets_page"))
+
+
+@app.route("/presets/<pid>/delete", methods=["POST"])
+def preset_delete(pid):
+    if not presets.exists(pid):
+        abort(404)
+    usage, default = preset_usage()
+    name = presets.name_of(pid)
+    if pid == default:
+        flash(f"\"{name}\" is the default preset. Choose another default first.", "error")
+    elif usage.get(pid):
+        flash(f"\"{name}\" is used by {', '.join(usage[pid])}. Change their preset first.", "error")
+    elif any(p == pid for _, p in enc.queued_entries()):
+        flash(f"\"{name}\" is used by files in the queue. Wait until they're encoded.", "error")
+    else:
+        presets.delete(pid)
+        flash(f"Preset \"{name}\" deleted.", "ok")
+    return redirect(url_for("presets_page"))
+
+
 @app.route("/settings")
 def settings_index():
     return redirect(url_for("settings", section=next(iter(SETTINGS))))
@@ -491,27 +757,43 @@ def settings(section):
     errors = {}
     if request.method == "POST":
         updates, removed = {}, []
+        valid_presets = {pid for pid, _ in preset_choices()}
         for key, label, typ, _ in fields:
+            if typ == "heading":
+                continue
             if typ == "bool":
                 updates[key] = "1" if request.form.get(key) else "0"
                 continue
             val = request.form.get(key, "").strip()
             if FORBIDDEN_RE.search(val):
                 errors[key] = 'Not allowed: " ` \\ line breaks and $ (except $HOME).'
-            elif typ == "paths_new":
-                if val:
-                    base = key[:-len("_new")]
-                    updates[f"{base}_{next_number(cfg, base)}"] = val
-                continue
-            elif not val and key in {*enc.SECTIONS.values(), "ENCODED_DIR"}:
+            elif typ in ("preset", "share_preset") and val and val not in valid_presets:
+                errors[key] = "Unknown preset."
+            elif typ == "preset" and not val:
+                errors[key] = "Choose a preset."
+            elif key == "ENCODED_DIR" and not val:
                 errors[key] = "This folder is required."
-            elif not val and re.fullmatch(r"[A-Z_]+_DIR_\d+", key):
-                updates[key] = None                 # cleared extra library folder: remove it
-                removed.append(label)
-                continue
-            updates[key] = val
+            if not key.startswith("SHARE_new"):
+                updates[key] = val
+        # Shares whose folder was cleared are removed (commented out, number stays reserved)
+        for key in [k for k in updates if re.fullmatch(r"SHARE_\d+", k)]:
+            if not updates[key]:
+                removed.append(updates.get(f"{key}_NAME") or key)
+                for k in (key, f"{key}_NAME", f"{key}_PRESET"):
+                    updates[k] = None
+        if section == "library":
+            new_folder = request.form.get("SHARE_new", "").strip()
+            if new_folder and not FORBIDDEN_RE.search(new_folder):
+                n = enc.next_share_number()
+                updates[f"SHARE_{n}"] = new_folder
+                updates[f"SHARE_{n}_NAME"] = (request.form.get("SHARE_new_NAME", "").strip()
+                                             or Path(enc.path_list(os.path.expandvars(new_folder))[0]).name)
+                updates[f"SHARE_{n}_PRESET"] = request.form.get("SHARE_new_PRESET", "")
+            remaining = [k for k, v in updates.items() if re.fullmatch(r"SHARE_\d+", k) and v]
+            if not remaining:
+                errors["SHARE_new"] = "At least one share is needed."
         if not errors:
-            write_config(updates)
+            enc.write_config(updates)
             msg = f"{title}: saved."
             if removed:
                 msg += (f" Removed {', '.join(removed)}. Its files disappear from the list "
@@ -523,7 +805,9 @@ def settings(section):
     return render_template(
         "settings.html", section=section, title=title, fields=fields, cfg=cfg, errors=errors,
         checks={k: path_checks(cfg.get(k) or "") for k, _, t, _ in fields if t in ("paths", "path")},
-        presets=preset_names(cfg), config_file=enc.CONFIG_FILE, config_exists=enc.CONFIG_FILE.exists(),
+        preset_list=preset_choices(), default_preset=presets.name_of(cfg.get("DEFAULT_PRESET", "")),
+        share_info=share_info() if section == "library" else {},
+        config_file=enc.CONFIG_FILE, config_exists=enc.CONFIG_FILE.exists(),
         env_overrides={k: os.environ[k] for k, _, _, _ in fields if k in ENV_OVERRIDES and k in os.environ})
 
 

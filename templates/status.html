@@ -24,14 +24,14 @@
 <section class="panel">
   <h2>Queue ({{ queue|length }})</h2>
   {% if queue %}
-    <ol class="plain">{% for k in queue %}<li>{{ short(k) }}</li>{% endfor %}</ol>
+    <ol class="plain">{% for k, preset in queue %}<li>{{ short(k) }}{% if preset %} <span class="muted small">· preset {{ preset }}</span>{% endif %}</li>{% endfor %}</ol>
   {% else %}<p class="muted">Empty.</p>{% endif %}
 </section>
 
 <section class="panel">
   <h2>Scan</h2>
   <p>Last scan: {{ last_scan or '–' }}</p>
-  {% if scan_state.running %}<p>Running since {{ scan_state.started }} …</p>{% endif %}
+  {% if scan_state.running %}<p>{{ scan_state.label }}: running since {{ scan_state.started }} …</p>{% endif %}
   {% if scan_state.summary %}<p class="flash ok">Finished ({{ scan_state.finished }}): {{ scan_state.summary }}</p>{% endif %}
   {% if scan_state.error %}<p class="flash error">{{ scan_state.error }}</p>{% endif %}
 </section>
