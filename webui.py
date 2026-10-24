@@ -449,19 +449,54 @@ def root_folders():
     return out
 
 
-def tree_level(path, filters, queued, offset=0):
+# Sortable fields of the file list: field -> (label, sort key of a row). Rows without a
+# value (e.g. not probed) always come last, in both directions.
+SORT_FIELDS = {
+    "name":       ("File", lambda r: natural(r["key"].rsplit("/", 1)[-1])),
+    "codec":      ("Codec", lambda r: codec_name(r["video_codec"]).lower() if r["video_codec"] else None),
+    "resolution": ("Resolution", lambda r: r["width"] * r["height"] if r["width"] and r["height"] else None),
+    "bitrate":    ("Bitrate", lambda r: r["bitrate"]),
+    "duration":   ("Duration", lambda r: r["duration"]),
+    "size":       ("Size", lambda r: r["size"]),
+    "status":     ("Status", lambda r: list(enc.STATUS_LABELS).index(r["status"])
+                   if r["status"] in enc.STATUS_LABELS else len(enc.STATUS_LABELS)),
+}
+# How folders are ordered for a field: by size, by optimized share, otherwise by name
+FOLDER_SORT = {"size": lambda f: f["size"], "status": lambda f: f["share"]}
+
+
+def sort_args(src):
+    """{"sort": field, "dir": "asc"|"desc"} from a request; name ascending by default."""
+    field = src.get("sort") if src.get("sort") in SORT_FIELDS else "name"
+    return {"sort": field, "dir": "desc" if src.get("dir") == "desc" else "asc"}
+
+
+def sort_rows(rows, keyfunc, descending, tiebreak=None):
+    """Sort with rows lacking a value last in both directions; equal values keep the
+    order of tiebreak (e.g. by name), since Python's sort is stable."""
+    if tiebreak:
+        rows = sorted(rows, key=tiebreak)
+    have = [r for r in rows if keyfunc(r) is not None]
+    missing = [r for r in rows if keyfunc(r) is None]
+    return sorted(have, key=keyfunc, reverse=descending) + missing
+
+
+def tree_level(path, filters, queued, offset=0, sort=None):
     """Direct subfolders and files of `path` ("" = top level) that match the filters.
     Each folder counts its files: optimized (status h265: optimized codec or name),
     unknown (not probed) and other. Returns (folders, files of the requested page,
     number of files in total)."""
     clause, params = filter_sql(filters, path)
     plen = len(path) + 1 if path else 0
-    folders, keys = {}, []
+    sort = sort or {"sort": "name", "dir": "asc"}
+    folders, here = {}, []
     with closing(db()) as con:
-        for key, size, status, codec in con.execute(f"SELECT key, size, status, video_codec FROM files{clause}", params):
+        for key, size, status, codec, bitrate, duration, width, height in con.execute(
+                f"SELECT key, size, status, video_codec, bitrate, duration, width, height FROM files{clause}", params):
             head, sep, _ = key[plen:].partition("/")
             if not sep:
-                keys.append(key)
+                here.append({"key": key, "size": size, "status": status, "video_codec": codec,
+                             "bitrate": bitrate, "duration": duration, "width": width, "height": height})
                 continue
             f = folders.get(head)
             if f is None:
@@ -474,7 +509,8 @@ def tree_level(path, filters, queued, offset=0):
                 f["unknown"] += 1
             f["size"] += size or 0
             f["selectable"] += key not in queued
-        keys.sort(key=natural)
+        keys = [r["key"] for r in sort_rows(here, SORT_FIELDS[sort["sort"]][1], sort["dir"] == "desc",
+                                             tiebreak=SORT_FIELDS["name"][1])]
         page = keys[offset:offset + PAGE_SIZE]
         rows = {}
         if page:
@@ -492,20 +528,41 @@ def tree_level(path, filters, queued, offset=0):
         f["other"] = f["count"] - f["optimized"] - f["unknown"]
         f["share"] = f["optimized"] / f["count"] * 100 if f["count"] else 0
     files = [dict(rows[k], name=k[plen:]) for k in page if k in rows]
-    return sorted(folders.values(), key=lambda f: natural(f["name"])), files, len(keys)
+    ordered = sorted(folders.values(), key=lambda f: natural(f["name"]))
+    if sort["sort"] in FOLDER_SORT:
+        ordered = sort_rows(ordered, FOLDER_SORT[sort["sort"]], sort["dir"] == "desc")
+    elif sort["sort"] == "name" and sort["dir"] == "desc":
+        ordered.reverse()
+    return ordered, files, len(keys)
 
 
-def level_context(path, filters, queued, offset=0):
-    folders, files, total = tree_level(path, filters, queued, offset)
+def level_context(path, filters, queued, offset=0, sort=None):
+    sort = sort or {"sort": "name", "dir": "asc"}
+    folders, files, total = tree_level(path, filters, queued, offset, sort)
     nxt = offset + PAGE_SIZE
-    more = url_for("files_folder", path=path, offset=nxt, rows=1, **filters) if nxt < total else None
+    more = url_for("files_folder", path=path, offset=nxt, rows=1, **filters, **sort) if nxt < total else None
     if any(f["status"] == "waiting" for f in files):  # finished encodes, for the Replace button
         encoded = enc.encoded_files(enc.first_existing(enc.ENCODED_CANDIDATES))
         for f in files:
             f["encoded"] = encoded.get(Path(f["name"]).stem.lower()) if f["status"] == "waiting" else None
     return {"folders": folders, "files": files, "total_files": total, "shown_files": min(nxt, total),
             "more_url": more, "filters": filters, "queued": queued, "auto_open": AUTO_OPEN,
-            "status_labels": enc.STATUS_LABELS}
+            "status_labels": enc.STATUS_LABELS, "sort": sort, "sort_links": sort_links(filters, sort),
+            "link_args": dict(filters, **sort)}       # query of folder URLs: filters + sort
+
+
+def sort_links(filters, sort):
+    """Column header links: field -> (URL of the Files page sorted by it, arrow or "")."""
+    links = {}
+    for field in SORT_FIELDS:
+        active = field == sort["sort"]
+        if active:
+            direction = "desc" if sort["dir"] == "asc" else "asc"
+        else:                                   # big numbers first is the useful start for these
+            direction = "desc" if field in ("size", "bitrate", "duration", "resolution") else "asc"
+        links[field] = (url_for("files", **filters, sort=field, dir=direction),
+                        ("▲" if sort["dir"] == "asc" else "▼") if active else "")
+    return links
 
 
 @app.route("/files")
@@ -536,7 +593,8 @@ def files():
         codec_summary=codec_summary(filters.get("codec", [])),
         last_scan=enc.load_state()["last_scan"], ffprobe=bool(enc.FFPROBE), preset_list=preset_choices(),
         unscanned=[enc.SHARE_NAMES[p] for p, i in share_info().items() if not i["files"]],
-        **level_context("", filters, queued))
+        sort_fields={k: v[0] for k, v in SORT_FIELDS.items()},
+        **level_context("", filters, queued, sort=sort_args(request.args)))
 
 
 @app.route("/files/folder")
@@ -547,7 +605,7 @@ def files_folder():
         abort(409, g.config_error)
     path = request.args.get("path", "").strip("/")
     offset = max(int(request.args.get("offset", 0) or 0), 0)
-    ctx = level_context(path, file_filters(request.args), set(enc.queued_keys()), offset)
+    ctx = level_context(path, file_filters(request.args), set(enc.queued_keys()), offset, sort_args(request.args))
     if request.args.get("rows"):
         resp = app.make_response(render_template("_file_rows.html", **ctx))
         resp.headers["X-Next"] = ctx["more_url"] or ""

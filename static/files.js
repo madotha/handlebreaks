@@ -29,6 +29,11 @@
     button.dataset.count = n;
   }
 
+  // Remember open folders for this tab, so they open again after a reload (e.g. sorting)
+  const OPEN_KEY = "files-open-folders";
+  const openSet = new Set((() => { try { return JSON.parse(sessionStorage.getItem(OPEN_KEY)) || []; } catch (e) { return []; } })());
+  function saveOpen() { try { sessionStorage.setItem(OPEN_KEY, JSON.stringify([...openSet])); } catch (e) { /* storage blocked */ } }
+
   async function load(details) {
     const body = details.querySelector(":scope > .dir-body");
     if (body.dataset.loaded) return;
@@ -72,8 +77,12 @@
 
   function init(root) {
     root.querySelectorAll("details.dir").forEach((d) => {
-      d.addEventListener("toggle", () => { if (d.open) load(d); });
-      if (d.open) load(d);
+      d.addEventListener("toggle", () => {
+        if (d.open) { openSet.add(d.dataset.path); load(d); } else { openSet.delete(d.dataset.path); }
+        saveOpen();
+      });
+      if (!d.open && openSet.has(d.dataset.path)) d.open = true;   // fires toggle -> loads
+      else if (d.open) load(d);
     });
     // The folder checkbox sits inside <summary>: cancel the click so the folder
     // doesn't open or close, then apply the new state ourselves.
