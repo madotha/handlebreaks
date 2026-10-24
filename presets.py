@@ -280,7 +280,8 @@ def from_builtin(name, new_name):
             raise PresetError(f"HandBrakeCLI couldn't export the built-in preset {name!r}.")
 
 
-# Apple's AAC encoders only exist on macOS; HandBrake elsewhere uses av_aac for them
+# Apple's AAC encoders only exist on macOS; HandBrake elsewhere uses av_aac for them.
+# Used only when the encoder itself isn't available.
 AUDIO_ALIASES = {"ca_aac": "av_aac", "ca_haac": "av_aac"}
 
 
@@ -300,8 +301,9 @@ def unsupported(preset):
     if preset.get("FileFormat") not in caps["formats"]:
         problems.append(f"container {preset.get('FileFormat')!r}")
     for track in preset.get("AudioList") or []:
-        audio = AUDIO_ALIASES.get(track.get("AudioEncoder"), track.get("AudioEncoder"))
-        if audio not in caps["audio_encoders"] + ["none"]:
+        audio = track.get("AudioEncoder")
+        supported = caps["audio_encoders"] + ["none"]
+        if audio not in supported and AUDIO_ALIASES.get(audio) not in supported:
             problems.append(f"audio encoder {track.get('AudioEncoder')!r}")
         if track.get("AudioMixdown") and track["AudioMixdown"] not in caps["mixdowns"] + ["none"]:
             problems.append(f"mixdown {track['AudioMixdown']!r}")

@@ -18,6 +18,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - Times in the web UI are shown in the viewer's time zone (as `<time>` elements converted in the browser). Before, they appeared in the server's time zone, which is UTC in a Docker container by default.
 
+### Fixed
+
+- Preset check on macOS: presets with Apple's AAC encoder (`ca_aac`) were rejected by a native HandBrakeCLI, because the check always replaced `ca_aac` with `av_aac` (which only exists in other builds). The replacement now only applies where `ca_aac` itself isn't available.
+
 ## [3.0.0] - 2026-10-24
 
 ### Added
