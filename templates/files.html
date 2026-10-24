@@ -64,6 +64,15 @@
       </label>
       <button data-queue-button>Queue for encoding</button>
       <span class="hint">Tick files, or a folder to select all {{ 'matching ' if filtered }}files in it. Folders load when opened. ↻ scans a file or folder again.</span>
+      <nav class="sort-bar" aria-label="Sort the list">
+        <span class="muted small">Sort by</span>
+        {% for field, label in [('name', 'File'), ('codec', 'Codec'), ('resolution', 'Resolution'), ('bitrate', 'Bitrate'), ('duration', 'Duration'), ('size', 'Size'), ('status', 'Status')] %}
+          <a class="sort-chip{{ ' active' if sort_links[field][1] }}" href="{{ sort_links[field][0] }}"
+             aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(sort_links[field][1], 'none') }}"
+             title="Sort by {{ label|lower }}: ascending → descending → off">{{ label }}{% if sort_links[field][1] %} {{ sort_links[field][1] }}{% endif %}</a>
+        {% endfor %}
+        <span class="muted small">{% if sort %}· folders follow size and status, files every column{% else %}· by name{% endif %}</span>
+      </nav>
       <span class="scan-msg" data-scan-msg role="status" hidden></span>
     </div>
     <div class="tree">

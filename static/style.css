@@ -183,6 +183,12 @@ button.secondary { background: var(--bg); color: var(--text); border: 1px solid 
 .action-bar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center;
   background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .5rem .8rem; margin: .5rem 0; }
 .action-bar .hint { margin: 0; }
+.sort-bar { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: .35rem;
+  border-top: 1px solid var(--border); padding-top: .45rem; }
+.sort-chip { font-size: .82rem; color: var(--text); text-decoration: none; padding: .2rem .6rem; border: 1px solid var(--border);
+  border-radius: 99px; background: var(--surface); white-space: nowrap; }
+.sort-chip:hover { border-color: var(--accent); color: var(--accent); }
+.sort-chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
 .scan-msg { flex-basis: 100%; font-size: .85rem; padding: .3rem .6rem; border-radius: 6px; }
 .scan-msg.ok { background: var(--ok-bg); color: var(--ok); }
 .scan-msg.error { background: var(--err-bg); color: var(--err); }
