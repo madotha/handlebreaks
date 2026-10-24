@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-24
+
 ### Added
 
 - Presets page in the web UI. You can create presets from HandBrake's built-in presets, as copies, or by importing HandBrake export files (including files with several presets or folders). Each preset can be edited in a form for the common settings or as full JSON, exported, made the default, or deleted. HandBrakeCLI checks a preset before it's saved. The editor's choices (encoders, encoder speeds, containers, mixdowns) and the built-in list come from the installed HandBrakeCLI, so they follow its version.
