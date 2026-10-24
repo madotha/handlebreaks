@@ -97,7 +97,7 @@ The offered list's numbering is stored as `last_offer` and stays stable until th
 
 Machine-specific settings live in **`config.env`** next to the scripts. It is gitignored and created from the committed template `config.example.env`, which documents every key.
 - **Format:** shell `KEY="value"` lines. `encode.sh` `source`s the file; `encoding.py` parses it with `load_config()` (`shlex`, then `$VAR` expansion) and `apply_config()` turns it into `ROOT_CANDIDATES`, `ENCODED_CANDIDATES` and `NOTE_DIR_CANDIDATES`.
-- **Path lists:** folder keys may list several paths separated by `:`. Both scripts use the first path that exists (`first_existing`, implemented on each side). This keeps the `~/media/...` fallback paths working when the tool runs inside a Claude environment.
+- **Path lists:** folder keys may list several paths separated by `:`. Both scripts use the first path that exists (`first_existing`, implemented on each side). This lets one `config.env` work natively and in the Docker container (`/media/...`).
 - **Missing config:** both scripts stop with an error if `config.env` is missing or incomplete. `version` works without it.
 - **New settings:** add the key to `config.example.env`, to the README's Configuration table and to `SETTINGS` in `webui.py` if it should be editable there, and read it in both scripts if both need it.
 - **Path lists in the template:** folder defaults list the macOS path first and then the container path (`/media/<folder>`, `/encoded`, `/notes`), so one file works natively and in Docker.

@@ -4,6 +4,8 @@ Semi-automatic conversion of movies and TV episodes in a Plex library from H.264
 
 ## Contents
 
+- [Quick start (Docker)](#quick-start-docker)
+- [Set it up with an AI coding agent](#set-it-up-with-an-ai-coding-agent)
 - [What it does](#what-it-does)
 - [Choose a setup](#choose-a-setup)
 - [Setup A: native on macOS](#setup-a-native-on-macos)
@@ -14,8 +16,64 @@ Semi-automatic conversion of movies and TV episodes in a Plex library from H.264
 - [Configuration](#configuration)
 - [Files and data](#files-and-data)
 - [Updating from version 1.x](#updating-from-version-1x)
+- [Security](#security)
 - [Troubleshooting](#troubleshooting)
 - [Uninstalling](#uninstalling)
+
+## Quick start (Docker)
+
+The fastest way to try it. Tested on macOS with Docker Desktop; Linux with Docker Engine should work the same way but isn't documented yet.
+
+**You need:**
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker Engine with Compose), running
+- Your Plex library reachable as a folder on this machine, e.g. a NAS share mounted at `/Volumes/Media` (macOS: Finder → Go → Connect to Server, `smb://nas/Media`)
+- A folder with enough free space for finished encodes (the output folder). H.265 files are usually 30–60 % smaller than the H.264 originals, so plan for about half the size of what you encode at a time.
+- git, or the code downloaded as a ZIP
+
+**Steps:**
+
+```bash
+git clone <repository-url> plex-encoding-automation
+cd plex-encoding-automation
+cp .env.example .env
+```
+
+Edit `.env` and set two paths:
+
+```bash
+HOST_MEDIA_DIR="/Volumes/Media"                    # the folder that contains your library folders
+HOST_ENCODED_DIR="/Users/you/Movies/_ENCODED"      # where finished encodes go (created if missing)
+```
+
+Then start it and open the web UI:
+
+```bash
+docker compose up -d --build
+open http://127.0.0.1:7979                         # Linux: xdg-open, or just open it in a browser
+```
+
+1. **Settings → Library**: replace the two example shares with your folders. A library folder `/Volumes/Media/Movies` is `/media/Movies` inside the container. Each folder needs a green ✓.
+2. **Scan now**. The first scan reads every file with ffprobe; for a large library this takes a while (roughly 30–60 minutes for 70,000 files over the network); the Status page shows that it's running. Later scans only read new or changed files.
+3. **Files**: tick files or whole folders and click **Queue for encoding**. Progress is on the **Status** page.
+4. Check the finished files in the output folder. To put one into the library in place of the original, Docker needs write access to the library: remove `:ro` from the `/media` line in `docker-compose.yml` (or in a `docker-compose.override.yml`), then use **Replace…**. Otherwise, move the files yourself.
+
+For more details, the native macOS setup (faster encoding) and the mixed setup, see [Choose a setup](#choose-a-setup).
+
+## Set it up with an AI coding agent
+
+If you use an AI coding agent that can run commands on your machine (e.g. Claude Code), you can let it do the setup. Start it in an empty folder and paste this prompt, with the repository URL filled in. It asks you for everything that depends on your environment before changing anything:
+
+> Set up "Plex Encoding Automation" from `<repository-url>` on this machine. Clone it, read its README.md completely and follow it; don't invent steps that aren't in it.
+>
+> Before you install or configure anything, check my system (operating system, CPU, free disk space, and whether Docker, Homebrew, Python 3.9+, HandBrakeCLI and ffmpeg are installed), then ask me, one topic at a time:
+>
+> 1. Which setup to use: A (native on macOS), B (Docker) or C (Docker + native encoding on a Mac). Recommend one based on what you found and explain why in one sentence.
+> 2. Where my Plex library is: the mounted folder(s), and how they're mounted (e.g. SMB or NFS from a NAS). List the subfolders you find there and ask me which ones should become shares, with which display names, and whether any share needs a different preset.
+> 3. The output folder for finished encodes. Check that it exists or can be created and tell me how much free space it has.
+> 4. Optional settings: Obsidian notes folder, time zone, web UI port, automatic rescan interval, and whether to connect Plex (PLEX_URL). If I want Plex, tell me how to find my Plex token, but let me paste it into config.env myself. Never print, log or repeat the token.
+>
+> Then install the missing requirements for the chosen setup (ask before installing anything), create `.env` and/or `config.env` from the templates with my answers, start the tool, and verify it: the web UI opens, every folder under Settings shows a green check mark, and a first scan starts. Don't queue encodes, replace files or change anything in my library; show me how to do that myself instead. Finish with a short summary: what you set up, where the config files are, and how to stop, update and uninstall it.
 
 ## What it does
 
@@ -28,7 +86,7 @@ Semi-automatic conversion of movies and TV episodes in a Plex library from H.264
    - everything else: **offered** as a numbered list
 2. **Choose** which files to encode: tick them on the web UI's Files page, or pass their numbers to `encoding.py queue`. Either way a batch file is written into `queue/`.
 3. **Encode**: a worker picks up the batch and runs HandBrakeCLI with the preset chosen when queueing, or else the share's preset, or else the default preset. It writes to `<output>/.inprogress/` first and moves the file to the output folder only when the encode succeeded.
-4. **Review** the finished files yourself and move them into the library (e.g. renaming them to x265). Until then, a rescan shows them as "waiting for review".
+4. **Review** the finished files in the output folder. Until you act, they show as "awaiting review". **Replace…** in the web UI moves an encode into the library in place of its original (keeping or deleting the original) and refreshes Plex; see [Replacing originals](#replacing-originals).
 
 Scans can also update an Obsidian note with the to-do list. Steps 1 and 2 can be automated, e.g. with a scheduled Claude task that scans regularly and asks for your selection via push notification.
 
@@ -405,6 +463,13 @@ Two things to do by hand: run `encoding.py` once (or open the web UI) before the
    launchctl bootout gui/$(id -u)/<old label>
    rm ~/Library/LaunchAgents/<old plist file>
    ```
+
+## Security
+
+- The web UI has **no login** yet. It only listens on `127.0.0.1` (natively and through Docker's port mapping), so only the machine itself can reach it. Don't expose it on your network or the internet. If you need remote access, put it behind a reverse proxy with authentication, or use an SSH tunnel.
+- All forms are protected against cross-site requests (CSRF token per session).
+- `config.env` and `.env` contain your paths and, if set, the Plex token. Both are gitignored; keep them that way. The web UI never shows the token.
+- The tool never modifies originals unless you click **Replace…**, and even then it keeps the original by default (in `<output folder>/.replaced/`).
 
 ## Troubleshooting
 

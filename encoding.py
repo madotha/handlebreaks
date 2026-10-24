@@ -30,8 +30,8 @@ Paths and data
 --------------
 All paths are set in config.env in the data folder (template: config.example.env).
 Each folder setting may list several paths separated by ":", e.g. the real macOS
-path and a fallback path inside the Docker container or another environment
-(~/media/...). The script uses the first path that exists.
+path and the path inside the Docker container (/media/...). The script uses the
+first path that exists.
 
 The library consists of shares: SHARE_1, SHARE_2, … each with a name (SHARE_1_NAME)
 and an optional HandBrake preset (SHARE_1_PRESET, otherwise DEFAULT_PRESET). Files
