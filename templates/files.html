@@ -44,12 +44,9 @@
       <option value="">All statuses</option>
       {% for s, label in status_labels.items() if statuses.get(s) %}<option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ label }} ({{ statuses[s]|count }})</option>{% endfor %}
     </select>
-    <label class="inline">Sort
-      <select name="sort" aria-label="Sort by">{% for key, label in sort_fields.items() %}<option value="{{ key }}" {% if sort.sort == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
-      <select name="dir" aria-label="Direction"><option value="asc" {% if sort.dir == 'asc' %}selected{% endif %}>ascending</option><option value="desc" {% if sort.dir == 'desc' %}selected{% endif %}>descending</option></select>
-    </label>
-    <button>Apply</button>
-    {% if filtered or sort.sort != 'name' or sort.dir != 'asc' %}<a href="{{ url_for('files') }}">Reset</a>{% endif %}
+    {% for k, v in sort.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}{# keep the column sort #}
+    <button>Filter</button>
+    {% if filtered or sort %}<a href="{{ url_for('files') }}">Reset</a>{% endif %}
   </form>
   <p class="muted">{{ shown|count }} of {{ total|count }} files{% if filtered %} match{% endif %} · <span class="codec codec-good">optimized</span> <span class="codec codec-other">other codec</span></p>
 

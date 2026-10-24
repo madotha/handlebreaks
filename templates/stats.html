@@ -13,12 +13,12 @@
   <details class="table-view">
     <summary>Show as table</summary>
     <div class="table-wrap">
-      <table>
+      <table data-sortable>
         <thead><tr><th>{{ c.title }}</th>{% for key, name in c.series %}<th class="num">{{ name }}</th>{% endfor %}{% if c.series|length > 1 %}<th class="num">Total</th>{% endif %}</tr></thead>
         <tbody>
         {% for row in c.rows %}
-          {% set by = {} %}{% for s in row.segments %}{% set _ = by.update({s.cls: s.display}) %}{% endfor %}
-          <tr><td>{{ row.label }}</td>{% for key, name in c.series %}<td class="num">{{ by.get(key, '–') }}</td>{% endfor %}{% if c.series|length > 1 %}<td class="num">{{ row.display }}</td>{% endif %}</tr>
+          {% set by = {} %}{% for s in row.segments %}{% set _ = by.update({s.cls: s}) %}{% endfor %}
+          <tr><td data-sort="{{ loop.index }}">{{ row.label }}</td>{% for key, name in c.series %}<td class="num" {% if by.get(key) %}data-sort="{{ by[key].value }}"{% endif %}>{{ by[key].display if by.get(key) else '–' }}</td>{% endfor %}{% if c.series|length > 1 %}<td class="num" data-sort="{{ row.total }}">{{ row.display }}</td>{% endif %}</tr>
         {% endfor %}
         </tbody>
       </table>

@@ -27,7 +27,7 @@
 <section class="panel">
   <div class="page-head">
     <h2>Queue</h2>
-    <form class="filters" method="get" data-queue-filter>
+    <form class="filters" method="get" data-queue-filter data-sort="{{ q.sort.get('sort', '') }}" data-dir="{{ q.sort.get('dir', '') }}">
       <select name="state" aria-label="Show">
         <option value="">All ({{ q.total|count }})</option>
         {% for key, label in [('encoding', 'Encoding'), ('waiting', 'Waiting'), ('done', 'Finished in this run')] %}
@@ -47,7 +47,7 @@
   </p>
   <div class="table-wrap">
     <table class="queue-table">
-      <thead><tr><th class="num">#</th><th>File</th><th>Preset</th><th>State</th></tr></thead>
+      <thead><tr><th class="num">#</th>{% for f, label in [('file', 'File'), ('preset', 'Preset'), ('state', 'State')] %}<th aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(q.sort_links[f][1], 'none') }}"><a class="sort-link{{ ' active' if q.sort_links[f][1] }}" href="{{ q.sort_links[f][0] }}" title="Sort: ascending → descending → off (processing order)">{{ label }}{% if q.sort_links[f][1] %} {{ q.sort_links[f][1] }}{% endif %}</a></th>{% endfor %}</tr></thead>
       <tbody data-queue-rows>{% with rows=q.rows, states=q.states %}{% include "_queue_rows.html" %}{% endwith %}</tbody>
     </table>
   </div>
@@ -69,11 +69,11 @@
   <h2>Latest results</h2>
   {% if results %}
   <div class="table-wrap">
-    <table>
+    <table data-sortable>
       <thead><tr><th>Time</th><th>Result</th><th>File</th></tr></thead>
       <tbody>
       {% for r in results %}
-        <tr><td>{{ r.at|localtime }}</td><td><span class="result result-{{ r.status|lower }}">{{ r.status }}</span> {% include "_replace_button.html" %}</td><td class="name" title="{{ r.key }}">{{ short(r.key) }}</td></tr>
+        <tr><td data-sort="{{ r.at }}">{{ r.at|localtime }}</td><td data-sort="{{ r.status }}"><span class="result result-{{ r.status|lower }}">{{ r.status }}</span> {% include "_replace_button.html" %}</td><td class="name" title="{{ r.key }}">{{ short(r.key) }}</td></tr>
       {% endfor %}
       </tbody>
     </table>

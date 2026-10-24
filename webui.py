@@ -465,10 +465,24 @@ SORT_FIELDS = {
 FOLDER_SORT = {"size": lambda f: f["size"], "status": lambda f: f["share"]}
 
 
-def sort_args(src):
-    """{"sort": field, "dir": "asc"|"desc"} from a request; name ascending by default."""
-    field = src.get("sort") if src.get("sort") in SORT_FIELDS else "name"
-    return {"sort": field, "dir": "desc" if src.get("dir") == "desc" else "asc"}
+def sort_args(src, fields=None):
+    """{"sort": field, "dir": "asc"|"desc"} from a request, or {} for no sorting (the
+    default order)."""
+    fields = fields or SORT_FIELDS
+    if src.get("sort") not in fields:
+        return {}
+    return {"sort": src["sort"], "dir": "desc" if src.get("dir") == "desc" else "asc"}
+
+
+def next_sort(field, sort):
+    """Clicking a column header cycles: ascending -> descending -> no sorting."""
+    if sort.get("sort") != field:
+        return {"sort": field, "dir": "asc"}
+    return {"sort": field, "dir": "desc"} if sort["dir"] == "asc" else {}
+
+
+def sort_arrow(field, sort):
+    return ("▲" if sort["dir"] == "asc" else "▼") if sort.get("sort") == field else ""
 
 
 def sort_rows(rows, keyfunc, descending, tiebreak=None):
@@ -488,7 +502,7 @@ def tree_level(path, filters, queued, offset=0, sort=None):
     number of files in total)."""
     clause, params = filter_sql(filters, path)
     plen = len(path) + 1 if path else 0
-    sort = sort or {"sort": "name", "dir": "asc"}
+    sort = sort or {"sort": "name", "dir": "asc"}          # no sorting = by name
     folders, here = {}, []
     with closing(db()) as con:
         for key, size, status, codec, bitrate, duration, width, height in con.execute(
@@ -537,7 +551,7 @@ def tree_level(path, filters, queued, offset=0, sort=None):
 
 
 def level_context(path, filters, queued, offset=0, sort=None):
-    sort = sort or {"sort": "name", "dir": "asc"}
+    sort = sort or {}
     folders, files, total = tree_level(path, filters, queued, offset, sort)
     nxt = offset + PAGE_SIZE
     more = url_for("files_folder", path=path, offset=nxt, rows=1, **filters, **sort) if nxt < total else None
@@ -552,17 +566,9 @@ def level_context(path, filters, queued, offset=0, sort=None):
 
 
 def sort_links(filters, sort):
-    """Column header links: field -> (URL of the Files page sorted by it, arrow or "")."""
-    links = {}
-    for field in SORT_FIELDS:
-        active = field == sort["sort"]
-        if active:
-            direction = "desc" if sort["dir"] == "asc" else "asc"
-        else:                                   # big numbers first is the useful start for these
-            direction = "desc" if field in ("size", "bitrate", "duration", "resolution") else "asc"
-        links[field] = (url_for("files", **filters, sort=field, dir=direction),
-                        ("▲" if sort["dir"] == "asc" else "▼") if active else "")
-    return links
+    """Column header links: field -> (URL of the Files page with the next sort state, arrow or "")."""
+    return {field: (url_for("files", **filters, **next_sort(field, sort)), sort_arrow(field, sort))
+            for field in SORT_FIELDS}
 
 
 @app.route("/files")
@@ -593,7 +599,6 @@ def files():
         codec_summary=codec_summary(filters.get("codec", [])),
         last_scan=enc.load_state()["last_scan"], ffprobe=bool(enc.FFPROBE), preset_list=preset_choices(),
         unscanned=[enc.SHARE_NAMES[p] for p, i in share_info().items() if not i["files"]],
-        sort_fields={k: v[0] for k, v in SORT_FIELDS.items()},
         **level_context("", filters, queued, sort=sort_args(request.args)))
 
 
@@ -668,26 +673,40 @@ def replace_info(rows):
     return rows
 
 
-def queue_view(state="", offset=0):
+QUEUE_SORT = {                                  # sortable queue columns; no sorting = processing order
+    "file":   ("File", lambda i: natural(enc.short(i["key"]))),
+    "preset": ("Preset", lambda i: (presets.name_of(i["preset"]) if i["preset"] else "").lower()),
+    "state":  ("State", lambda i: list(enc.QUEUE_STATES).index(i["state"]) if i["state"] in enc.QUEUE_STATES else 99),
+}
+
+
+def queue_view(state="", offset=0, sort=None):
     """Queue entries for the Status page: counts per state and one page of entries
-    (optionally only one state). Computed from the queue files on every call."""
+    (optionally only one state, optionally sorted). Computed from the queue files."""
+    sort = sort or {}
     items = enc.queue_items()
+    for n, item in enumerate(items, 1):
+        item["n"] = n                           # processing order, kept when sorting
     counts = Counter(i["state"] for i in items)
     shown = [i for i in items if not state or i["state"] == state or
              (state == "done" and i["state"] not in ("waiting", "encoding"))]
+    if sort:
+        shown = sorted(shown, key=QUEUE_SORT[sort["sort"]][1], reverse=sort["dir"] == "desc")
     page = shown[offset:offset + QUEUE_PAGE]
     names = {}
     rows = []
-    for n, item in enumerate(page, offset + 1):
+    for item in page:
         pid = item["preset"]
         if pid and pid not in names:
             names[pid] = presets.name_of(pid)
-        rows.append(dict(item, n=n, short=enc.short(item["key"]), preset_name=names.get(pid, "")))
+        rows.append(dict(item, short=enc.short(item["key"]), preset_name=names.get(pid, "")))
     replace_info(rows)
     nxt = offset + QUEUE_PAGE
     return {"rows": rows, "counts": counts, "total": len(items), "shown_total": len(shown),
-            "more_url": url_for("status_queue", state=state, offset=nxt) if nxt < len(shown) else None,
-            "states": enc.QUEUE_STATES, "state": state}
+            "more_url": url_for("status_queue", state=state, offset=nxt, **sort) if nxt < len(shown) else None,
+            "states": enc.QUEUE_STATES, "state": state, "sort": sort,
+            "sort_links": {f: (url_for("status", state=state, **next_sort(f, sort)), sort_arrow(f, sort))
+                           for f in QUEUE_SORT}}
 
 
 def live_status():
@@ -731,7 +750,8 @@ def status():
     cfg = enc.parse_config(enc.CONFIG_FILE) if enc.CONFIG_FILE.exists() else {}
     state = request.args.get("state", "")
     results = replace_info([{"at": at, "status": st, "key": key} for at, st, key in enc.recent_results(20)])
-    return render_template("status.html", cur=enc.current_progress(), q=queue_view(state),
+    return render_template("status.html", cur=enc.current_progress(),
+                           q=queue_view(state, sort=sort_args(request.args, QUEUE_SORT)),
                            results=results, auto_interval=scan_interval(cfg),
                            auto_next=next_auto_scan(cfg), short=enc.short,
                            last_scan=enc.load_state()["last_scan"])
@@ -747,7 +767,7 @@ def status_queue():
     """One page of queue rows (for "Show more", the state filter and refreshing)."""
     state = request.args.get("state", "")
     offset = max(int(request.args.get("offset", 0) or 0), 0)
-    view = queue_view(state, offset)
+    view = queue_view(state, offset, sort_args(request.args, QUEUE_SORT))
     resp = app.make_response(render_template("_queue_rows.html", **view))
     resp.headers["X-Next"] = view["more_url"] or ""
     resp.headers["X-Shown-Total"] = str(view["shown_total"])

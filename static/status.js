@@ -12,6 +12,11 @@
   let currentKey = panel.dataset.currentKey;
   let running = false;
 
+  function sortParams() {                        // keep the column sort when reloading the list
+    const f = $("[data-queue-filter]");
+    return f.dataset.sort ? { sort: f.dataset.sort, dir: f.dataset.dir } : {};
+  }
+
   function setText(sel, value) {
     const el = $(sel);
     if (el) el.textContent = value;
@@ -20,7 +25,7 @@
   async function reloadQueue(append) {
     const more = $("[data-queue-more]");
     const url = append && more ? more.dataset.queueMore
-      : `${queueUrl}?state=${encodeURIComponent(filter.value)}&offset=0`;
+      : `${queueUrl}?${new URLSearchParams({ state: filter.value, offset: 0, ...sortParams() })}`;
     const r = await fetch(url);
     if (!r.ok) return;
     const html = await r.text();
