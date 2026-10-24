@@ -5,14 +5,14 @@
     <td class="sel"><input type="checkbox" name="key" value="{{ f.key }}" aria-label="Select {{ f.name }}" {% if is_queued %}disabled data-locked title="Already queued"{% endif %}></td>
     <td class="sel"><button class="icon-btn" formaction="{{ url_for('start_scan') }}" name="path" value="{{ f.key }}" data-scan-path
           title="Scan this file again (re-reads it with ffprobe)" aria-label="Scan {{ f.name }} again">↻</button></td>
-    <td class="name" title="{{ f.key }}">{{ f.name }}</td>
-    <td>{% if f.video_codec %}<span class="codec codec-{{ codec_class(f.video_codec) }}" title="{{ f.video_codec }}">{{ f.video_codec|codec_name }}</span>{% elif f.probe_error %}<span class="muted" title="{{ f.probe_error }}">Error</span>{% else %}<span class="muted">–</span>{% endif %}</td>
-    <td>{% if f.width %}{{ f.width }}×{{ f.height }}{% else %}–{% endif %}</td>
-    <td>{{ f.bitrate|bitrate }}</td>
-    <td>{{ f.duration|duration }}</td>
-    <td class="num">{{ f.size|size }}</td>
-    <td class="nowrap">{{ f.added|added }}</td>
-    <td><span class="status status-{{ 'queued' if is_queued else f.status }}">{{ status_labels['queued'] if is_queued else status_labels.get(f.status, f.status) }}</span>
+    <td class="name" title="{{ f.key }}">{{ f.name|wbr }}</td>
+    <td class="c-codec">{% if f.video_codec %}<span class="codec codec-{{ codec_class(f.video_codec) }}" title="{{ f.video_codec }}">{{ f.video_codec|codec_name }}</span>{% elif f.probe_error %}<span class="muted" title="{{ f.probe_error }}">Error</span>{% else %}<span class="muted">–</span>{% endif %}</td>
+    <td class="c-res">{% if f.width %}{{ f.width }}×{{ f.height }}{% else %}–{% endif %}</td>
+    <td class="c-bitrate" data-label="Bitrate">{{ f.bitrate|bitrate }}</td>
+    <td class="c-dur" data-label="Duration">{{ f.duration|duration }}</td>
+    <td class="num c-size">{{ f.size|size }}</td>
+    <td class="nowrap c-added" data-label="Added">{{ f.added|added }}</td>
+    <td class="c-status"><span class="status status-{{ 'queued' if is_queued else f.status }}">{{ status_labels['queued'] if is_queued else status_labels.get(f.status, f.status) }}</span>
       {% if f.replacing %}<span class="muted small" title="The worker carries out the replace job; the list updates when it's done">Replacing…</span>
       {% elif f.encoded %}<button type="button" class="link-btn" data-replace data-key="{{ f.key }}" data-original="{{ f.name.rsplit('/', 1)[-1] }}"
           data-encoded="{{ f.encoded }}" title="Move the finished encode into the library in place of this file">Replace…</button>{% endif %}</td>

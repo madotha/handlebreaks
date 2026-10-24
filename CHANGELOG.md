@@ -9,6 +9,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Web UI on phones: bottom tab bar, compact two-line file rows (tap a name for bitrate, duration and date added), stacked queue and preset lists, settings sections as scrollable chips, dialogs as bottom sheets, no horizontal scrolling.
+- Theme toggle in the header: system, light or dark, remembered by the browser and applied before the first paint. A favicon (the logo mark).
+
 - Files page: **Date added** filter (last 24 hours, last 7 days, last 30 days, or a custom range with dd.mm.yyyy dates; the end date is included) and an **Added** column (dd.mm.yyyy hh:mm in the browser's time zone), also as a sort field (folders by their newest file). "Date added" is when a scan first found the file: new column `files.added`, filled once from the file's modification date for files already in the database, and from the file date on a share's first scan. After **Replace…** the new file keeps the original's date (files replaced before this version show their replace date).
 
 - Bulk replace: **Replace selected…** on the Files page (ticked files and folders) and **Replace all finished…** on the Status page open a list of every file with a finished encode, each with its suggested name to edit, and replace them in one go. All names are checked first (nothing starts if one is invalid or two collide). The worker moves all files of a run first and then refreshes Plex once per folder instead of once per file.
@@ -38,6 +41,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Redesigned web UI, Plex-inspired: dark-first neutral grays with Plex amber reserved for actions (buttons, active tab, links, focus), a sticky translucent header with icons, quieter borders and clearer hierarchy (tiles, badges, progress, the current encode with its percentage up front), consistent control sizes, and long file names that wrap at their dots and dashes instead of in the middle of a word.
 - Files page: folders with many subfolders show 100 at a time (**Show more folders**) and the markup is compacted. Opening a share with 1,100 shows went from ~1 s to ~0.15 s in the browser, and a reload with all shares open from ~3.5 s to ~0.6 s.
 - Faster web UI and scans: the Files tree and Stats are aggregated in SQL (Stats ~2× faster) with a covering index, library totals and the unfiltered top level are cached until the database changes, HTML and JSON responses are gzip-compressed (a 1.4 MB folder now transfers as ~60 KB, with slimmer markup), new lines of `results.tsv` are imported incrementally, HandBrakeCLI's capabilities and built-in presets are cached on disk (`.handbrake-cache.json`), and ffprobe reads less of each file (~30 % faster per file, same results).
 - Times in the web UI are shown in the viewer's time zone (as `<time>` elements converted in the browser). Before, they appeared in the server's time zone, which is UTC in a Docker container by default.

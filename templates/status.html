@@ -36,9 +36,13 @@
   <p class="muted small" data-no-stop {% if not cur or can_stop %}hidden{% endif %}>This encode was started by an older version of the worker, which can't be stopped from here. Stopping works from the worker's next run.</p>
   <p class="flash info" data-stopping {% if not stopping %}hidden{% endif %}>Stopping <span data-stopping-mode>{{ 'all' if stopping == 'all' else '' }}</span>… the worker ends the encode within a few seconds.</p>
   <div data-current {% if not cur %}hidden{% endif %}>
-    <p><strong>File <span data-cur-i>{{ cur.i if cur }}</span> of <span data-cur-n>{{ cur.n if cur }}</span>:</strong> <span data-cur-name>{{ short(cur.key) if cur }}</span></p>
+    <div class="now-head">
+      <span class="now-pct"><span data-cur-pct>{{ (cur.pct if cur else '0') or '0' }}</span> %</span>
+      <span class="muted small">File <span data-cur-i>{{ cur.i if cur }}</span> of <span data-cur-n>{{ cur.n if cur }}</span></span>
+    </div>
+    <p class="now-file" data-cur-name>{{ short(cur.key) if cur }}</p>
     <span class="meter big"><span data-cur-bar style="width: {{ (cur.pct if cur else 0) or 0 }}%"></span></span>
-    <p class="muted"><span data-cur-pct>{{ (cur.pct if cur else '0') or '0' }}</span> % · <span data-cur-fps>{{ (cur.fps if cur else '–') or '–' }}</span> fps · <span data-cur-eta>{{ (cur.eta if cur else '–') or '–' }}</span> left</p>
+    <p class="muted small now-stats"><span data-cur-fps>{{ (cur.fps if cur else '–') or '–' }}</span> fps · <span data-cur-eta>{{ (cur.eta if cur else '–') or '–' }}</span> left</p>
   </div>
   <p data-idle {% if cur %}hidden{% endif %}>No encode running.</p>
 </section>
@@ -111,7 +115,7 @@
       <thead><tr><th>Time</th><th>Result</th><th>File</th></tr></thead>
       <tbody>
       {% for r in results %}
-        <tr><td data-sort="{{ r.at }}">{{ r.at|localtime }}</td><td data-sort="{{ r.status }}"><span class="result result-{{ r.status|lower }}">{{ r.status }}</span> {% include "_replace_button.html" %}</td><td class="name" title="{{ r.key }}">{{ short(r.key) }}</td></tr>
+        <tr><td data-sort="{{ r.at }}">{{ r.at|localtime }}</td><td data-sort="{{ r.status }}"><span class="result result-{{ r.status|lower }}">{{ r.status }}</span> {% include "_replace_button.html" %}</td><td class="name" title="{{ r.key }}">{{ short(r.key)|wbr }}</td></tr>
       {% endfor %}
       </tbody>
     </table>

@@ -44,7 +44,7 @@ from contextlib import closing
 from pathlib import Path
 
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, session, url_for
-from markupsafe import Markup
+from markupsafe import Markup, escape
 
 import encoding as enc
 import plex
@@ -417,6 +417,14 @@ def added_time(epoch):
     dt = datetime.fromtimestamp(epoch).astimezone()
     return Markup('<time datetime="{}" data-format="dmy">{}</time>').format(
         dt.isoformat(timespec="minutes"), dt.strftime("%d.%m.%Y %H:%M"))
+
+
+@app.template_filter("wbr")
+def word_breaks(name):
+    """A file name with line-break opportunities after . _ - and before ›, so long release
+    names wrap at their separators instead of in the middle of a word."""
+    text = str(escape(name or ""))
+    return Markup(re.sub(r"([._\-]|&gt;|›)(?=\S)", r"\1<wbr>", text))
 
 
 @app.template_filter("count")

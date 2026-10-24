@@ -71,7 +71,7 @@
   <section class="cards">
     <div class="card"><span class="label">Videos</span><span class="value">{{ tiles.videos|count }}</span>
       <span class="sub">{{ tiles.total_size|size }} in total</span></div>
-    <div class="card"><span class="label">Optimized share (by size)</span><span class="value">{{ '%.0f'|format(tiles.good_share) }} %</span>
+    <div class="card"><span class="label">Optimized (by size)</span><span class="value">{{ '%.0f'|format(tiles.good_share) }} %</span>
       <span class="meter"><span class="viz-good" style="width: {{ '%.1f'|format(tiles.good_share) }}%"></span></span>
       <span class="sub">{{ tiles.good_count|count }} files in H.265 or AV1</span></div>
     <div class="card"><span class="label">Not optimized yet</span><span class="value">{{ tiles.other_size|size }}</span>

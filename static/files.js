@@ -241,6 +241,13 @@
     window.BulkReplace.open(new FormData(form), { say, done: () => location.reload() });
   });
 
+  // Phones: the file rows are compact; tapping a file name shows bitrate, duration and date added
+  const compact = window.matchMedia("(max-width: 720px)");
+  form.addEventListener("click", (e) => {
+    const cell = e.target.closest("td.name");
+    if (cell && compact.matches) cell.parentElement.classList.toggle("expanded");
+  });
+
   form.addEventListener("change", update);
   form.addEventListener("submit", (e) => {
     const n = Number(button.dataset.count || 0);

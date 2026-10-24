@@ -1,23 +1,37 @@
+{% from "_icons.html" import icon %}
+{% set nav = [('files', 'Files', 'files', ('files',)), ('status', 'Status', 'status', ('status',)),
+              ('stats', 'Stats', 'stats', ('stats',)), ('presets_page', 'Presets', 'presets', ('presets_page', 'preset_edit')),
+              ('settings_index', 'Settings', 'settings', ('settings', 'settings_index'))] %}
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f4f3f0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1b1c1f" media="(prefers-color-scheme: dark)">
+  {# Apply the chosen theme before the first paint (static/theme.js switches it) #}
+  <script>try { var t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
   {% block head %}{% endblock %}
   <title>{% block title %}{% endblock %} · Plex Encoding</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <header class="top">
-    <a class="brand" href="{{ url_for('files') }}">Plex Encoding</a>
-    <nav>
-      <a href="{{ url_for('files') }}" {% if request.endpoint == 'files' %}aria-current="page"{% endif %}>Files</a>
-      <a href="{{ url_for('status') }}" {% if request.endpoint == 'status' %}aria-current="page"{% endif %}>Status</a>
-      <a href="{{ url_for('stats') }}" {% if request.endpoint == 'stats' %}aria-current="page"{% endif %}>Stats</a>
-      <a href="{{ url_for('presets_page') }}" {% if request.endpoint in ('presets_page', 'preset_edit') %}aria-current="page"{% endif %}>Presets</a>
-      <a href="{{ url_for('settings_index') }}" {% if request.endpoint == 'settings' %}aria-current="page"{% endif %}>Settings</a>
+    <a class="brand" href="{{ url_for('files') }}">
+      <img class="brand-mark" src="{{ url_for('static', filename='favicon.svg') }}" alt="">Plex Encoding</a>
+    <nav class="tabs" aria-label="Pages">
+      {% for endpoint, label, ico, active in nav %}
+        <a href="{{ url_for(endpoint) }}" {% if request.endpoint in active %}aria-current="page"{% endif %}>{{ icon(ico) }}<span>{{ label }}</span></a>
+      {% endfor %}
     </nav>
-    {% if scan_state.running %}<span class="pill busy">Scan running since {{ scan_state.started|localtime }}</span>{% endif %}
+    <div class="top-end">
+      {% if scan_state.running %}<span class="pill busy" title="{{ scan_state.label }}">Scanning<span class="visually-hidden"> since</span> {{ scan_state.started|localtime }}</span>{% endif %}
+      <button type="button" class="theme-toggle" data-theme-toggle aria-label="Color theme">
+        <span data-theme-icon="auto">{{ icon('auto') }}</span><span data-theme-icon="light" hidden>{{ icon('sun') }}</span><span data-theme-icon="dark" hidden>{{ icon('moon') }}</span>
+      </button>
+    </div>
   </header>
   <main>
     {% if config_error and request.endpoint != 'settings' %}
@@ -28,6 +42,12 @@
     {% endfor %}
     {% block content %}{% endblock %}
   </main>
+  <nav class="tabbar" aria-label="Pages">
+    {% for endpoint, label, ico, active in nav %}
+      <a href="{{ url_for(endpoint) }}" {% if request.endpoint in active %}aria-current="page"{% endif %}>{{ icon(ico) }}{{ label }}</a>
+    {% endfor %}
+  </nav>
+  <script src="{{ url_for('static', filename='theme.js') }}"></script>
   <script src="{{ url_for('static', filename='time.js') }}"></script>
   <script src="{{ url_for('static', filename='tablesort.js') }}"></script>
 </body>

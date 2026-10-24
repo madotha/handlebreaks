@@ -17,7 +17,7 @@
   <section class="cards">
     <div class="card"><span class="label">Videos</span><span class="value">{{ total|count }}</span></div>
     <div class="card"><span class="label">Total size</span><span class="value">{{ total_size|size }}</span></div>
-    <div class="card"><span class="label">Optimized share (by size)</span><span class="value">{{ '%.0f'|format(optimized_share) }} %</span>
+    <div class="card"><span class="label">Optimized (by size)</span><span class="value">{{ '%.0f'|format(optimized_share) }} %</span>
       <span class="meter"><span class="viz-good" style="width: {{ '%.1f'|format(optimized_share) }}%"></span></span></div>
     <div class="card"><span class="label">Last scan</span><span class="value small">{{ last_scan|localtime }}</span></div>
   </section>
@@ -60,14 +60,14 @@
     {% if filtered or sort %}<a href="{{ url_for('files', sort='none') }}">Reset</a>{% endif %}
   </form>
   {% if added_error %}<p class="flash error">{{ added_error }}</p>{% endif %}
-  <p class="muted">{{ shown|count }} of {{ total|count }} files{% if filtered %} match{% endif %} · <span class="codec codec-good">optimized</span> <span class="codec codec-other">other codec</span></p>
+  <p class="result-line"><span class="muted">{{ shown|count }} of {{ total|count }} files{% if filtered %} match{% endif %}</span> <span class="codec codec-good">optimized</span> <span class="codec codec-other">other codec</span></p>
 
   <form id="queue-form" method="post" action="{{ url_for('queue') }}" data-folder-url="{{ url_for('files_folder') }}" data-folder-query="{{ folder_query }}" data-version="{{ folder_version }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <input type="hidden" name="next" value="{{ request.full_path }}">
     {% for k, v in filters.items() %}{% for item in (v if v is not string else [v]) %}<input type="hidden" name="{{ k }}" value="{{ item }}">{% endfor %}{% endfor %}
     <div class="action-bar">
-      <span><strong data-selected-count>0</strong> selected</span>
+      <span class="selected-count"><strong data-selected-count>0</strong> selected</span>
       <label class="inline">Preset
         <select name="preset" aria-label="Preset for this queue">
           <option value="">Share's preset</option>
