@@ -19,6 +19,7 @@ Semi-automatic conversion of movies and TV episodes in a Plex library from H.264
 - [Security](#security)
 - [Troubleshooting](#troubleshooting)
 - [Uninstalling](#uninstalling)
+- [License](#license)
 
 ## Quick start (Docker)
 
@@ -34,7 +35,7 @@ The fastest way to try it. Tested on macOS with Docker Desktop; Linux with Docke
 **Steps:**
 
 ```bash
-git clone <repository-url> plex-encoding-automation
+git clone https://github.com/madotha/handlebreaks.git plex-encoding-automation
 cd plex-encoding-automation
 cp .env.example .env
 ```
@@ -64,7 +65,7 @@ For more details, the native macOS setup (faster encoding) and the mixed setup, 
 
 If you use an AI coding agent that can run commands on your machine (e.g. Claude Code), you can let it do the setup. Start it in an empty folder and paste this prompt, with the repository URL filled in. It asks you for everything that depends on your environment before changing anything:
 
-> Set up "Plex Encoding Automation" from `<repository-url>` on this machine. Clone it, read its README.md completely and follow it; don't invent steps that aren't in it.
+> Set up "Plex Encoding Automation" from `https://github.com/madotha/handlebreaks.git` on this machine. Clone it, read its README.md completely and follow it; don't invent steps that aren't in it.
 >
 > Before you install or configure anything, check my system (operating system, CPU, free disk space, and whether Docker, Homebrew, Python 3.9+, HandBrakeCLI and ffmpeg are installed), then ask me, one topic at a time:
 >
@@ -143,7 +144,7 @@ Connect to the share in Finder (Go → Connect to Server, e.g. `smb://nas/Media`
 
 ```bash
 mkdir -p ~/scripts
-git clone <repository-url> ~/scripts/encoding     # or download and unpack the code there
+git clone https://github.com/madotha/handlebreaks.git ~/scripts/encoding     # or download and unpack the code there
 cd ~/scripts/encoding
 ```
 
@@ -209,7 +210,7 @@ The first time launchd starts the scripts, macOS may ask whether `zsh`, `HandBra
 ### 1. Get the code and configure the paths
 
 ```bash
-git clone <repository-url> plex-encoding-automation
+git clone https://github.com/madotha/handlebreaks.git plex-encoding-automation
 cd plex-encoding-automation
 cp .env.example .env
 open -e .env
@@ -494,3 +495,7 @@ docker compose down -v          # Docker: also deletes the data volume
 ```
 
 Then delete the program folder. Your library is never modified, and encoded files stay in the output folder.
+
+## License
+
+[MIT](LICENSE)

@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Keep the repo generic
 
-The repo is meant to be installed on any machine and may be published. It must stay free of anything specific to one host or person.
+The repo is published on GitHub (`git@github.com:madotha/handlebreaks.git`, MIT license) and meant to be installed on any machine. Commits use the pseudonym set in the repo's local git config; never commit real names, personal email addresses or other personal data. It must stay free of anything specific to one host or person.
 
 - Don't commit host-specific facts, setup notes or TODOs about a particular machine. This covers usernames, home paths, mounted shares, installed versions and the state of a local install. Mention them in chat or put them in the local `TODO.md`.
 - Secrets (tokens, passwords, keys, `.env`) and local config or overrides go in files that `.gitignore` covers. When adding a new file or directory of that kind, or one not needed to install the tool elsewhere (runtime output, caches, editor files), add it to `.gitignore` in the same change.
@@ -34,7 +34,7 @@ The repo is meant to be installed on any machine and may be published. It must s
 
 Semi-automatic H.264 → H.265 (x265) re-encoding of a Plex library with HandBrakeCLI. It runs natively on macOS (launchd) or in Docker. Python 3.9+ plus zsh scripts. `encoding.py` and `encode.sh` use only the standard library and system tools. Only the web UI needs packages (`requirements.txt`: Flask, waitress). ffprobe (ffmpeg) is optional but needed for codec data. There is no build system, linter or test suite; test changes manually in an isolated data folder (`ENCODING_DATA_DIR=<scratch dir>`), and for Docker, with a separate compose project (`docker compose -p <name>`).
 
-**Everything is in English**: code, comments, CLI and log output, the web UI, the Obsidian notes, configs, README and other docs. Don't add German anywhere. The only exceptions are `LEGACY_PREFIXES` and `LEGACY_NOTE_HEADING` in `encoding.py`, which must match data written by version 1.x. The README is the full from-scratch setup guide for all three setups (native, Docker, Docker + native encoding); update it whenever setup steps, requirements, settings or commands change.
+**Everything is in English**: code, comments, CLI and log output, the web UI, the Obsidian notes, configs, README and other docs. Don't add German anywhere. The only exceptions are `LEGACY_PREFIXES` and `LEGACY_NOTE_HEADING` in `encoding.py`, which must match data written by version 1.x. The README is the full from-scratch setup guide for all three setups (native, Docker, Docker + native encoding); update it whenever setup steps, requirements, settings or commands change. Its **Quick start (Docker)** and the **AI coding agent prompt** are the entry points for new users: keep both in sync with any change to setup, requirements or settings.
 
 ## Commands
 
