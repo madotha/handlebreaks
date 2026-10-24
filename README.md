@@ -19,6 +19,8 @@ Semi-automatic conversion of movies and TV episodes in a Plex library from H.264
 - [Web UI](#web-ui)
 - [Configuration](#configuration)
 - [Files and data](#files-and-data)
+- [Updating](#updating)
+- [Updating from version 2.x](#updating-from-version-2x)
 - [Updating from version 1.x](#updating-from-version-1x)
 - [Security](#security)
 - [Troubleshooting](#troubleshooting)
@@ -446,6 +448,31 @@ Everything the tool creates lives in the data folder (the program folder, or `/d
 | `replace/`, `replace/done/` | Replace jobs from the web UI and their results |
 | `cancelled.txt` | Entries removed from the run in progress (skipped by the worker, deleted when the run ends) |
 | `.handbrake-cache.json` | HandBrakeCLI's encoders and built-in presets, read again when HandBrakeCLI changes |
+
+## Updating
+
+Check [CHANGELOG.md](CHANGELOG.md) for what changed, and the sections below for releases that need manual steps. Your data (`config.env`, `encoding.db`, presets, queue, logs) is kept; database and config changes are migrated automatically on the first run.
+
+**Native (Setup A):**
+
+```bash
+cd ~/scripts/encoding
+git pull
+.venv/bin/pip install -r requirements.txt                       # if you use the web UI
+launchctl kickstart -k gui/$(id -u)/local.plex-encoding-web     # restart the web UI
+```
+
+The worker picks up the new `encode.sh` with its next run. If a release changed the plist templates (the changelog says so), install them again as in [Setup A, step 7](#7-start-the-background-services), after `launchctl bootout gui/$(id -u)/local.plex-encoding` (and `…-web`).
+
+**Docker (Setups B and C):**
+
+```bash
+cd plex-encoding-automation
+git pull
+docker compose up -d --build       # Setup C: docker compose -f docker-compose.yml -f docker-compose.hybrid.yml up -d --build
+```
+
+In Setup C, also update the native installation as above, since the Mac's worker runs from it.
 
 ## Updating from version 2.x
 

@@ -25,8 +25,9 @@ The repo is published on GitHub (`git@github.com:madotha/handlebreaks.git`, MIT 
 - To release:
   1. Bump `__version__`.
   2. Rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD` and add a fresh empty `[Unreleased]` section.
-  3. Commit as `Release vX.Y.Z`.
-  4. Tag that commit with an annotated tag `vX.Y.Z` (`git tag -a vX.Y.Z -m "vX.Y.Z"`).
+  3. Check the README against the release: setup steps, requirements and settings must work for the new version, and every release with manual steps (MAJOR releases, changed plists, `.env` keys or mounts) needs an `Updating from version X` section in the README describing them.
+  4. Commit as `Release vX.Y.Z`.
+  5. Tag that commit with an annotated tag `vX.Y.Z` (`git tag -a vX.Y.Z -m "vX.Y.Z"`).
 
   Every release commit must carry its tag. Never bump the version without tagging, and never tag a commit that isn't a release.
 
@@ -34,7 +35,7 @@ The repo is published on GitHub (`git@github.com:madotha/handlebreaks.git`, MIT 
 
 Semi-automatic H.264 → H.265 (x265) re-encoding of a Plex library with HandBrakeCLI. It runs natively on macOS (launchd) or in Docker. Python 3.9+ plus zsh scripts. `encoding.py` and `encode.sh` use only the standard library and system tools. Only the web UI needs packages (`requirements.txt`: Flask, waitress). ffprobe (ffmpeg) is optional but needed for codec data. There is no build system, linter or test suite; test changes manually in an isolated data folder (`ENCODING_DATA_DIR=<scratch dir>`), and for Docker, with a separate compose project (`docker compose -p <name>`).
 
-**Everything is in English**: code, comments, CLI and log output, the web UI, the Obsidian notes, configs, README and other docs. Don't add German anywhere. The only exceptions are `LEGACY_PREFIXES` and `LEGACY_NOTE_HEADING` in `encoding.py`, which must match data written by version 1.x. The README is the full from-scratch setup guide for all three setups (native, Docker, Docker + native encoding); update it whenever setup steps, requirements, settings or commands change. The README starts with a screenshot of the Files page (`docs/screenshot-files.png`): whenever the Files page changes visually (layout, columns, colors, controls), retake it in the same change. Never use a real library for it: run a demo instance with the made-up data from `docs/demo_data.py` (instructions in its docstring) in an isolated data folder, open Shows → Northwind Station (2018) → Season 02, tick three offered files, and capture at 1280 px width, light mode. Its **Quick start (Docker)** and the **AI coding agent prompt** are the entry points for new users: keep both in sync with any change to setup, requirements or settings.
+**Everything is in English**: code, comments, CLI and log output, the web UI, the Obsidian notes, configs, README and other docs. Don't add German anywhere. The only exceptions are `LEGACY_PREFIXES` and `LEGACY_NOTE_HEADING` in `encoding.py`, which must match data written by version 1.x. The README is the full from-scratch setup guide for all three setups (native, Docker, Docker + native encoding); update it whenever setup steps, requirements, settings or commands change. New users and updaters rely on the README alone: whenever a change affects how the tool is set up, configured, updated or migrated (new requirements, settings, mounts, files to reinstall, data migrations), update the README in the same change, including its **Updating** section. The README starts with a screenshot of the Files page (`docs/screenshot-files.png`): whenever the Files page changes visually (layout, columns, colors, controls), retake it in the same change. Never use a real library for it: run a demo instance with the made-up data from `docs/demo_data.py` (instructions in its docstring) in an isolated data folder, open Shows → Northwind Station (2018) → Season 02, tick three offered files, and capture at 1280 px width, light mode. Its **Quick start (Docker)** and the **AI coding agent prompt** are the entry points for new users: keep both in sync with any change to setup, requirements or settings.
 
 ## Commands
 
