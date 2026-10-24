@@ -5,7 +5,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Maintaining this file and TODO.md
 
 - Keep this CLAUDE.md in sync with the tool: whenever a change affects commands, architecture, file contracts or configuration, update the relevant section in the same change.
-- `TODO.md` tracks all planned work, general and personal. It is gitignored and stays local, so it may be missing in a fresh clone. Sort every new TODO into one of its existing categories (Repository & Infrastructure, Configuration, Features, Bugs & Fixes, Documentation); add a new category only if none fits. Check items off (`- [x]`) when done.
+- `TODO.md` tracks all planned work, general and personal. It is gitignored and stays local, so it may be missing in a fresh clone. Sort every new TODO into one of its existing categories (Repository & Infrastructure, Configuration, Features, Bugs & Fixes, Documentation); add a new category only if none fits. Every TODO gets a priority (`**P1**` highest to `**P3**` lowest) right after the checkbox, and open items are sorted by priority within their category. Check items off (`- [x]`) when done.
+
+## Keep the repo generic
+
+The repo is meant to be installed on any machine and may be published. It must stay free of anything specific to one host or person.
+
+- Don't commit host-specific facts, setup notes or TODOs about a particular machine. This covers usernames, home paths, mounted shares, installed versions and the state of a local install. Mention them in chat or put them in the local `TODO.md`.
+- Secrets (tokens, passwords, keys, `.env`) and local config or overrides go in files that `.gitignore` covers. When adding a new file or directory of that kind, or one not needed to install the tool elsewhere (runtime output, caches, editor files), add it to `.gitignore` in the same change.
+- When code needs a machine-specific value, prefer a gitignored local file plus a committed example over hard-coding it.
 
 ## Versioning and changelog
 
@@ -18,7 +26,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-Semi-automatic H.264 → H.265 (x265) re-encoding of a Plex library on a Mac, using HandBrakeCLI. No build system, dependencies, linter or tests: plain Python 3 (stdlib only) plus zsh scripts. All code comments, CLI output, and the README are in **German**; keep it that way when editing.
+Semi-automatic H.264 → H.265 (x265) re-encoding of a Plex library on a Mac, using HandBrakeCLI. No build system, dependencies, linter or tests: plain Python 3 (stdlib only) plus zsh scripts. Code comments, CLI output and the Obsidian note are in **German**; keep them that way when editing. The README is in **English** and lists the requirements, so update it when they change.
 
 ## Commands
 
@@ -51,23 +59,27 @@ Scan classification order in `scan()` (first match wins): HEVC name match (`x265
 
 ## Configuration
 
-There is no config file or CLI options beyond the subcommands; everything is a constant in the source:
+Machine-specific settings live in **`config.env`** next to the scripts. It is gitignored and created from the committed template `config.example.env`, which documents every key.
+- **Format:** shell `KEY="value"` lines. `encode.sh` `source`s the file; `encoding.py` parses it with `load_config()` (`shlex`, then `$VAR` expansion) and `apply_config()` turns it into `ROOT_CANDIDATES`, `ENCODED_CANDIDATES` and `NOTE_DIR_CANDIDATES`.
+- **Path lists:** folder keys may list several paths separated by `:`. Both scripts use the first path that exists (`first_existing`, implemented on each side). This keeps the `~/media/...` fallback paths working when the tool runs inside a Claude environment.
+- **Missing config:** both scripts stop with an error if `config.env` is missing or incomplete. `version` works without it.
+- **New settings:** add the key to `config.example.env` and the README's Configuration table, and read it in both scripts if both need it.
 
 | Setting | Where |
 |---|---|
-| Library / output / Obsidian paths | `encoding.py` `ROOT_CANDIDATES`, `ENCODED_CANDIDATES`, `NOTE_DIR_CANDIDATES`; `encode.sh` `FILME`, `SERIEN`, `OUT`; all paths in the plist |
-| Encoding settings (codec, RF, audio, crop, container) | `preset.json` (exported from the HandBrake app) |
-| Preset selection | `encode.sh` `PRESET_NAME` |
+| Library / output / Obsidian folders | `config.env` `FILME_DIR`, `SERIEN_DIR`, `ENCODED_DIR`, `NOTE_DIR` |
+| Encoding settings (codec, RF, audio, crop, container) | `preset.json` (exported from the HandBrake app), or the file set in `config.env` `PRESET_FILE` |
+| Preset selection | `config.env` `PRESET_NAME` |
+| Per-minute Obsidian status note during encoding | `config.env` `STATUS_NOTE_ENABLED` |
 | "Already H.265" detection (filename only, stream not probed) | `encoding.py` `HEVC_RE` |
 | Excluded release types | `encoding.py` `BAD_RELEASE_RE` |
 | Scanned file extensions | `encoding.py` `VIDEO_EXTS` |
-| Per-minute Obsidian status note during encoding | `encode.sh` `STATUS_NOTE_ENABLED` (currently `0` = off) |
-| Retry timing | plist `ThrottleInterval` (30 s); `encode.sh` sleeps 300 s if NAS or HandBrakeCLI is missing |
+| Retry timing | plist `ThrottleInterval` (30 s); `encode.sh` sleeps 300 s if NAS, HandBrakeCLI or `config.env` is missing |
 
 Only user choices change at runtime: skipped files and the legacy baseline, stored in `state.json`.
 
-Paths are hard-coded example defaults (placeholders like `YOUR_USER`, `YOUR_VAULT`). `encoding.py` tries each `*_CANDIDATES` list in order: real macOS paths first, then `~/media/...` mounts used when run from a Claude environment. `encode.sh` and the plist (`/Users/YOUR_USER/scripts/encoding/...`) have their own copies, so path changes must be made in all three places.
+The plist is a template: its `/Users/YOUR_USER/scripts/encoding` paths are replaced with the install folder by the `sed` command in the README when it is copied to `~/Library/LaunchAgents`.
 
-`PRESET_NAME` must equal `PresetName` inside `preset.json` (currently `1080p x265 (Ger/Eng) RF20`, although the actual `VideoQualitySlider` is 22).
+`PRESET_NAME` must equal `PresetName` inside the preset file (the bundled one is `1080p x265 (Ger/Eng) RF20`, although its actual `VideoQualitySlider` is 22).
 
-Runtime artifacts (`state.json`, `queue/`, `processing/`, `done/`, `logs/`, `.lock`) are created next to the scripts and are not part of the repo.
+Local files (`config.env`) and runtime artifacts (`state.json`, `queue/`, `processing/`, `done/`, `logs/`, `.lock`) are created next to the scripts and are not part of the repo.

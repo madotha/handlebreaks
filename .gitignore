@@ -1,3 +1,5 @@
+# Keep this repo generic: nothing machine-specific, personal or secret.
+
 # Runtime artifacts created next to the scripts
 state.json
 queue/
@@ -6,7 +8,26 @@ done/
 logs/
 .lock
 .*.tmp
+
+# Local, machine-specific configuration and overrides
+config.env
+*.local
+*.local.*
+local/
+.claude/settings.local.json
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+
+# OS and editor files
 .DS_Store
+.vscode/
+.idea/
 
 # Personal TODO list (local only)
 TODO.md

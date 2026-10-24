@@ -26,8 +26,9 @@ Was NICHT angeboten wird
 
 Pfade
 -----
-Das Skript läuft sowohl direkt auf dem Mac als auch in Claudes Arbeitsumgebung
-auf dem Mac (dort sind die Ordner unter ~/media/... eingebunden). Es nimmt
+Alle Pfade stehen in config.env neben diesem Skript (Vorlage: config.example.env).
+Pro Ordner sind mehrere Pfade mit ":" getrennt möglich, z. B. der echte macOS-Pfad
+und ein Ersatzpfad in Claudes Arbeitsumgebung (~/media/...). Das Skript nimmt
 jeweils den ersten Pfad, der existiert.
 
 Beispiele
@@ -49,25 +50,20 @@ __version__ = "1.0.0"
 import json
 import os
 import re
+import shlex
 import sys
 from datetime import datetime
 from pathlib import Path
 
 # ─── Konfiguration ────────────────────────────────────────────────────────────
 
-HOME = Path.home()
 BASE = Path(__file__).resolve().parent          # ~/scripts/encoding
+CONFIG_FILE = BASE / "config.env"               # lokale Einstellungen, Vorlage: config.example.env
 
-# Für jeden Ort: zuerst der echte macOS-Pfad, dann der Pfad in Claudes Umgebung.
-ROOT_CANDIDATES = {
-    "Filme":  ["/Volumes/Media/Filme",  str(HOME / "media/Filme")],
-    "Serien": ["/Volumes/Media/Serien", str(HOME / "media/Serien")],
-}
-ENCODED_CANDIDATES = [str(HOME / "Downloads/_ENCODED"), str(HOME / "media/_ENCODED")]
-NOTE_DIR_CANDIDATES = [
-    str(HOME / "Library/Mobile Documents/iCloud~md~obsidian/Documents/YOUR_VAULT/PLEX"),
-    str(HOME / "media/PLEX"),
-]
+# Für jeden Ort eine Liste möglicher Pfade, gesetzt aus config.env (apply_config)
+ROOT_CANDIDATES = {}
+ENCODED_CANDIDATES = []
+NOTE_DIR_CANDIDATES = []
 NOTE_NAME = "Encoding To-Do.md"
 
 STATE_FILE   = BASE / "state.json"
@@ -97,6 +93,37 @@ BAD_RELEASE_RE = re.compile(
     rf")(?=$|{SEP})",
     re.IGNORECASE,
 )
+
+
+def load_config():
+    """Liest config.env (Zeilen KEY="wert", wie sie auch zsh versteht)."""
+    if not CONFIG_FILE.exists():
+        raise SystemExit(f"FEHLER: {CONFIG_FILE} fehlt. Vorlage kopieren: "
+                         f"cp config.example.env config.env, dann anpassen.")
+    cfg = {}
+    for line in CONFIG_FILE.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        parts = shlex.split(val, comments=True)
+        cfg[key.strip()] = os.path.expandvars(parts[0]) if parts else ""
+    return cfg
+
+
+def path_list(value):
+    """'a:b' -> ['a', 'b'], mit ~ aufgelöst."""
+    return [os.path.expanduser(p) for p in value.split(":") if p]
+
+
+def apply_config(cfg):
+    global ROOT_CANDIDATES, ENCODED_CANDIDATES, NOTE_DIR_CANDIDATES
+    missing = [k for k in ("FILME_DIR", "SERIEN_DIR", "ENCODED_DIR") if not cfg.get(k)]
+    if missing:
+        raise SystemExit(f"FEHLER: In {CONFIG_FILE} fehlt: {', '.join(missing)}")
+    ROOT_CANDIDATES = {"Filme": path_list(cfg["FILME_DIR"]), "Serien": path_list(cfg["SERIEN_DIR"])}
+    ENCODED_CANDIDATES = path_list(cfg["ENCODED_DIR"])
+    NOTE_DIR_CANDIDATES = path_list(cfg.get("NOTE_DIR", ""))
 
 
 def first_existing(candidates):
@@ -450,6 +477,7 @@ def main():
     if cmd in ("version", "--version", "-V"):
         print(f"encoding.py v{__version__}")
         return
+    apply_config(load_config())
     for d in (QUEUE_DIR, PROC_DIR, LOG_DIR):
         d.mkdir(parents=True, exist_ok=True)
     state = load_state()

@@ -2,7 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   Startet encode.sh automatisch, sobald im Ordner queue/ ein Auftrag liegt.
-  Installation:  siehe ANLEITUNG.md
+  Vorlage: YOUR_USER/scripts/encoding wird bei der Installation durch den
+  tatsächlichen Ordner ersetzt, siehe README.md.
 -->
 <plist version="1.0">
 <dict>

@@ -19,22 +19,41 @@ set -u
 export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 BASE="${0:A:h}"                                  # ~/scripts/encoding
-FILME="/Volumes/Media/Filme"
-SERIEN="/Volumes/Media/Serien"
-OUT="$HOME/Downloads/_ENCODED"
-PRESET_FILE="$BASE/preset.json"
-PRESET_NAME="1080p x265 (Ger/Eng) RF20"          # interner Name im Preset
-
 QUEUE="$BASE/queue"; PROC="$BASE/processing"; DONE="$BASE/done"; LOGS="$BASE/logs"
-mkdir -p "$QUEUE" "$PROC" "$DONE" "$LOGS" "$OUT/.inprogress"
+mkdir -p "$QUEUE" "$PROC" "$DONE" "$LOGS"
 
 log() { print -r -- "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOGS/encode.log"; }
 result() { print -r -- "$(date '+%Y-%m-%d %H:%M')	$1	$2" >> "$LOGS/results.tsv"; }
 
+# ── Einstellungen aus config.env (Vorlage: config.example.env) ───────────────
+if [[ ! -f "$BASE/config.env" ]]; then
+  log "config.env fehlt (Vorlage: config.example.env)"; sleep 300; exit 1
+fi
+source "$BASE/config.env"
+
+# Erster vorhandener Pfad aus einer ":"-getrennten Liste, sonst der erste Eintrag
+first_existing() {
+  local p; local -a ps=(${(s.:.)1})
+  for p in $ps; do [[ -e "$p" ]] && { print -r -- "$p"; return }; done
+  print -r -- "${ps[1]:-}"
+}
+
+FILME=$(first_existing "${FILME_DIR:-}")
+SERIEN=$(first_existing "${SERIEN_DIR:-}")
+OUT=$(first_existing "${ENCODED_DIR:-}")
+PRESET_FILE="${PRESET_FILE:-$BASE/preset.json}"
+PRESET_NAME="${PRESET_NAME:-}"                   # interner Name im Preset
+if [[ -z "$FILME" || -z "$SERIEN" || -z "$OUT" || -z "$PRESET_NAME" ]]; then
+  log "config.env unvollständig (FILME_DIR, SERIEN_DIR, ENCODED_DIR, PRESET_NAME)"; sleep 300; exit 1
+fi
+mkdir -p "$OUT/.inprogress"
+
 # ── Live-Status als Obsidian-Notiz (über iCloud auch auf dem Handy sichtbar) ─
-# Ausgeschaltet (0). Auf 1 setzen, falls die Notiz wieder jede Minute aktualisiert werden soll.
-STATUS_NOTE_ENABLED=0
-STATUS_NOTE="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/YOUR_VAULT/PLEX/Encoding Status.md"
+# Ein- und ausschalten mit STATUS_NOTE_ENABLED in config.env.
+STATUS_NOTE_ENABLED="${STATUS_NOTE_ENABLED:-0}"
+NOTE=$(first_existing "${NOTE_DIR:-}")
+[[ -z "$NOTE" ]] && STATUS_NOTE_ENABLED=0
+STATUS_NOTE="$NOTE/Encoding Status.md"
 write_status() {
   (( STATUS_NOTE_ENABLED )) || return 0
   local body k="" i="" n="" t="" prog pct eta
