@@ -118,6 +118,7 @@ CANCEL_FILE  = DATA_DIR / "cancelled.txt" # "batch<TAB>key" removed from the cur
 QUEUE_EDIT   = DATA_DIR / ".queue-edit"   # batches from queue/ while they are rewritten
 STOP_FILE    = DATA_DIR / "stop.txt"      # "skip|all<TAB>key": stop the running encode (checked by encode.sh)
 PAUSE_FILE   = DATA_DIR / "paused"        # queue paused by "Stop all": encode.sh starts nothing until it's gone
+WORKER_LOCK  = DATA_DIR / ".lock"         # encode.sh's lock; holds "stoppable" if the worker reads STOP_FILE
 REPLACE_DIR  = DATA_DIR / "replace"       # replace jobs from the web UI (run by encode.sh)
 REPLACE_DONE = REPLACE_DIR / "done"       # their results
 LOG_DIR      = DATA_DIR / "logs"
@@ -1137,16 +1138,25 @@ def unqueue_status(keys):
 STOP_MODES = ("skip", "all")
 
 
+def worker_can_stop():
+    """True if the running worker handles stop requests (one started by an older
+    encode.sh doesn't, until its run is over)."""
+    return (WORKER_LOCK / "stoppable").exists()
+
+
 def request_stop(mode, key):
     """Ask the worker to stop the encode of key: "skip" continues with the next file,
     "all" also pauses the rest of the run (see requeue_rest). encode.sh checks the
-    request every few seconds. Returns False if key isn't being encoded (any more)."""
+    request every few seconds. Returns None, or why nothing was stopped."""
     cur = current_progress()
     if mode not in STOP_MODES or not cur or cur["key"] != key:
-        return False
+        return "that file isn't being encoded any more."
+    if not worker_can_stop():
+        return ("the running worker was started by an older version, which can't stop an encode. "
+                "Stopping works from its next run.")
     write_text_atomic(STOP_FILE, f"{mode}\t{key}\n")
     unqueue_status([key])
-    return True
+    return None
 
 
 def stop_requested():

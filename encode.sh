@@ -129,6 +129,7 @@ if ! mkdir "$LOCK" 2>/dev/null; then
   rm -rf "$LOCK"; mkdir "$LOCK" || exit 0        # clean up a stale lock
 fi
 print $$ > "$LOCK/pid"
+: > "$LOCK/stoppable"                            # tells the web UI that this worker reads stop.txt
 trap 'rm -rf "$LOCK"; rm -f "$LOGS/current.txt"' EXIT INT TERM
 
 # ── Keep the Mac awake while encoding (macOS only) ───────────────────────────

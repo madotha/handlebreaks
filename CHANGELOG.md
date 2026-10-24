@@ -9,7 +9,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- Stop the running encode from the Status page: **Stop, continue with next** ends the current file (the partial file is deleted, the result is `STOPPED`) and goes on with the queue; **Stop all** also puts the rest of the run back into the queue and pauses it until **Resume** (replace jobs keep running while paused). The worker checks for a stop request (`stop.txt`) every 5 seconds; the pause is the file `paused` in the data folder. A stopped file is offered again and can be queued later.
+- Stop the running encode from the Status page: **Stop, continue with next** ends the current file (the partial file is deleted, the result is `STOPPED`) and goes on with the queue; **Stop all** also puts the rest of the run back into the queue and pauses it until **Resume** (replace jobs keep running while paused). The worker checks for a stop request (`stop.txt`) every 5 seconds; the pause is the file `paused` in the data folder. A stopped file is offered again and can be queued later. The buttons only appear when the running worker supports stopping (it marks its lock with `.lock/stoppable`); a worker started by an older version shows a note instead, until its run is over.
 
 - **Collapse all** on the Files page (in the sticky sort bar): closes every open folder, forgets them for reloads and unloads their content; folders with ticked files inside stay loaded, so the selection is kept.
 

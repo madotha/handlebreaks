@@ -848,6 +848,7 @@ def live_status():
         "current": dict(cur, short=enc.short(cur["key"])) if cur else None,
         "stopping": stop[0] if stop and cur and stop[1] == cur["key"] else None,
         "paused": enc.is_paused(),
+        "can_stop": enc.worker_can_stop(),
         "counts": dict(view_counts),
         "scan": dict({k: SCAN[k] for k in ("running", "label", "summary", "error")},
                      started=(to_datetime(SCAN["started"]) or datetime.now()).isoformat() if SCAN["started"] else None),
@@ -891,7 +892,7 @@ def status():
     results = replace_info([{"at": at, "status": st, "key": key} for at, st, key in enc.recent_results(20)])
     cur = enc.current_progress()
     stop = enc.stop_requested()
-    return render_template("status.html", cur=cur, paused=enc.is_paused(),
+    return render_template("status.html", cur=cur, paused=enc.is_paused(), can_stop=enc.worker_can_stop(),
                            stopping=stop[0] if stop and cur and stop[1] == cur["key"] else None,
                            q=queue_view(state, sort=sort_state(request.args, "queue", QUEUE_SORT)),
                            results=results, auto_interval=scan_interval(cfg),
@@ -933,11 +934,12 @@ def queue_remove():
 def encode_stop():
     """Stop the running encode: mode=skip goes on with the next file, mode=all pauses the queue."""
     mode, key = request.form.get("mode", ""), request.form.get("key", "")
-    if enc.request_stop(mode, key):
+    problem = enc.request_stop(mode, key)
+    if problem:
+        flash(f"Nothing stopped: {problem}", "error")
+    else:
         flash(f"Stopping {enc.short(key)} …" + (" The rest of the queue will be paused." if mode == "all" else
               " The worker goes on with the next file.") + " This takes a few seconds.", "ok")
-    else:
-        flash("Nothing stopped: that file isn't being encoded any more.", "error")
     return redirect(url_for("status"))
 
 
