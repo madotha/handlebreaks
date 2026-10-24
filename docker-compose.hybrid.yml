@@ -1,0 +1,25 @@
+# Mac hybrid: the container runs the web UI and scans, while the Mac keeps
+# encoding natively with launchd and encode.sh (all CPU cores, Apple AAC).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.hybrid.yml up -d --build
+#
+# Container and Mac share the program folder of the native installation
+# (HOST_APP_DIR in .env): config.env, queue/ and logs/. config.env therefore needs
+# the Mac path and the container path for each folder, e.g.
+# MOVIES_DIR="/Volumes/Media/Movies:/media/Movies" (the template already does this).
+#
+# The database lives in its own volume, because SQLite must not be used by the Mac
+# and the container at the same time through a shared folder. So run encoding.py
+# only inside the container:
+#   docker compose exec encoding python3 encoding.py scan
+services:
+  encoding:
+    environment:
+      WORKER_ENABLED: "0"                      # never encode in the container, launchd does that
+      ENCODING_DB_FILE: /db/encoding.db
+    volumes:
+      - ${HOST_APP_DIR:?set HOST_APP_DIR in .env}:/data
+      - db:/db
+
+volumes:
+  db:

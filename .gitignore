@@ -1,7 +1,11 @@
 # Keep this repo generic: nothing machine-specific, personal or secret.
 
-# Runtime artifacts created next to the scripts
-state.json
+# Runtime artifacts created next to the scripts (or in ENCODING_DATA_DIR)
+state.json*
+encoding.db
+encoding.db-*
+.scan.lock
+.secret_key
 queue/
 processing/
 done/
@@ -23,6 +27,10 @@ local/
 *.key
 *.pem
 secrets/
+
+# Python
+.venv/
+__pycache__/
 
 # OS and editor files
 .DS_Store

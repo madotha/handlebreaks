@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<h1>Settings</h1>
+<div class="settings">
+  <nav class="side" aria-label="Sections">
+    {% for key, sec in settings_sections.items() %}
+      <a href="{{ url_for('settings', section=key) }}" {% if key == section %}aria-current="page"{% endif %}>{{ sec[0] }}</a>
+    {% endfor %}
+  </nav>
+
+  <form class="panel" method="post">
+    <h2>{{ title }}</h2>
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    {% if not config_exists %}<p class="flash info">{{ config_file }} doesn't exist yet. Saving creates it from the template.</p>{% endif %}
+
+    {% for key, label, typ, hint in fields %}
+      <div class="field">
+        {% if typ == 'bool' %}
+          <label class="check"><input type="checkbox" name="{{ key }}" value="1" {% if cfg.get(key) == '1' %}checked{% endif %}> {{ label }}</label>
+        {% else %}
+          <label for="{{ key }}">{{ label }} <code>{{ key }}</code></label>
+          <input id="{{ key }}" name="{{ key }}" value="{{ cfg.get(key, '') }}" {% if typ == 'preset' %}list="presets"{% endif %} spellcheck="false" autocomplete="off">
+          {% if typ == 'preset' %}<datalist id="presets">{% for p in presets %}<option value="{{ p }}">{% endfor %}</datalist>{% endif %}
+        {% endif %}
+        {% if hint %}<p class="hint">{{ hint }}{% if typ == 'paths' %} Separate several paths with <code>:</code>; the first one that exists is used.{% endif %}</p>{% endif %}
+        {% if key in env_overrides %}<p class="flash info">Set by the environment variable <code>{{ key }}={{ env_overrides[key] }}</code> (e.g. in docker-compose.hybrid.yml). The value here is ignored.</p>{% endif %}
+        {% if errors.get(key) %}<p class="flash error">{{ errors[key] }}</p>{% endif %}
+        {% if checks.get(key) %}
+          <ul class="checks">{% for p, ok in checks[key] %}<li class="{{ 'ok' if ok else 'missing' }}">{{ '✓' if ok else '✗' }} {{ p }}</li>{% endfor %}</ul>
+        {% endif %}
+      </div>
+    {% endfor %}
+    <button>Save</button>
+    <p class="hint">Saved to <code>{{ config_file }}</code>. <code>$HOME</code> is allowed, but no other <code>$</code>, no quotes and no backslash.</p>
+  </form>
+</div>
+{% endblock %}

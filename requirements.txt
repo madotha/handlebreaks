@@ -1,0 +1,3 @@
+# Only needed for the web UI (webui.py). encoding.py and encode.sh need none of these.
+Flask>=3.0,<4
+waitress>=3.0,<4

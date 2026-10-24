@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% block head %}{% endblock %}
+  <title>{% block title %}{% endblock %} · Plex Encoding</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="{{ url_for('files') }}">Plex Encoding</a>
+    <nav>
+      <a href="{{ url_for('files') }}" {% if request.endpoint == 'files' %}aria-current="page"{% endif %}>Files</a>
+      <a href="{{ url_for('status') }}" {% if request.endpoint == 'status' %}aria-current="page"{% endif %}>Status</a>
+      <a href="{{ url_for('settings_index') }}" {% if request.endpoint == 'settings' %}aria-current="page"{% endif %}>Settings</a>
+    </nav>
+    {% if scan_state.running %}<span class="pill busy">Scan running since {{ scan_state.started[11:] }}</span>{% endif %}
+  </header>
+  <main>
+    {% if config_error and request.endpoint != 'settings' %}
+      <p class="flash error">{{ config_error }} <a href="{{ url_for('settings_index') }}">Open settings</a></p>
+    {% endif %}
+    {% for cat, msg in get_flashed_messages(with_categories=true) %}
+      <p class="flash {{ cat }}">{{ msg }}</p>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

@@ -1,0 +1,25 @@
+# Everything in one container: web UI (port 7979), scans and encoding.
+#
+#   cp .env.example .env        # enter the folders on the Mac
+#   docker compose up -d --build
+#   open http://127.0.0.1:7979
+#
+# To keep encoding natively on the Mac, add docker-compose.hybrid.yml.
+services:
+  encoding:
+    build: .
+    image: plex-encoding-automation
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WEB_PORT:-7979}:7979"     # local only, there is no login yet
+    volumes:
+      - data:/data                             # config.env, encoding.db, queue/, logs/
+      - ${HOST_MOVIES_DIR:?set HOST_MOVIES_DIR in .env}:/media/Movies:ro
+      - ${HOST_SHOWS_DIR:?set HOST_SHOWS_DIR in .env}:/media/Shows:ro
+      - ${HOST_ENCODED_DIR:?set HOST_ENCODED_DIR in .env}:/encoded
+      - ${HOST_NOTE_DIR:-notes}:/notes         # optional, otherwise an empty volume
+
+volumes:
+  data:
+  notes:

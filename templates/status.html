@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block head %}<meta http-equiv="refresh" content="10">{% endblock %}
+{% block title %}Status{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Status</h1>
+  <form method="post" action="{{ url_for('start_scan') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <button {% if scan_state.running %}disabled{% endif %}>Scan now</button>
+  </form>
+</div>
+
+<section class="panel">
+  <h2>Encoding</h2>
+  {% if cur %}
+    <p><strong>File {{ cur.i }} of {{ cur.n }}:</strong> {{ short(cur.key) }}</p>
+    <span class="meter big"><span style="width: {{ cur.pct or 0 }}%"></span></span>
+    <p class="muted">{{ cur.pct or '0' }} % · {{ cur.fps or '–' }} fps · {{ cur.eta or '–' }} left</p>
+  {% else %}
+    <p>No encode running.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <h2>Queue ({{ queue|length }})</h2>
+  {% if queue %}
+    <ol class="plain">{% for k in queue %}<li>{{ short(k) }}</li>{% endfor %}</ol>
+  {% else %}<p class="muted">Empty.</p>{% endif %}
+</section>
+
+<section class="panel">
+  <h2>Scan</h2>
+  <p>Last scan: {{ last_scan or '–' }}</p>
+  {% if scan_state.running %}<p>Running since {{ scan_state.started }} …</p>{% endif %}
+  {% if scan_state.summary %}<p class="flash ok">Finished ({{ scan_state.finished }}): {{ scan_state.summary }}</p>{% endif %}
+  {% if scan_state.error %}<p class="flash error">{{ scan_state.error }}</p>{% endif %}
+</section>
+
+<section class="panel">
+  <h2>Latest results</h2>
+  {% if results %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Time</th><th>Result</th><th>File</th></tr></thead>
+      <tbody>
+      {% for at, st, key in results %}
+        <tr><td>{{ at }}</td><td><span class="result result-{{ st|lower }}">{{ st }}</span></td><td class="name" title="{{ key }}">{{ short(key) }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}<p class="muted">No results yet.</p>{% endif %}
+</section>
+<p class="muted small">Refreshes every 10 seconds.</p>
+{% endblock %}

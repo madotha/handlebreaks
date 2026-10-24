@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Files{% endblock %}
+
+{% macro folder(name, node, depth) %}
+  <details class="dir" {% if filtered or depth == 0 %}open{% endif %}>
+    <summary><span class="dirname">{{ name }}</span><span class="meta">{{ node.count }} files · {{ node.size|size }}</span></summary>
+    <div class="dir-body">
+      {% for sub, child in node.dirs|dictsort %}{{ folder(sub, child, depth + 1) }}{% endfor %}
+      {% if node.files %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>File</th><th>Codec</th><th>Resolution</th><th>Bitrate</th><th>Duration</th><th class="num">Size</th><th>Status</th></tr></thead>
+          <tbody>
+          {% for f in node.files %}
+            <tr>
+              <td class="name" title="{{ f.key }}">{{ f.name }}</td>
+              <td>{% if f.video_codec %}<span class="codec codec-{{ f.video_codec }}">{{ f.video_codec }}</span>{% elif f.probe_error %}<span class="muted" title="{{ f.probe_error }}">Error</span>{% else %}<span class="muted">–</span>{% endif %}</td>
+              <td>{% if f.width %}{{ f.width }}×{{ f.height }}{% else %}–{% endif %}</td>
+              <td>{{ f.bitrate|bitrate }}</td>
+              <td>{{ f.duration|duration }}</td>
+              <td class="num">{{ f.size|size }}</td>
+              <td><span class="status status-{{ f.status }}">{{ status_labels.get(f.status, f.status) }}</span></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
+  </details>
+{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+  <h1>Files</h1>
+  <form method="post" action="{{ url_for('start_scan') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    <button {% if scan_state.running %}disabled{% endif %}>Scan now</button>
+  </form>
+</div>
+
+{% if not total %}
+  <p class="empty">No data yet. Start a scan to read the library.</p>
+{% else %}
+  <section class="cards">
+    <div class="card"><span class="label">Videos</span><span class="value">{{ total }}</span></div>
+    <div class="card"><span class="label">Total size</span><span class="value">{{ total_size|size }}</span></div>
+    <div class="card"><span class="label">H.265 share (by size)</span><span class="value">{{ '%.0f'|format(hevc_share) }} %</span>
+      <span class="meter"><span style="width: {{ '%.1f'|format(hevc_share) }}%"></span></span></div>
+    <div class="card"><span class="label">Last scan</span><span class="value small">{{ last_scan or '–' }}</span></div>
+  </section>
+  {% if not ffprobe %}<p class="flash info">ffprobe is not installed. Codec, resolution and bitrate stay empty until ffmpeg is installed.</p>{% endif %}
+
+  <form class="filters" method="get">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search name or folder" aria-label="Search">
+    <select name="codec" aria-label="Codec">
+      <option value="">All codecs</option>
+      {% for c, n in codecs %}<option value="{{ c }}" {% if c == codec %}selected{% endif %}>{{ c }} ({{ n }})</option>{% endfor %}
+    </select>
+    <select name="status" aria-label="Status">
+      <option value="">All statuses</option>
+      {% for s, label in status_labels.items() if statuses.get(s) %}<option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ label }} ({{ statuses[s] }})</option>{% endfor %}
+    </select>
+    <button>Filter</button>
+    {% if filtered %}<a href="{{ url_for('files') }}">Reset</a>{% endif %}
+  </form>
+  <p class="muted">{{ shown }} of {{ total }} files</p>
+
+  <div class="tree">
+    {% for name, node in tree.dirs|dictsort %}{{ folder(name, node, 0) }}{% endfor %}
+  </div>
+{% endif %}
+{% endblock %}
