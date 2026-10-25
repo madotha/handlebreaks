@@ -1,15 +1,50 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}{{ p.PresetName }}{% endblock %}
-{% macro select(name, options, current) %}
-  <select id="{{ name }}" name="{{ name }}">
-    {% if current and current not in options %}<option value="{{ current }}" selected>{{ current }} ({{ 'uses ' ~ aliases[current] ~ ' here' if current in aliases else 'not supported here' }})</option>{% endif %}
-    {% for o in options %}<option value="{{ o }}" {% if o == current %}selected{% endif %}>{{ o }}</option>{% endfor %}
-  </select>
+
+{# One editor field. name: the input name (audio tracks use a<n>-<key>) #}
+{% macro field(f, name) %}
+  {% set id = 'f-' ~ name %}
+  <div class="field{{ ' field-wide' if f.kind in ('json', 'multi') or f.attrs.mono }}" {% if f.show %}data-show='{{ f.show|tojson }}'{% endif %}>
+    {% if f.kind == 'bool' %}
+      <label class="check"><input type="checkbox" id="{{ id }}" name="{{ name }}" value="1" data-field="{{ f.key }}" {% if f.value %}checked{% endif %}> {{ f.label }}</label>
+    {% else %}
+      <label for="{{ id }}">{{ f.label }}</label>
+      {% if f.kind == 'select' %}
+        <select id="{{ id }}" name="{{ name }}" data-field="{{ f.key }}"
+                {% if f.depends %}data-depends="{{ f.depends }}" data-map='{{ f.dmap|tojson }}' data-current="{{ '' if f.value is none else f.value }}"{% endif %}>
+          {% for v, l in f.options %}<option value="{{ v }}" {% if v == ('' if f.value is none else f.value|string) %}selected{% endif %}>{{ l }}</option>{% endfor %}
+        </select>
+      {% elif f.kind == 'multi' %}
+        <div class="checks-row">
+          {% for v, l in f.options %}<label class="check"><input type="checkbox" name="{{ name }}" value="{{ v }}" {% if v in (f.value or []) %}checked{% endif %}> {{ l }}</label>{% endfor %}
+        </div>
+      {% elif f.kind in ('int', 'float') %}
+        <input id="{{ id }}" name="{{ name }}" data-field="{{ f.key }}" type="number" value="{{ '' if f.value is none else f.value }}"
+               step="{{ f.attrs.step or (1 if f.kind == 'int' else 'any') }}"{% if f.attrs.min is defined %} min="{{ f.attrs.min }}"{% endif %}{% if f.attrs.max is defined %} max="{{ f.attrs.max }}"{% endif %}>
+        {% if f.attrs.quick == 'size' %}
+          <span class="quick-sizes">{% for label, wh in [('4K', (3840, 2160)), ('1440p', (2560, 1440)), ('1080p', (1920, 1080)), ('720p', (1280, 720)), ('576p', (1024, 576)), ('No limit', (0, 0))] %}<button type="button" class="sort-chip" data-size="{{ wh[0] }}x{{ wh[1] }}">{{ label }}</button>{% endfor %}</span>
+        {% endif %}
+      {% elif f.kind == 'langs' %}
+        <input id="{{ id }}" name="{{ name }}" data-field="{{ f.key }}" value="{{ (f.value or [])|join(', ') }}" placeholder="any" spellcheck="false">
+      {% elif f.kind == 'json' %}
+        <textarea id="{{ id }}" name="{{ name }}" class="json small-json" spellcheck="false">{{ f.value|tojson }}</textarea>
+      {% else %}
+        <input id="{{ id }}" name="{{ name }}" data-field="{{ f.key }}" value="{{ '' if f.value is none else f.value }}" spellcheck="false" autocomplete="off"
+               {% if f.attrs.mono %}class="mono"{% endif %}{% if f.attrs.list %} list="{{ f.attrs.list }}"{% endif %}{% if f.attrs.required %} required{% endif %}>
+      {% endif %}
+    {% endif %}
+    {% if f.hint %}<p class="hint">{{ f.hint }}</p>{% endif %}
+  </div>
 {% endmacro %}
-{% macro choice(name, options, current) %}
-  <select id="{{ name }}" name="{{ name }}">
-    {% for value, label in options.items() %}<option value="{{ value }}" {% if value == current %}selected{% endif %}>{{ label }}</option>{% endfor %}
-  </select>
+
+{% macro track(fields, n, orig) %}
+  <fieldset class="track" data-track>
+    <legend>Track <span data-track-no>{{ n + 1 if n is number else '' }}</span></legend>
+    <button type="button" class="icon-btn icon-lg danger-icon track-remove" data-track-remove aria-label="Remove this track" data-tip="Remove this audio track">{{ icon('trash') }}</button>
+    <input type="hidden" name="a{{ n }}-_orig" value="{{ orig }}" data-track-orig>
+    <div class="grid-3">{% for f in fields %}{{ field(f, 'a' ~ n ~ '-' ~ f.key) }}{% endfor %}</div>
+  </fieldset>
 {% endmacro %}
 
 {% block content %}
@@ -20,70 +55,37 @@
     <a class="button" href="{{ url_for('presets_page') }}">All presets</a>
   </div>
 </div>
-<p class="muted">Used by: {{ shares|join(', ') if shares else 'no share' }}{% if not caps.available %} · HandBrakeCLI isn't installed here, so the options below are a generic list and changes can't be checked.{% endif %}</p>
+<p class="muted">Used by: {{ shares|join(', ') if shares else 'no share' }}{% if not caps.available %} · HandBrakeCLI isn't installed here, so the options below are generic lists and changes can't be checked.{% endif %}</p>
 {% if error %}<p class="flash error">{{ error }}</p>{% endif %}
 
-<form method="post" class="panel">
+<form method="post" class="panel preset-editor" data-preset-editor>
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
   <input type="hidden" name="mode" value="form">
-  <fieldset><legend>General</legend>
-    <div class="grid-2">
-      <div class="field"><label for="PresetName">Name</label><input id="PresetName" name="PresetName" value="{{ p.PresetName }}" required></div>
-      <div class="field"><label for="FileFormat">Container</label>{{ select('FileFormat', caps.formats, p.FileFormat) }}</div>
-    </div>
-    <div class="field"><label for="PresetDescription">Description</label><input id="PresetDescription" name="PresetDescription" value="{{ p.PresetDescription or '' }}"></div>
-    <label class="check"><input type="checkbox" name="ChapterMarkers" value="1" {% if p.ChapterMarkers %}checked{% endif %}> Chapter markers</label>
-  </fieldset>
+  <nav class="editor-tabs" aria-label="Settings" data-tabs>
+    {% for tab, _ in tabs %}<button type="button" class="sort-chip" data-tab="{{ tab }}">{{ tab }}</button>{% endfor %}
+  </nav>
 
-  <fieldset><legend>Video</legend>
-    <div class="grid-2">
-      <div class="field"><label for="VideoEncoder">Encoder</label>{{ select('VideoEncoder', caps.video_encoders, p.VideoEncoder) }}</div>
-      <div class="field"><label for="VideoPreset">Encoder speed</label>
-        <select id="VideoPreset" name="VideoPreset" data-current="{{ p.VideoPreset or '' }}"><option value="{{ p.VideoPreset or '' }}">{{ p.VideoPreset or '–' }}</option></select>
-        <p class="hint">Slower = smaller files at the same quality.</p></div>
-      <div class="field"><label for="QualityMode">Quality</label>
-        <select id="QualityMode" name="QualityMode">
-          <option value="rf" {% if p.VideoQualityType != 1 %}selected{% endif %}>Constant quality (RF)</option>
-          <option value="bitrate" {% if p.VideoQualityType == 1 %}selected{% endif %}>Average bitrate</option>
-        </select></div>
-      <div class="field" data-mode="rf"><label for="VideoQualitySlider">RF value</label>
-        <input id="VideoQualitySlider" name="VideoQualitySlider" type="number" step="0.5" min="0" max="51" value="{{ p.VideoQualitySlider }}">
-        <p class="hint">Lower = better quality, bigger files. Typical for x265: 20–24.</p></div>
-      <div class="field" data-mode="bitrate"><label for="VideoAvgBitrate">Bitrate (kbit/s)</label>
-        <input id="VideoAvgBitrate" name="VideoAvgBitrate" type="number" min="100" step="100" value="{{ p.VideoAvgBitrate }}"></div>
-      <div class="field"><label for="Resolution">Maximum resolution</label>
-        <select id="Resolution" name="Resolution">
-          {% if resolution not in resolutions %}<option value="{{ resolution }}" selected>{{ resolution }} (keep)</option>{% endif %}
-          {% for label in resolutions %}<option value="{{ label }}" {% if label == resolution %}selected{% endif %}>{{ label }}</option>{% endfor %}
-        </select><p class="hint">Larger sources are scaled down, smaller ones never up.</p></div>
-      <div class="field"><label for="VideoFramerate">Frame rate</label>
-        <select id="VideoFramerate" name="VideoFramerate">
-          {% for f in framerates %}<option value="{{ f }}" {% if (p.VideoFramerate or 'auto') == f %}selected{% endif %}>{{ 'Same as source' if f == 'auto' else f ~ ' fps (peak)' }}</option>{% endfor %}
-        </select></div>
-    </div>
-  </fieldset>
+  {% for tab, fields in tabs %}
+    <section class="tab-panel" data-tab-panel="{{ tab }}">
+      <h2>{{ tab }}</h2>
+      {% if tab == 'More' %}<p class="hint">Settings of this preset the editor doesn't have a field for (e.g. from a newer HandBrake), by their type.</p>{% endif %}
+      <div class="grid-3">{% for f in fields %}{{ field(f, f.key) }}{% endfor %}</div>
+      {% if tab == 'Audio' %}
+        <h3 class="field-group">Tracks</h3>
+        <p class="hint">One entry per output track, in order. The first matching source track uses track 1, and so on.</p>
+        <input type="hidden" name="audio-tracks" value="{{ tracks|length }}" data-track-count>
+        <div data-tracks>{% for t in tracks %}{{ track(t, loop.index0, loop.index0) }}{% endfor %}</div>
+        <button type="button" class="secondary" data-track-add>Add track</button>
+        <template data-track-template>{{ track(track_template, '__', -1) }}</template>
+      {% endif %}
+    </section>
+  {% endfor %}
+  <datalist id="pad-colors">{% for c in ['black', 'white', 'gray', 'darkgray'] %}<option value="{{ c }}">{% endfor %}</datalist>
 
-  <fieldset><legend>Audio</legend>
-    <div class="grid-2">
-      <div class="field"><label for="AudioTrackSelectionBehavior">Tracks</label>{{ choice('AudioTrackSelectionBehavior', track_behaviors, p.AudioTrackSelectionBehavior or 'first') }}</div>
-      <div class="field"><label for="AudioLanguageList">Languages</label><input id="AudioLanguageList" name="AudioLanguageList" value="{{ (p.AudioLanguageList or [])|join(', ') }}" placeholder="any">
-        <p class="hint">ISO 639-2 codes, e.g. <code>ger, eng</code>. Empty = any language.</p></div>
-      <div class="field"><label for="AudioEncoder">Encoder</label>{{ select('AudioEncoder', caps.audio_encoders, audio.AudioEncoder) }}
-        <p class="hint"><code>copy:…</code> keeps the original track.</p></div>
-      <div class="field"><label for="AudioBitrate">Bitrate (kbit/s)</label><input id="AudioBitrate" name="AudioBitrate" type="number" min="32" step="16" value="{{ audio.AudioBitrate or '' }}"></div>
-      <div class="field"><label for="AudioMixdown">Mixdown</label>{{ select('AudioMixdown', caps.mixdowns, audio.AudioMixdown) }}</div>
-    </div>
-  </fieldset>
-
-  <fieldset><legend>Subtitles</legend>
-    <div class="grid-2">
-      <div class="field"><label for="SubtitleTrackSelectionBehavior">Tracks</label>{{ choice('SubtitleTrackSelectionBehavior', track_behaviors, p.SubtitleTrackSelectionBehavior or 'none') }}</div>
-      <div class="field"><label for="SubtitleLanguageList">Languages</label><input id="SubtitleLanguageList" name="SubtitleLanguageList" value="{{ (p.SubtitleLanguageList or [])|join(', ') }}" placeholder="any"></div>
-      <div class="field"><label for="SubtitleBurnBehavior">Burn in</label>{{ choice('SubtitleBurnBehavior', burn_behaviors, p.SubtitleBurnBehavior or 'none') }}</div>
-    </div>
-  </fieldset>
-  <button>Save</button>
-  <span class="hint">{% if caps.available %}HandBrakeCLI checks the preset before it's saved.{% endif %} All other settings of the preset stay as they are.</span>
+  <div class="editor-save">
+    <button>Save</button>
+    <span class="hint">{% if caps.available %}HandBrakeCLI checks the preset before it's saved.{% endif %} Hidden fields (e.g. custom filter parameters while a preset is chosen) keep their values.</span>
+  </div>
 </form>
 
 <details class="panel">
@@ -96,25 +98,5 @@
     <button>Save JSON</button>
   </form>
 </details>
-
-<script>
-  // Encoder speed options depend on the encoder; show the matching ones
-  (function () {
-    const presets = {{ caps.encoder_presets|tojson }};
-    const enc = document.getElementById("VideoEncoder"), sp = document.getElementById("VideoPreset");
-    function fill() {
-      const list = presets[enc.value] || [];
-      const current = sp.value || sp.dataset.current;
-      sp.innerHTML = "";
-      (list.length ? list : [current || ""]).forEach((v) => sp.add(new Option(v || "–", v, false, v === current)));
-      if (list.length && !list.includes(current)) sp.value = list.includes("medium") ? "medium" : list[Math.floor(list.length / 2)];
-    }
-    enc.addEventListener("change", fill);
-    fill();
-    const mode = document.getElementById("QualityMode");
-    const sync = () => document.querySelectorAll("[data-mode]").forEach((el) => { el.hidden = el.dataset.mode !== mode.value; });
-    mode.addEventListener("change", sync);
-    sync();
-  })();
-</script>
+<script src="{{ url_for('static', filename='preset_edit.js') }}"></script>
 {% endblock %}

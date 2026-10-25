@@ -314,6 +314,24 @@ h3.field-group:first-of-type { border-top: 0; padding-top: 0; margin-top: .4rem;
 .preset-list td:last-child { width: 1%; white-space: nowrap; }
 .preset-list td:last-child .row-actions { flex-wrap: nowrap; }
 textarea.json { width: 100%; min-height: 28rem; font: .8rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-2); padding: .7rem; }
+.preset-editor .editor-tabs { display: flex; flex-wrap: wrap; gap: .35rem; margin: -.1rem 0 1.1rem; padding-bottom: .9rem; border-bottom: 1px solid var(--border); }
+.editor-tabs .sort-chip { cursor: pointer; }
+.editor-tabs .sort-chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.tab-panel h2 { margin-bottom: 1rem; }
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 0 1.25rem; align-items: start; }
+.grid-3 .field-wide { grid-column: 1 / -1; }
+.grid-3 .field > label.check { margin-top: 1.75rem; }
+input.mono, textarea.small-json { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .84rem; }
+textarea.small-json { width: 100%; min-height: 4rem; background: var(--surface-2); padding: .5rem; }
+.checks-row { display: flex; flex-wrap: wrap; gap: .4rem 1.1rem; }
+.checks-row label.check { margin: 0; font-weight: 500; }
+.quick-sizes { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .4rem; }
+.quick-sizes .sort-chip { min-height: 1.6rem; font-size: .76rem; padding: 0 .55rem; cursor: pointer; }
+.track { position: relative; border: 1px solid var(--border); border-radius: var(--radius); padding: .9rem 1.1rem .2rem; margin: 0 0 .9rem; background: var(--surface-2); }
+.track legend { font-weight: 650; }
+.track-remove { position: absolute; top: -.2rem; right: .6rem; background: var(--surface); }
+.editor-save { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; padding: .8rem 0 .2rem;
+  margin-top: .5rem; border-top: 1px solid var(--border); background: var(--surface); }
 .new-preset { display: grid; gap: .8rem; }
 .new-preset form { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
 .new-preset input[type=text] { flex: 1 1 14rem; min-width: 0; }
@@ -473,6 +491,9 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
   .side a[aria-current] { box-shadow: none; background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
   .share-scan { margin-left: 0; flex-basis: 100%; }
   .new-preset label.inline { flex: 1 1 100%; }
+  .editor-tabs { flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none; }
+  .editor-save { bottom: var(--tabbar-h); }
+  .grid-3 .field > label.check { margin-top: 0; }
   .new-preset label.inline select, .new-preset label.inline input[type=file] { flex: 1; width: 100%; }
   .new-preset form > button { flex: none; }
 

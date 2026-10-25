@@ -1400,7 +1400,7 @@ def preset_new():
 def preset_edit(pid):
     if not presets.exists(pid):
         abort(404)
-    preset, error, json_text = presets.load(pid), None, None
+    preset, error, json_text, new = presets.load(pid), None, None, None
     if request.method == "POST":
         try:
             if request.form.get("mode") == "json":
@@ -1412,7 +1412,7 @@ def preset_edit(pid):
                 if isinstance(new, dict) and isinstance(new.get("PresetList"), list) and new["PresetList"]:
                     new = new["PresetList"][0]         # a whole export file was pasted
             else:
-                new = presets.apply_form(preset, request.form)
+                new = presets.apply_form(preset, request.form, presets.capabilities())
             presets.check(new)
             problem = presets.verify(new)
             if problem:
@@ -1424,14 +1424,12 @@ def preset_edit(pid):
             error = str(e)
     usage, default = preset_usage()
     caps = presets.capabilities()
-    audio = (preset.get("AudioList") or [{}])[0]
+    shown = new if error and new and request.form.get("mode") != "json" else preset   # keep the user's input on errors
+    tabs, tracks, track_template = presets.editor(shown, caps)
     return render_template(
-        "preset_edit.html", pid=pid, p=preset, audio=audio, caps=caps, error=error,
-        json_text=json_text or json.dumps(preset, indent=2, ensure_ascii=False),
-        resolution=presets.resolution_of(preset), resolutions=presets.RESOLUTIONS,
-        framerates=presets.FRAMERATES, track_behaviors=presets.TRACK_BEHAVIORS,
-        burn_behaviors=presets.BURN_BEHAVIORS, shares=usage.get(pid, []), is_default=pid == default,
-        aliases=presets.AUDIO_ALIASES)
+        "preset_edit.html", pid=pid, p=preset, caps=caps, error=error, tabs=tabs, tracks=tracks,
+        track_template=track_template, json_text=json_text or json.dumps(preset, indent=2, ensure_ascii=False),
+        shares=usage.get(pid, []), is_default=pid == default)
 
 
 @app.route("/presets/<pid>/export")

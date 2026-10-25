@@ -9,6 +9,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Preset editor with every HandBrake setting, in the tabs of the HandBrake app: Summary, Dimensions (crop, size, anamorphic, rotation, borders), Filters (detelecine, interlace detection, deinterlace, denoise, chroma smooth, sharpen, deblock, color space, grayscale), Video (also tune, profile, level, multi-pass, frame rate mode, extra encoder options, hardware decoding, scaler), Audio (passthru, fallback, any number of tracks with all their settings) and Subtitles; other settings under More. Choices (encoders and their speeds, tunes, profiles and levels, filter presets and tunes, sample rates, dither) come from the installed HandBrakeCLI and follow each other (e.g. the tunes of the chosen encoder). Saving an unchanged form changes nothing.
+
 - Docker: `WEB_BIND` in `.env` sets who can reach the web UI (default `127.0.0.1` = this machine only; `0.0.0.0` = the whole network, without a login).
 
 - Web UI on phones: bottom tab bar, compact two-line file rows (tap a name for bitrate, duration and date added), stacked queue and preset lists, settings sections as scrollable chips, dialogs as bottom sheets, no horizontal scrolling.
