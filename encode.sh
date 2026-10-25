@@ -130,7 +130,7 @@ if ! mkdir "$LOCK" 2>/dev/null; then
 fi
 print $$ > "$LOCK/pid"
 : > "$LOCK/stoppable"                            # tells the web UI that this worker reads stop.txt
-trap 'rm -rf "$LOCK"; rm -f "$LOGS/current.txt"' EXIT INT TERM
+trap 'rm -rf "$LOCK"; rm -f "$LOGS/current.txt" "$LOGS/run.txt"' EXIT INT TERM
 
 # ── Keep the Mac awake while encoding (macOS only) ───────────────────────────
 if command -v caffeinate >/dev/null; then caffeinate -is -w $$ & caf=$!; fi
@@ -186,6 +186,10 @@ batches=("$PROC"/*.txt(N))
 
 total=0
 for b in $batches; do total=$(( total + $(grep -c . "$b") )); done
+# The run's batches in order. Entries are numbered across all of them (current.txt), and a
+# finished batch moves to done/ at once, so the web UI needs this list to tell which entry
+# is which (and "Stop all" which ones are left).
+print -rl -- ${batches:t} > "$LOGS/run.txt"
 log "Starting: $total file(s)"
 
 i=0
@@ -284,5 +288,5 @@ print(p["PresetName"]); print({"av_mp4": "mp4", "av_webm": "webm"}.get(p.get("Fi
 done
 
 (( stopped_all )) || log "Queue finished"
-rm -f "$LOGS/current.txt" "$CANCELLED" "$STOPFILE"
+rm -f "$LOGS/current.txt" "$LOGS/run.txt" "$CANCELLED" "$STOPFILE"
 write_status idle

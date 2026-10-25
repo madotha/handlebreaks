@@ -124,6 +124,7 @@ REPLACE_DONE = REPLACE_DIR / "done"       # their results
 LOG_DIR      = DATA_DIR / "logs"
 RESULTS_FILE = LOG_DIR / "results.tsv"
 CURRENT_FILE = LOG_DIR / "current.txt"
+RUN_FILE     = LOG_DIR / "run.txt"            # batch file names of the worker's current run, in order
 PROGRESS_LOG = LOG_DIR / "progress.log"
 
 # Find ffprobe even when launchd or another caller sets a minimal PATH
@@ -528,18 +529,44 @@ def cancelled_entries():
     return {tuple(l.split("\t", 1)) for l in CANCEL_FILE.read_text(encoding="utf-8").splitlines() if "\t" in l}
 
 
+def read_batch(f):
+    """(batch file, key, preset id or "") per line of a batch file ("key" or "key<TAB>preset id")."""
+    try:
+        lines = f.read_text(encoding="utf-8").splitlines()
+    except OSError:                             # moved meanwhile (e.g. processing/ -> done/)
+        return []
+    return [(f, key.strip(), preset.strip()) for key, _, preset in
+            (line.partition("\t") for line in lines if line.strip())]
+
+
 def batch_entries():
     """(batch file, key, preset id or "") for every line in processing/ and queue/, in
-    the order encode.sh works through them. A batch line is "key" or "key<TAB>preset id"."""
+    the order encode.sh works through them."""
+    return [e for d in (PROC_DIR, QUEUE_DIR) if d.exists() for f in sorted(d.glob("*.txt")) for e in read_batch(f)]
+
+
+def run_entries():
+    """The entries of the worker's current run in the order it numbers them (current.txt),
+    or None if no run is active. encode.sh lists the run's batches in run.txt when it
+    starts and moves each batch to done/ as soon as it's finished, so finished batches are
+    read from there: processing/ alone would shift every number after the first batch."""
+    try:
+        names = RUN_FILE.read_text(encoding="utf-8").split("\n")
+    except OSError:
+        return None
     entries = []
-    for d in (PROC_DIR, QUEUE_DIR):
-        if d.exists():
-            for f in sorted(d.glob("*.txt")):
-                for line in f.read_text(encoding="utf-8").splitlines():
-                    if line.strip():
-                        key, _, preset = line.rstrip("\n").partition("\t")
-                        entries.append((f, key.strip(), preset.strip()))
+    for name in filter(None, (n.strip() for n in names)):
+        f = PROC_DIR / name
+        entries += read_batch(f) or read_batch(DONE_DIR / name)
     return entries
+
+
+def run_started():
+    """Start of the current run as "YYYY-MM-DD HH:MM" (results.tsv's format), or None."""
+    try:
+        return datetime.fromtimestamp(RUN_FILE.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+    except OSError:
+        return None
 
 
 def queued_entries():
@@ -794,8 +821,9 @@ def replace_one(job):
     if target.exists() and target != original:
         raise RuntimeError(f"{job['new_name']} already exists in that folder. Choose another name.")
     if not os.access(original.parent, os.W_OK):
-        raise RuntimeError("The library folder isn't writable here (in Docker the library is mounted "
-                           "read-only; replacing needs the native worker or a writable mount).")
+        raise RuntimeError(f"No permission to write to the folder {original.parent}. Check its owner and "
+                           "permissions on the share (e.g. a folder created by another user or program); "
+                           "in Docker, the library is also mounted read-only unless you change that.")
     backup = None
     if original.exists():
         if job["keep_original"]:
@@ -1146,33 +1174,40 @@ def current_progress():
 
 # State of a queued entry (queue_items) -> label; the upper-case ones are results of encode.sh
 QUEUE_STATES = {"encoding": "Encoding", "waiting": "Waiting", "removed": "Removed", "OK": "Done", "FAIL": "Failed",
-                "STOPPED": "Stopped",
+                "STOPPED": "Stopped", "skipped": "Skipped (see log)",
                 "MISSING": "Missing in library", "EXISTS": "Output already exists"}
 
 
 def queue_items():
     """Every entry of the current run and the queue, in the order encode.sh works through
-    them: [{"key", "preset", "state"}]. encode.sh takes all batches in processing/ when it
-    starts and numbers their entries (current.txt holds the number of the file being
-    encoded), so earlier entries are finished (state = their result), the current one is
-    "encoding" and the rest, plus everything still in queue/, is "waiting"."""
+    them: [{"key", "preset", "state", "batch"}]. The run's entries come from run_entries()
+    and are numbered like encode.sh does (current.txt holds the number of the file being
+    encoded): earlier entries are finished (state = their result from this run, or
+    "skipped" if there is none), the current one is "encoding", the rest "waiting".
+    Batches in processing/ without an active run and everything in queue/ are "waiting"."""
     cur = current_progress()
     current = int(cur["i"]) if cur and cur["i"].isdigit() else None
-    results = load_results() if current else {}
     cancelled = cancelled_entries()
+    run = run_entries()
     items = []
-    for f, key, preset in batch_entries():
-        n = len(items) + 1
-        in_run = f.parent == PROC_DIR
-        if in_run and (f.name, key) in cancelled:
-            state = "removed"                   # still counted: encode.sh numbers it, then skips it
-        elif in_run and current and n < current:
-            state = results.get(key, ("OK",))[0]
-        elif in_run and current and n == current:
-            state = "encoding"
-        else:
-            state = "waiting"
-        items.append({"key": key, "preset": preset, "state": state, "batch": f})
+    if run is not None:
+        results = load_results()
+        since = run_started() or ""
+        for n, (f, key, preset) in enumerate(run, 1):
+            if (f.name, key) in cancelled:
+                state = "removed"               # still counted: encode.sh numbers it, then skips it
+            elif current and n < current:
+                result = results.get(key)       # only a result of this run counts
+                state = result[0] if result and result[1] >= since else "skipped"
+            elif current and n == current:
+                state = "encoding"
+            else:
+                state = "waiting"
+            items.append({"key": key, "preset": preset, "state": state, "batch": f})
+        rest = [e for e in batch_entries() if e[0].parent == QUEUE_DIR]
+    else:
+        rest = batch_entries()
+    items += [{"key": key, "preset": preset, "state": "waiting", "batch": f} for f, key, preset in rest]
     return items
 
 
@@ -1257,7 +1292,9 @@ def requeue_rest(done):
     current run after the first `done` back into the queue, ahead of other batches,
     finish the run's batches and pause the queue. Returns how many were requeued."""
     cancelled = cancelled_entries()
-    entries = [e for e in batch_entries() if e[0].parent == PROC_DIR]
+    entries = run_entries()                     # the whole run, also batches already in done/
+    if entries is None:
+        entries = [e for e in batch_entries() if e[0].parent == PROC_DIR]
     rest = [(k, p) for f, k, p in entries[done:] if (f.name, k) not in cancelled]
     PAUSE_FILE.touch()                          # first, so the new batch doesn't start a worker
     if rest:
@@ -1268,7 +1305,8 @@ def requeue_rest(done):
         os.replace(tmp, QUEUE_DIR / name)
     DONE_DIR.mkdir(parents=True, exist_ok=True)
     for f in dict.fromkeys(e[0] for e in entries):
-        os.replace(f, DONE_DIR / f.name)
+        if f.parent == PROC_DIR and f.exists():
+            os.replace(f, DONE_DIR / f.name)
     return len(rest)
 
 

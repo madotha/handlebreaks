@@ -74,6 +74,7 @@
     <button class="secondary" data-remove-selected disabled>Remove selected</button>
     <button class="danger" name="all" value="1" data-remove-all {% if not q.counts.get('waiting') %}disabled{% endif %}
             onclick="return confirm('Remove all ' + document.querySelector('[data-count=waiting]').textContent + ' waiting entries from the queue?')">Remove all waiting</button>
+    <button type="button" class="secondary" data-bulk-replace-all title="Replace the originals of all files with a finished encode">Replace all finished…</button>
   </form>
   <div class="table-wrap">
     <table class="queue-table">
@@ -83,7 +84,7 @@
   </div>
   <p class="muted small" data-queue-empty {% if q.rows %}hidden{% endif %}>Nothing queued.</p>
   {% if q.more_url %}<button type="button" class="secondary" data-queue-more="{{ q.more_url }}">Show more</button>{% endif %}
-  <p class="hint">Only waiting entries can be removed. Removed entries of the current run show as "Removed" and are skipped by the worker. Finished entries stay in the list until the worker's current run is over. The list shows 100 entries at a time; progress and counts update every few seconds, the list whenever the next file starts.</p>
+  <p class="hint">Only waiting entries can be removed. Removed entries of the current run show as "Removed" and are skipped by the worker. Finished encodes stay in the list (as "Done", with Replace…) until they're replaced, also after the worker's run is over; other results of a run disappear when the run ends. The list shows 100 entries at a time; progress and counts update every few seconds, the list whenever the next file starts.</p>
 </section>
 
 <section class="panel">
@@ -99,7 +100,6 @@
   <div class="page-head">
     <h2>Latest results</h2>
     <div class="row-actions">
-    <button type="button" class="secondary" data-bulk-replace-all title="Replace the originals of all files with a finished encode">Replace all finished…</button>
     {% if results %}
     <form method="post" action="{{ url_for('results_clear') }}"
           onsubmit="return confirm('Clear the whole results history? This forgets every encode result (done, failed …), deletes finished batch files, logs of failed encodes and results of replace jobs. Encoded files are not touched.')">

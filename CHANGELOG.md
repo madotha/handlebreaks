@@ -43,6 +43,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Status page: finished encodes stay in the Queue section (as "Done", with **Replace…**) until they're replaced, also after the worker's run is over. **Replace all finished…** moved into the Queue section.
 - The file name fields of **Replace…** and bulk replace grow with the name (wrapping over several lines), so the whole name is always visible; Enter still starts the replace, and pasted line breaks are removed. The replace dialog is wider.
 - Redesigned web UI, Plex-inspired: dark-first neutral grays with Plex amber reserved for actions (buttons, active tab, links, focus), a sticky translucent header with icons, quieter borders and clearer hierarchy (tiles, badges, progress, the current encode with its percentage up front), consistent control sizes, and long file names that wrap at their dots and dashes instead of in the middle of a word.
 - Files page: folders with many subfolders show 100 at a time (**Show more folders**) and the markup is compacted. Opening a share with 1,100 shows went from ~1 s to ~0.15 s in the browser, and a reload with all shares open from ~3.5 s to ~0.6 s.
@@ -51,6 +52,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Runs with several batches: once the worker had finished the first batch (and moved it to `done/`), the Status page numbered the remaining entries wrongly and showed files as "Done" that hadn't been encoded yet; they couldn't be removed either. **Stop all** in such a run put no files back into the queue and silently dropped the rest of the run. The worker now lists its run's batches in `logs/run.txt`, and the Status page and **Stop all** read the run from it. Entries without a result from the current run show as "Skipped" instead of "Done"; results from earlier runs no longer count.
 - **Replace all finished…** found nothing until the next scan: it looked for files marked "awaiting review", but files encoded since the last scan are still marked "queued" in the database. A file now counts as awaiting review as soon as its encode is in the output folder, also on the Files page (status label and **Replace…** button).
 - Elements hidden with the `hidden` attribute but styled as flex rows stayed visible: the Status page always showed the stop buttons and the "Queue paused" bar with **Resume**, even with nothing encoding or paused.
 - Replaces seemed cancelled when the page was reloaded before they finished: the files were replaced, but the list kept showing the old file, because the page itself had to trigger the folder rescan afterwards. The web UI now rescans the folder of every finished replace job on its own (background check every 10 s, and when a page asks for the result), and files with a pending replace show **Replacing…** instead of the button after a reload, so a job can't be sent twice.

@@ -912,13 +912,46 @@ QUEUE_SORT = {                                  # sortable queue columns; no sor
 }
 
 
+def awaiting_review(exclude):
+    """Files whose finished encode waits in the output folder, also from runs that are
+    over, as "OK" queue entries (so they keep their Replace… button in the queue until
+    they're replaced). Cached until the database or the output folder changes."""
+    enc_dir = enc.first_existing(enc.ENCODED_CANDIDATES)
+    try:
+        folder_version = enc_dir.stat().st_mtime_ns if enc_dir else 0
+    except OSError:
+        folder_version = 0
+
+    def compute():
+        encoded = enc.encoded_files(enc_dir)
+        if not encoded:
+            return []
+        with closing(db()) as con:
+            keys = [k for (k,) in con.execute("SELECT key FROM files WHERE status != 'h265'")
+                    if Path(k).stem.lower() in encoded]
+        return sorted(keys, key=natural)
+    keys = cached(("awaiting", str(enc_dir)), (enc.db_version(), folder_version), compute)
+    return [{"key": k, "preset": "", "state": "OK", "batch": None, "earlier": True} for k in keys if k not in exclude]
+
+
+def all_queue_items():
+    """The worker's run and queue, preceded by finished encodes of earlier runs."""
+    items = enc.queue_items()
+    return awaiting_review({i["key"] for i in items}) + items
+
+
 def queue_view(state="", offset=0, sort=None):
     """Queue entries for the Status page: counts per state and one page of entries
     (optionally only one state, optionally sorted). Computed from the queue files."""
     sort = sort or {}
-    items = enc.queue_items()
-    for n, item in enumerate(items, 1):
-        item["n"] = n                           # processing order, kept when sorting
+    items = all_queue_items()
+    n = 0
+    for item in items:
+        if not item.get("earlier"):             # processing order of the run and queue, kept when sorting
+            n += 1
+            item["n"] = n
+        else:
+            item["n"] = ""
     counts = Counter(i["state"] for i in items)
     shown = [i for i in items if not state or i["state"] == state or
              (state == "done" and i["state"] not in ("waiting", "encoding", "removed"))]
@@ -944,7 +977,7 @@ def queue_view(state="", offset=0, sort=None):
 def live_status():
     """Small snapshot for the Status page's live updates."""
     cur = enc.current_progress()
-    view_counts = Counter(i["state"] for i in enc.queue_items())
+    view_counts = Counter(i["state"] for i in all_queue_items())
     stop = enc.stop_requested()
     return {
         "current": dict(cur, short=enc.short(cur["key"])) if cur else None,
