@@ -1,4 +1,4 @@
-{% from "_icons.html" import icon %}
+{% from "_icons.html" import icon, sprite %}
 {% set nav = [('files', 'Files', 'files', ('files',)), ('status', 'Status', 'status', ('status',)),
               ('stats', 'Stats', 'stats', ('stats',)), ('presets_page', 'Presets', 'presets', ('presets_page', 'preset_edit')),
               ('settings_index', 'Settings', 'settings', ('settings', 'settings_index'))] %}
@@ -18,6 +18,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+  {{ sprite() }}
   <header class="top">
     <a class="brand" href="{{ url_for('files') }}">
       <img class="brand-mark" src="{{ url_for('static', filename='favicon.svg') }}" alt="">Plex Encoding</a>
@@ -48,6 +49,7 @@
     {% endfor %}
   </nav>
   <script src="{{ url_for('static', filename='theme.js') }}"></script>
+  <script src="{{ url_for('static', filename='tooltip.js') }}"></script>
   <script src="{{ url_for('static', filename='time.js') }}"></script>
   <script src="{{ url_for('static', filename='tablesort.js') }}"></script>
 </body>

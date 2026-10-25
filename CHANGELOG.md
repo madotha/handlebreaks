@@ -43,6 +43,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Icon buttons with tooltips for frequent row actions: scan again (round arrow) and **Replace…** (arrows) on the Files and Status pages, reload the queue, collapse all folders, and edit, export, make default and delete on the Presets page. Hovering (or keyboard focus) shows what a button does right away. Primary and destructive actions keep their text.
 - Status page: finished encodes stay in the Queue section (as "Done", with **Replace…**) until they're replaced, also after the worker's run is over. **Replace all finished…** moved into the Queue section.
 - The file name fields of **Replace…** and bulk replace grow with the name (wrapping over several lines), so the whole name is always visible; Enter still starts the replace, and pasted line breaks are removed. The replace dialog is wider.
 - Redesigned web UI, Plex-inspired: dark-first neutral grays with Plex amber reserved for actions (buttons, active tab, links, focus), a sticky translucent header with icons, quieter borders and clearer hierarchy (tiles, badges, progress, the current encode with its percentage up front), consistent control sizes, and long file names that wrap at their dots and dashes instead of in the middle of a word.

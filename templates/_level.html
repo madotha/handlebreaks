@@ -1,4 +1,5 @@
 {# One level of the folder tree: subfolders (content loaded when opened) and files. #}
+{% from "_icons.html" import icon %}
 {% set scan_url = url_for('start_scan') %}
 {% for f in folders %}
   <details class="dir" data-path="{{ f.path }}">
@@ -6,7 +7,7 @@
       <input type="checkbox" class="dir-toggle" name="folder" value="{{ f.path }}" data-count="{{ f.selectable }}"
              aria-label="Select folder"{% if not f.selectable %} disabled data-locked{% endif %}>
       <span class="dirname">{{ f.name }}</span>{% if f.note %}<span class="dirnote">{{ f.note }}</span>{% endif %}
-      <button class="icon-btn" formaction="{{ scan_url }}" name="path" value="{{ f.path }}" data-scan-path data-files="{{ f.count }}" aria-label="Scan again">↻</button>
+      <button class="icon-btn" formaction="{{ scan_url }}" name="path" value="{{ f.path }}" data-scan-path data-files="{{ f.count }}" aria-label="Scan this folder again" data-tip="Scan this folder again (re-reads its files with ffprobe)">{{ icon('refresh') }}</button>
       <span class="meta">
         <span class="opt">
           <span class="opt-bar" aria-hidden="true">{% if f.optimized %}<span class="viz-good" style="flex-grow: {{ f.optimized }}"></span>{% endif %}{% if f.other %}<span class="viz-other" style="flex-grow: {{ f.other }}"></span>{% endif %}{% if f.unknown %}<span class="viz-unknown" style="flex-grow: {{ f.unknown }}"></span>{% endif %}</span>

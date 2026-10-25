@@ -1,5 +1,6 @@
 {# Replace… for a successfully encoded file r (Status page), or a "Replaced" note. #}
+{% from "_icons.html" import icon %}
 {% if r.replacing %}<span class="muted small" title="The worker carries out the replace job; the list updates when it's done">Replacing…</span>
-{% elif r.encoded %}<button type="button" class="link-btn" data-replace data-key="{{ r.key }}" data-original="{{ r.original }}"
-    data-encoded="{{ r.encoded }}" title="Move the finished encode into the library in place of the original">Replace…</button>
+{% elif r.encoded %}<button type="button" class="icon-btn replace-btn" data-replace data-key="{{ r.key }}" data-original="{{ r.original }}"
+    data-encoded="{{ r.encoded }}" aria-label="Replace the original" data-tip="Replace the original with the finished encode…">{{ icon('replace') }}</button>
 {% elif r.replaced %}<span class="muted small" title="The original was replaced by this encode">Replaced</span>{% endif %}

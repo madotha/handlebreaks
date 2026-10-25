@@ -8,7 +8,7 @@
   const current = () => document.documentElement.dataset.theme || "auto";
   function show(mode) {
     btn.querySelectorAll("[data-theme-icon]").forEach((el) => { el.hidden = el.dataset.themeIcon !== mode; });
-    btn.title = labels[mode] + " (click to change)";
+    btn.dataset.tip = labels[mode] + " (click to change)";
   }
   btn.addEventListener("click", () => {
     const next = modes[(modes.indexOf(current()) + 1) % modes.length];

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Status{% endblock %}
 {% block content %}
 <p class="scan-msg" data-replace-msg role="status" hidden></p>
@@ -6,7 +7,7 @@
   <h1>Status</h1>
   <div class="row-actions">
     <label class="inline"><input type="checkbox" data-live checked> Live updates</label>
-    <button type="button" class="secondary" data-refresh>Refresh</button>
+    <button type="button" class="icon-btn icon-lg" data-refresh aria-label="Reload the queue now" data-tip="Reload the queue now">{{ icon('refresh') }}</button>
     <form method="post" action="{{ url_for('start_scan') }}">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       <button {% if scan_state.running %}disabled{% endif %}>Scan now</button>

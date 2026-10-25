@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Presets{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -20,11 +21,11 @@
           <td class="small">{{ r.shares|join(', ') if r.shares else '–' }}</td>
           <td>
             <div class="row-actions">
-              <a class="button" href="{{ url_for('preset_edit', pid=r.id) }}">Edit</a>
-              <a class="button" href="{{ url_for('preset_export', pid=r.id) }}">Export</a>
+              <a class="icon-btn icon-lg" href="{{ url_for('preset_edit', pid=r.id) }}" aria-label="Edit" data-tip="Edit this preset">{{ icon('edit') }}</a>
+              <a class="icon-btn icon-lg" href="{{ url_for('preset_export', pid=r.id) }}" aria-label="Export" data-tip="Export as a HandBrake preset file (.json)">{{ icon('download') }}</a>
               {% if not r.default %}
-                <form method="post" action="{{ url_for('preset_default', pid=r.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="secondary">Make default</button></form>
-                <form method="post" action="{{ url_for('preset_delete', pid=r.id) }}" onsubmit="return confirm('Delete this preset?')"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="danger">Delete</button></form>
+                <form method="post" action="{{ url_for('preset_default', pid=r.id) }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="icon-btn icon-lg" aria-label="Make default" data-tip="Make this the default preset">{{ icon('star') }}</button></form>
+                <form method="post" action="{{ url_for('preset_delete', pid=r.id) }}" onsubmit="return confirm('Delete this preset?')"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="icon-btn icon-lg danger-icon" aria-label="Delete" data-tip="Delete this preset">{{ icon('trash') }}</button></form>
               {% endif %}
             </div>
           </td>

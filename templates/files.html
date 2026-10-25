@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Files{% endblock %}
 
 {% block content %}
@@ -76,7 +77,7 @@
       </label>
       <button data-queue-button>Queue for encoding</button>
       <button type="button" class="secondary" data-bulk-replace disabled title="Replace the originals of the selected files that have a finished encode">Replace selected…</button>
-      <span class="hint">Tick files, or a folder to select all {{ 'matching ' if filtered }}files in it. Folders load when opened. ↻ scans a file or folder again (re-reads it with ffprobe). The bar shows optimized (green), other codecs (orange) and not probed (gray).</span>
+      <span class="hint">Tick files, or a folder to select all {{ 'matching ' if filtered }}files in it. Folders load when opened. The round arrow scans a file or folder again; hover over a button to see what it does. The bar shows optimized (green), other codecs (orange) and not probed (gray).</span>
       <nav class="sort-bar" aria-label="Sort the list">
         <span class="muted small">Sort by</span>
         {% for field, label in [('name', 'File'), ('codec', 'Codec'), ('resolution', 'Resolution'), ('bitrate', 'Bitrate'), ('duration', 'Duration'), ('size', 'Size'), ('added', 'Added'), ('status', 'Status')] %}
@@ -85,7 +86,7 @@
              title="Sort by {{ label|lower }}: ascending → descending → off">{{ label }}{% if sort_links[field][1] %} {{ sort_links[field][1] }}{% endif %}</a>
         {% endfor %}
         <span class="muted small">{% if sort %}· folders follow size and status, files every column{% else %}· by name{% endif %}</span>
-        <button type="button" class="secondary collapse-all" data-collapse-all disabled>Collapse all</button>
+        <button type="button" class="icon-btn collapse-all" data-collapse-all disabled aria-label="Collapse all folders" data-tip="Collapse all folders">{{ icon('collapse') }}</button>
       </nav>
       <span class="scan-msg" data-scan-msg role="status" hidden></span>
     </div>
