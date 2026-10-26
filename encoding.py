@@ -81,7 +81,7 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing, contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import plex
@@ -345,6 +345,7 @@ CREATE TABLE IF NOT EXISTS baseline (rel TEXT PRIMARY KEY);     -- legacy baseli
 CREATE TABLE IF NOT EXISTS skipped  (key TEXT PRIMARY KEY, since TEXT);
 CREATE TABLE IF NOT EXISTS known    (key TEXT PRIMARY KEY);     -- offered before (for the "new" marker)
 CREATE TABLE IF NOT EXISTS results  (at TEXT, status TEXT, key TEXT, PRIMARY KEY (at, status, key));
+CREATE TABLE IF NOT EXISTS dismissed (key TEXT PRIMARY KEY, at TEXT);  -- hidden on the Status page up to this time
 CREATE TABLE IF NOT EXISTS files (                              -- inventory from the last scan
     key TEXT PRIMARY KEY, size INTEGER, mtime REAL,
     video_codec TEXT, width INTEGER, height INTEGER, duration REAL, bitrate INTEGER,
@@ -584,6 +585,13 @@ def queued_keys():
     return [k for k, _ in queued_entries()]
 
 
+def pending_keys():
+    """Keys still to be encoded: waiting or being encoded now. Unlike queued_keys() this
+    leaves out entries of the current run that already finished (they stay in processing/
+    until their batch is done), so such a file can be queued again."""
+    return {i["key"] for i in queue_items() if i["state"] in ("waiting", "encoding")}
+
+
 def load_results():
     """Latest result per file: OK, FAIL, MISSING, EXISTS or STOPPED.
     New lines from logs/results.tsv (written by encode.sh) are imported into the database first."""
@@ -617,6 +625,7 @@ def clear_results():
     jobs. Returns the number of results removed."""
     with closing(connect()) as con, con:
         n = con.execute("DELETE FROM results").rowcount
+        con.execute("DELETE FROM dismissed")
         con.execute("INSERT OR REPLACE INTO meta VALUES ('results_offset', '0')")
     for f in (RESULTS_FILE, ENCODES_FILE):
         if f.exists():
@@ -637,6 +646,91 @@ def recent_results(n=20):
     with closing(connect()) as con:
         return con.execute("SELECT at, status, key FROM results ORDER BY at DESC, rowid DESC LIMIT ?",
                            (n,)).fetchall()
+
+
+def history_keep_days():
+    """HISTORY_KEEP_DAYS: how long the Status page's History shows entries (default 30, 0 = always)."""
+    value = str(CONFIG.get("HISTORY_KEEP_DAYS", "30")).strip()
+    return int(value) if value.isdigit() else 30
+
+
+def dismiss(keys, upto=None):
+    """Hide keys on the Status page: their results and finished encodes up to now, or up to
+    the time given per key in upto ({key: time}). Newer results of the same file show
+    again. Never touches files or results."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    rows = [(k, (upto or {}).get(k, now)) for k in dict.fromkeys(keys)]
+    with closing(connect()) as con, con:
+        con.executemany("INSERT INTO dismissed (key, at) VALUES (?, ?) "
+                        "ON CONFLICT(key) DO UPDATE SET at = MAX(at, excluded.at)", rows)
+
+
+def dismissed_map():
+    with closing(connect()) as con:
+        return dict(con.execute("SELECT key, at FROM dismissed"))
+
+
+def history_entries(result="", older_than=None):
+    """The Status page's History, newest first: encode results plus finished replaces
+    (status REPLACED) as [{"at", "status", "key", "can_retry"}]. Left out: entries older
+    than HISTORY_KEEP_DAYS and dismissed ones. can_retry marks a file's latest result when
+    it is FAIL or STOPPED and the file isn't waiting or encoding again. older_than (days) returns the entries older than that instead
+    (to dismiss them), without the age limit. result filters by status."""
+    latest = load_results()
+    days = history_keep_days()
+    cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M") if days else ""
+    if older_than is not None:
+        before, cutoff = (datetime.now() - timedelta(days=older_than)).strftime("%Y-%m-%d %H:%M"), ""
+    dismissed = dismissed_map()
+    pending = pending_keys()
+    with closing(connect()) as con:
+        rows = con.execute("SELECT at, status, key FROM results ORDER BY at DESC, rowid DESC").fetchall()
+    rows += [(at, "REPLACED", key) for at, key in sorted(replaced_log(), reverse=True)]
+    out = []
+    for at, status, key in rows:
+        if result and status != result:
+            continue
+        if older_than is not None:
+            if at >= before:
+                continue
+        elif (cutoff and at < cutoff) or dismissed.get(key, "") >= at:
+            continue
+        out.append({"at": at, "status": status, "key": key,
+                    "can_retry": status in ("FAIL", "STOPPED") and latest.get(key) == (status, at)
+                    and key not in pending})
+    out.sort(key=lambda r: r["at"], reverse=True)
+    return out
+
+
+def last_presets(keys):
+    """key -> preset id chosen when the file was queued last ("" = the share's or default
+    preset), from the batch lines in done/, processing/ and queue/, newest batch first."""
+    left, found = set(keys), {}
+    for d in (QUEUE_DIR, PROC_DIR, DONE_DIR):
+        for f in sorted(d.glob("*.txt"), reverse=True) if d.exists() else []:
+            for _, key, preset in read_batch(f):
+                if key in left:
+                    found[key] = preset
+                    left.discard(key)
+            if not left:
+                return found
+    return found
+
+
+def requeue(keys):
+    """Queue files again whose latest result is FAIL or STOPPED, each with the preset it
+    was queued with. Returns (keys queued, number of keys not queued)."""
+    results = load_results()
+    with closing(connect()) as con:
+        valid = [k for k in dict.fromkeys(keys) if results.get(k, ("",))[0] in ("FAIL", "STOPPED")
+                 and con.execute("SELECT 1 FROM files WHERE key = ?", (k,)).fetchone()]
+    chosen = last_presets(valid)
+    groups = {}
+    for k in valid:
+        preset = chosen.get(k) or None
+        groups.setdefault(preset if preset and presets.exists(preset) else None, []).append(k)
+    queued = [k for preset, ks in groups.items() for k in write_batch(ks, preset)]
+    return queued, len(set(keys)) - len(queued)
 
 
 def encoded_stems(enc_dir):
@@ -821,17 +915,31 @@ def mark_replace_synced(path, job):
     write_text_atomic(path, json.dumps(dict(job, synced=True), ensure_ascii=False))
 
 
+_REPLACED_LOG = [None, []]                      # [replace/done/ mtime, [(finished, key)]]
+
+
+def replaced_log():
+    """[(finished time, key)] of finished replace jobs, read again only when replace/done/ changes."""
+    try:
+        stamp = REPLACE_DONE.stat().st_mtime_ns
+    except OSError:
+        return []
+    if _REPLACED_LOG[0] != stamp:
+        log = []
+        for f in REPLACE_DONE.glob("*.json"):
+            try:
+                job = json.loads(f.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                continue
+            if job.get("state") == "done":
+                log.append((job.get("finished") or "", job["key"]))
+        _REPLACED_LOG[:] = [stamp, log]
+    return _REPLACED_LOG[1]
+
+
 def replaced_keys():
     """Keys whose original was replaced by a finished replace job."""
-    keys = set()
-    for f in REPLACE_DONE.glob("*.json") if REPLACE_DONE.exists() else []:
-        try:
-            job = json.loads(f.read_text(encoding="utf-8"))
-        except ValueError:
-            continue
-        if job.get("state") == "done":
-            keys.add(job["key"])
-    return keys
+    return {key for _, key in replaced_log()}
 
 
 def move_file(src, dst, attempts=6, wait=10):
@@ -1428,7 +1536,7 @@ def write_batch(keys, preset=None):
     the share's preset. Keys already queued are left out. Returns the keys queued."""
     if preset and not presets.exists(preset):
         raise SystemExit(f"Unknown preset: {preset}")
-    already = set(queued_keys())
+    already = pending_keys()
     chosen = [k for k in dict.fromkeys(keys) if k not in already]
     if not chosen:
         return []

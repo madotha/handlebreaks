@@ -1,11 +1,30 @@
-{# One page of queue entries; also returned on its own for "Show more" and refreshing. #}
+{# One page of rows of a Status tab (view); also returned on its own for "Show more" and refreshing. #}
+{% from "_icons.html" import icon %}
 {% for r in rows %}
+  {% if view == 'queue' %}
   <tr class="{{ 'is-current' if r.state == 'encoding' }}">
-    <td class="check">{% if r.state == 'waiting' %}<input type="checkbox" name="key" value="{{ r.key }}" form="queue-remove" aria-label="Select">{% endif %}</td>
+    <td class="check">{% if r.state == 'waiting' %}<input type="checkbox" name="key" value="{{ r.key }}" form="bulk" aria-label="Select">{% endif %}</td>
     <td class="num muted">{{ r.n }}</td>
     <td class="name" title="{{ r.key }}">{{ r.short|wbr }}</td>
     <td class="small">{{ r.preset_name or "Share's preset" }}</td>
-    <td><span class="qstate qstate-{{ r.state|lower }}">{{ states.get(r.state, r.state) }}</span>
-      {% include "_replace_button.html" %}</td>
+    <td><span class="qstate qstate-{{ r.state|lower }}">{{ states.get(r.state, r.state) }}</span></td>
   </tr>
+  {% elif view == 'review' %}
+  <tr>
+    <td class="check"><input type="checkbox" name="key" value="{{ r.key }}" form="bulk" aria-label="Select"></td>
+    <td class="name" title="{{ r.key }}">{{ r.short|wbr }}</td>
+    <td class="small nowrap">{{ r.at|localtime }}</td>
+    <td>{% include "_replace_button.html" %}</td>
+  </tr>
+  {% else %}
+  <tr>
+    <td class="check"><input type="checkbox" name="key" value="{{ r.key }}" form="bulk" aria-label="Select"></td>
+    <td class="small nowrap">{{ r.at|localtime }}</td>
+    <td><span class="result result-{{ r.status|lower }}">{{ 'Replaced' if r.status == 'REPLACED' else states.get(r.status, r.status) }}</span></td>
+    <td class="name" title="{{ r.key }}">{{ r.short|wbr }}</td>
+    <td>{% if r.can_retry %}<form class="inline-form" method="post" action="{{ url_for('queue_again') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="key" value="{{ r.key }}">
+        <button class="icon-btn" aria-label="Queue again" data-tip="Queue this file again">{{ icon('retry') }}</button></form>{% endif %}</td>
+  </tr>
+  {% endif %}
 {% endfor %}

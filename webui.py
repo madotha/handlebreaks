@@ -80,6 +80,10 @@ SETTINGS = {
         ("NOTE_DIR", "Notes folder", "paths", "For \"Encoding To-Do.md\" and \"Encoding Status.md\". Empty = no notes."),
         ("STATUS_NOTE_ENABLED", "Update the status note every minute while encoding", "bool", ""),
     ]),
+    "status": ("Status", [
+        ("HISTORY_KEEP_DAYS", "Keep history entries visible (days)", "number",
+         "The Status page's History hides results and replaces older than this. Nothing is deleted. 0 = always show. Default 30."),
+    ]),
     "scans": ("Scans", [
         ("SCAN_INTERVAL", "Automatic rescan interval (minutes)", "number",
          "Rescans all shares when the last scan is this many minutes old; only new or changed "
@@ -962,17 +966,38 @@ def replace_info(rows):
     return rows
 
 
-QUEUE_SORT = {                                  # sortable queue columns; no sorting = processing order
-    "file":   ("File", lambda i: natural(enc.short(i["key"]))),
-    "preset": ("Preset", lambda i: (presets.name_of(i["preset"]) if i["preset"] else "").lower()),
-    "state":  ("State", lambda i: list(enc.QUEUE_STATES).index(i["state"]) if i["state"] in enc.QUEUE_STATES else 99),
+VIEWS = {"queue": "Queue", "review": "Awaiting review", "history": "History"}   # tabs of the Status page
+
+# Sortable columns per tab: field -> (label, sort key of a row). No sorting = the tab's own order:
+# processing order (queue), by file (awaiting review), newest first (history).
+VIEW_SORT = {
+    "queue": {
+        "file":   ("File", lambda i: natural(enc.short(i["key"]))),
+        "preset": ("Preset", lambda i: (presets.name_of(i["preset"]) if i["preset"] else "").lower()),
+        "state":  ("State", lambda i: list(enc.QUEUE_STATES).index(i["state"]) if i["state"] in enc.QUEUE_STATES else 99),
+    },
+    "review": {
+        "file": ("File", lambda i: natural(enc.short(i["key"]))),
+        "at":   ("Encoded", lambda i: i["at"]),
+    },
+    "history": {
+        "at":     ("Time", lambda i: i["at"]),
+        "status": ("Result", lambda i: i["status"]),
+        "file":   ("File", lambda i: natural(enc.short(i["key"]))),
+    },
 }
+HISTORY_RESULTS = ("OK", "FAIL", "STOPPED", "MISSING", "EXISTS", "REPLACED")
 
 
-def awaiting_review(exclude):
-    """Files whose finished encode waits in the output folder, also from runs that are
-    over, as "OK" queue entries (so they keep their Replace… button in the queue until
-    they're replaced). Cached until the database or the output folder changes."""
+def status_view(src):
+    view = src.get("view", "queue")
+    return view if view in VIEWS else "queue"
+
+
+def awaiting_review():
+    """Files whose finished encode waits in the output folder, also from runs that are over,
+    as [{"key", "at" (when the encode was finished), "state": "OK"}], not dismissed. The scan
+    is cached until the database or the output folder changes."""
     enc_dir = enc.first_existing(enc.ENCODED_CANDIDATES)
     try:
         folder_version = enc_dir.stat().st_mtime_ns if enc_dir else 0
@@ -986,62 +1011,80 @@ def awaiting_review(exclude):
         with closing(db()) as con:
             keys = [k for (k,) in con.execute("SELECT key FROM files WHERE status != 'h265'")
                     if Path(k).stem.lower() in encoded]
-        return sorted(keys, key=natural)
-    keys = cached(("awaiting", str(enc_dir)), (enc.db_version(), folder_version), compute)
-    return [{"key": k, "preset": "", "state": "OK", "batch": None, "earlier": True} for k in keys if k not in exclude]
+        out = []
+        for k in sorted(keys, key=natural):
+            try:
+                at = datetime.fromtimestamp((enc_dir / encoded[Path(k).stem.lower()]).stat().st_mtime)
+            except OSError:
+                continue
+            out.append({"key": k, "at": at.strftime("%Y-%m-%d %H:%M"), "state": "OK"})
+        return out
+    found = cached(("awaiting", str(enc_dir)), (enc.db_version(), folder_version), compute)
+    dismissed = enc.dismissed_map()
+    return [dict(f, preset="") for f in found if dismissed.get(f["key"], "") < f["at"]]
 
 
-def all_queue_items():
-    """The worker's run and queue, preceded by finished encodes of earlier runs."""
+def queue_rows(view, state):
+    """All rows of a tab (before sorting and paging) and the counts shown in the tabs."""
     items = enc.queue_items()
-    return awaiting_review({i["key"] for i in items}) + items
-
-
-def queue_view(state="", offset=0, sort=None):
-    """Queue entries for the Status page: counts per state and one page of entries
-    (optionally only one state, optionally sorted). Computed from the queue files."""
-    sort = sort or {}
-    items = all_queue_items()
     n = 0
-    for item in items:
-        if not item.get("earlier"):             # processing order of the run and queue, kept when sorting
-            n += 1
-            item["n"] = n
-        else:
-            item["n"] = ""
+    for item in items:                          # processing order of the run and queue
+        n += 1
+        item["n"] = n
+    active = [i for i in items if i["state"] in ("encoding", "waiting", "removed")]
+    review = awaiting_review()
+    history = enc.history_entries(state if view == "history" else "")
     counts = Counter(i["state"] for i in items)
-    shown = [i for i in items if not state or i["state"] == state or
-             (state == "done" and i["state"] not in ("waiting", "encoding", "removed"))]
+    counts.update({"queue": counts["encoding"] + counts["waiting"], "review": len(review),
+                   "history": len(history) if view == "history" and not state else len(enc.history_entries())})
+    if view == "review":
+        return review, counts
+    if view == "history":
+        return history, counts
+    return [i for i in active if not state or i["state"] == state], counts
+
+
+def queue_view(view="queue", state="", offset=0, sort=None):
+    """One tab of the Status page: counts for the tab labels and one page of rows
+    (optionally only one state or result, optionally sorted)."""
+    sort = sort or {}
+    fields = VIEW_SORT[view]
+    shown, counts = queue_rows(view, state)
     if sort:
-        shown = sorted(shown, key=QUEUE_SORT[sort["sort"]][1], reverse=sort["dir"] == "desc")
+        shown = sorted(shown, key=fields[sort["sort"]][1], reverse=sort["dir"] == "desc")
     page = shown[offset:offset + QUEUE_PAGE]
     names = {}
     rows = []
     for item in page:
-        pid = item["preset"]
+        pid = item.get("preset")
         if pid and pid not in names:
             names[pid] = presets.name_of(pid)
         rows.append(dict(item, short=enc.short(item["key"]), preset_name=names.get(pid, "")))
-    replace_info(rows)
+    if view == "review":
+        replace_info(rows)
     nxt = offset + QUEUE_PAGE
-    return {"rows": rows, "counts": counts, "total": len(items), "shown_total": len(shown),
-            "more_url": url_for("status_queue", state=state, offset=nxt, **sort) if nxt < len(shown) else None,
+    return {"rows": rows, "counts": counts, "shown_total": len(shown), "view": view,
+            "more_url": url_for("status_queue", view=view, state=state, offset=nxt, **sort) if nxt < len(shown) else None,
             "states": enc.QUEUE_STATES, "state": state, "sort": sort,
-            "sort_links": {f: (url_for("status", state=state, **next_sort(f, sort)), sort_arrow(f, sort))
-                           for f in QUEUE_SORT}}
+            "sort_links": {f: (url_for("status", view=view, state=state, **next_sort(f, sort)), sort_arrow(f, sort))
+                           for f in fields},
+            "fields": {f: v[0] for f, v in fields.items()},
+            "keep_days": enc.history_keep_days(), "history_results": HISTORY_RESULTS}
 
 
 def live_status():
     """Small snapshot for the Status page's live updates."""
     cur = enc.current_progress()
-    view_counts = Counter(i["state"] for i in all_queue_items())
+    states = Counter(i["state"] for i in enc.queue_items())
     stop = enc.stop_requested()
     return {
         "current": dict(cur, short=enc.short(cur["key"])) if cur else None,
         "stopping": stop[0] if stop and cur and stop[1] == cur["key"] else None,
         "paused": enc.is_paused(),
         "can_stop": enc.worker_can_stop(),
-        "counts": dict(view_counts),
+        "counts": {"encoding": states["encoding"], "waiting": states["waiting"],
+                   "queue": states["encoding"] + states["waiting"],
+                   "review": len(awaiting_review()), "history": len(enc.history_entries())},
         "scan": dict({k: SCAN[k] for k in ("running", "label", "summary", "error")},
                      started=(to_datetime(SCAN["started"]) or datetime.now()).isoformat() if SCAN["started"] else None),
     }
@@ -1158,14 +1201,14 @@ def replace_state(job_id):
 @app.route("/status")
 def status():
     cfg = enc.parse_config(enc.CONFIG_FILE) if enc.CONFIG_FILE.exists() else {}
+    view = status_view(request.args)
     state = request.args.get("state", "")
-    results = replace_info([{"at": at, "status": st, "key": key} for at, st, key in enc.recent_results(20)])
     cur = enc.current_progress()
     stop = enc.stop_requested()
     return render_template("status.html", cur=cur, paused=enc.is_paused(), can_stop=enc.worker_can_stop(),
                            stopping=stop[0] if stop and cur and stop[1] == cur["key"] else None,
-                           q=queue_view(state, sort=sort_state(request.args, "queue", QUEUE_SORT)),
-                           results=results, auto_interval=scan_interval(cfg),
+                           q=queue_view(view, state, sort=sort_state(request.args, f"queue:{view}", VIEW_SORT[view])),
+                           views=VIEWS, auto_interval=scan_interval(cfg),
                            auto_next=next_auto_scan(cfg), short=enc.short,
                            last_scan=enc.last_scan())
 
@@ -1177,13 +1220,14 @@ def status_live():
 
 @app.route("/status/queue")
 def status_queue():
-    """One page of queue rows (for "Show more", the state filter and refreshing)."""
+    """One page of rows of a tab (for "Show more", the filter and refreshing)."""
+    view = status_view(request.args)
     state = request.args.get("state", "")
     offset = max(int(request.args.get("offset", 0) or 0), 0)
-    view = queue_view(state, offset, sort_args(request.args, QUEUE_SORT))
-    resp = app.make_response(render_template("_queue_rows.html", **view))
-    resp.headers["X-Next"] = view["more_url"] or ""
-    resp.headers["X-Shown-Total"] = str(view["shown_total"])
+    data = queue_view(view, state, offset, sort_args(request.args, VIEW_SORT[view]))
+    resp = app.make_response(render_template("_queue_rows.html", **data))
+    resp.headers["X-Next"] = data["more_url"] or ""
+    resp.headers["X-Shown-Total"] = str(data["shown_total"])
     return resp
 
 
@@ -1197,7 +1241,51 @@ def queue_remove():
         removed = enc.remove_queued(keys)
         flash(f"{len(removed):,} entr{'y' if len(removed) == 1 else 'ies'} removed from the queue."
               if removed else "Nothing removed: the entries aren't waiting any more.", "ok" if removed else "error")
-    return redirect(url_for("status"))
+    return safe_next(url_for("status"))
+
+
+@app.route("/status/dismiss", methods=["POST"])
+def status_dismiss():
+    """Hide entries of the Status page (they stay on disk): the selected keys, all=1 for
+    everything the tab shows (with its result filter), or older_than=N days (History)."""
+    view, state = status_view(request.form), request.form.get("state", "")
+    older = request.form.get("older_than", "")
+    if older:
+        if not older.isdigit():
+            abort(400, "Invalid number of days.")
+        rows = enc.history_entries(state, older_than=int(older))
+        upto = {}
+        for r in rows:                              # hide each file up to its newest old entry only
+            upto[r["key"]] = max(upto.get(r["key"], ""), r["at"])
+        enc.dismiss(upto, upto)
+        n = len(upto)
+    else:
+        if request.form.get("all"):
+            keys = [r["key"] for r in (awaiting_review() if view == "review" else enc.history_entries(state))]
+        else:
+            keys = request.form.getlist("key")
+        if not keys:
+            flash("No entries selected.", "error")
+            return safe_next(url_for("status", view=view))
+        enc.dismiss(keys)
+        n = len(set(keys))
+    flash(f"{n:,} entr{'y' if n == 1 else 'ies'} hidden." if n else "Nothing to hide.", "ok" if n else "error")
+    return safe_next(url_for("status", view=view))
+
+
+@app.route("/queue/again", methods=["POST"])
+def queue_again():
+    """Queue files whose last encode failed or was stopped again, with the preset they had."""
+    keys = request.form.getlist("key")
+    if not keys:
+        flash("No entries selected.", "error")
+    else:
+        queued, left = enc.requeue(keys)
+        msg = f"{len(queued):,} file(s) queued again." if queued else "Nothing queued."
+        if left:
+            msg += f" {left:,} not queued (only failed or stopped files that are still in the library and not queued yet)."
+        flash(msg, "ok" if queued else "error")
+    return safe_next(url_for("status", view="history"))
 
 
 @app.route("/encode/stop", methods=["POST"])
@@ -1223,8 +1311,8 @@ def encode_resume():
 @app.route("/results/clear", methods=["POST"])
 def results_clear():
     n = enc.clear_results()
-    flash(f"Results history cleared ({n:,} result(s)).", "ok")
-    return redirect(url_for("status"))
+    flash(f"History data deleted ({n:,} result(s)).", "ok")
+    return safe_next(url_for("status", view="history"))
 
 
 @app.route("/scan", methods=["POST"])

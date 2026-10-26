@@ -1,20 +1,22 @@
-// Status page: live progress and queue counts without reloading the page. Every few
-// seconds a small JSON snapshot is fetched; the queue list (which can be long) is only
-// reloaded when the file being encoded changes, on "Refresh", or when the filter changes.
+// Status page: live progress and tab counts without reloading the page. Every few
+// seconds a small JSON snapshot is fetched; the list of the open tab (Queue, Awaiting
+// review or History, which can be long) is only reloaded when the file being encoded
+// changes, on "Refresh", or when the filter changes.
 (function () {
   const script = document.currentScript;
   const liveUrl = script.dataset.liveUrl, queueUrl = script.dataset.queueUrl;
   const $ = (sel) => document.querySelector(sel);
   const panel = $("[data-current-panel]");
   const rows = $("[data-queue-rows]");
-  const filter = $("[data-queue-filter] select");
+  const filterForm = $("[data-queue-filter]");
+  const filter = $("[data-queue-filter] select");     // only in the Queue and History tabs
+  const view = filterForm.dataset.view;
   const liveBox = $("[data-live]");
   let currentKey = panel.dataset.currentKey;
   let running = false;
 
   function sortParams() {                        // keep the column sort when reloading the list
-    const f = $("[data-queue-filter]");
-    return f.dataset.sort ? { sort: f.dataset.sort, dir: f.dataset.dir } : {};
+    return filterForm.dataset.sort ? { sort: filterForm.dataset.sort, dir: filterForm.dataset.dir } : {};
   }
 
   function setText(sel, value) {
@@ -25,7 +27,7 @@
   async function reloadQueue(append) {
     const more = $("[data-queue-more]");
     const url = append && more ? more.dataset.queueMore
-      : `${queueUrl}?${new URLSearchParams({ state: filter.value, offset: 0, ...sortParams() })}`;
+      : `${queueUrl}?${new URLSearchParams({ view, state: filter ? filter.value : "", offset: 0, ...sortParams() })}`;
     const r = await fetch(url);
     if (!r.ok) return;
     const html = await r.text();
@@ -52,14 +54,17 @@
     }
   }
 
-  // Selecting waiting entries for "Remove selected"
-  const selectAll = $("[data-select-waiting]");
+  // Selecting entries for the buttons below the tabs
+  const selectAll = $("[data-select-all]");
+  const needSelection = [...document.querySelectorAll("[data-needs-selection]")];
+  needSelection.forEach((b) => { b.dataset.label = b.textContent; });
   function updateSelection() {
     const boxes = [...rows.querySelectorAll('input[name="key"]')];
     const n = boxes.filter((c) => c.checked).length;
-    const btn = $("[data-remove-selected]");
-    btn.disabled = n === 0;
-    btn.textContent = n ? `Remove selected (${n.toLocaleString()})` : "Remove selected";
+    needSelection.forEach((b) => {
+      b.disabled = n === 0;
+      b.textContent = n ? `${b.dataset.label.replace("…", "")} (${n.toLocaleString()})${b.dataset.label.endsWith("…") ? "…" : ""}` : b.dataset.label;
+    });
     selectAll.checked = n > 0 && n === boxes.length;
     selectAll.indeterminate = n > 0 && n < boxes.length;
   }
@@ -97,7 +102,8 @@
       document.querySelectorAll("[data-count]").forEach((el) => {
         el.textContent = (s.counts[el.dataset.count] || 0).toLocaleString();
       });
-      $("[data-remove-all]").disabled = !s.counts.waiting;
+      const removeAll = $("[data-remove-all]");
+      if (removeAll) removeAll.disabled = !s.counts.waiting;
       const scanBox = $("[data-scan-running]");
       scanBox.hidden = !s.scan.running;
       if (s.scan.running) {
@@ -121,18 +127,30 @@
     done: () => setTimeout(() => location.reload(), 2500),
   });
 
-  // "Replace all finished…" (static/bulkreplace.js)
-  const all = new FormData();
-  all.append("all", "1");
-  $("[data-bulk-replace-all]").addEventListener("click", () => window.BulkReplace.open(all, {
+  // "Replace all finished…" and "Replace selected…" in the Awaiting review tab (static/bulkreplace.js)
+  const bulk = {
     say(text, kind) { msg.hidden = false; msg.className = "scan-msg " + kind; msg.textContent = text; },
     done: () => location.reload(),
-  }));
+  };
+  const replaceAll = $("[data-bulk-replace-all]"), replaceSelected = $("[data-bulk-replace-selected]");
+  if (replaceAll) replaceAll.addEventListener("click", () => {
+    const all = new FormData();
+    all.append("all", "1");
+    window.BulkReplace.open(all, bulk);
+  });
+  if (replaceSelected) replaceSelected.addEventListener("click", () => {
+    const picked = new FormData();
+    rows.querySelectorAll('input[name="key"]:checked').forEach((c) => picked.append("key", c.value));
+    window.BulkReplace.open(picked, bulk);
+  });
 
   setInterval(() => { if (liveBox.checked && !document.hidden) poll(false); }, 3000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden && liveBox.checked) poll(false); });
   $("[data-refresh]").addEventListener("click", () => poll(true));
-  filter.addEventListener("change", () => reloadQueue(false));
+  if (filter) filter.addEventListener("change", () => {
+    document.querySelectorAll("[data-state]").forEach((i) => { i.value = filter.value; });   // "Dismiss" applies to what the filter shows
+    reloadQueue(false);
+  });
   const more = $("[data-queue-more]");
   if (more) more.addEventListener("click", () => reloadQueue(true));
 })();

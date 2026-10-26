@@ -49,43 +49,81 @@
 </section>
 
 <section class="panel">
-  <div class="page-head">
-    <h2>Queue</h2>
-    <form class="filters" method="get" data-queue-filter data-sort="{{ q.sort.get('sort', '') }}" data-dir="{{ q.sort.get('dir', '') }}">
+  <nav class="view-tabs" aria-label="Status views">
+    {% for key, label in views.items() %}
+      <a href="{{ url_for('status', view=key) }}" {% if key == q.view %}aria-current="page"{% endif %}>{{ label }} <span class="tab-count" data-count="{{ key }}">{{ q.counts.get(key, 0)|count }}</span></a>
+    {% endfor %}
+  </nav>
+  <form class="filters queue-filter" method="get" data-queue-filter data-view="{{ q.view }}" data-sort="{{ q.sort.get('sort', '') }}" data-dir="{{ q.sort.get('dir', '') }}">
+    {% if q.view == 'queue' %}
       <select name="state" aria-label="Show">
-        <option value="">All ({{ q.total|count }})</option>
-        {% for key, label in [('encoding', 'Encoding'), ('waiting', 'Waiting'), ('done', 'Finished in this run')] %}
+        <option value="">All</option>
+        {% for key, label in [('encoding', 'Encoding'), ('waiting', 'Waiting'), ('removed', 'Removed')] %}
           <option value="{{ key }}" {% if q.state == key %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
-      <noscript><button>Show</button></noscript>
-    </form>
-  </div>
-  <p class="queue-counts">
-    <span class="qstate qstate-encoding"><span data-count="encoding">{{ q.counts.get('encoding', 0) }}</span> encoding</span>
-    <span class="qstate qstate-waiting"><span data-count="waiting">{{ q.counts.get('waiting', 0)|count }}</span> waiting</span>
-    <span class="qstate qstate-ok"><span data-count="OK">{{ q.counts.get('OK', 0)|count }}</span> done</span>
-    <span class="qstate qstate-fail"><span data-count="FAIL">{{ q.counts.get('FAIL', 0)|count }}</span> failed</span>
-    <span class="qstate qstate-missing"><span data-count="MISSING">{{ q.counts.get('MISSING', 0)|count }}</span> missing</span>
-    <span class="qstate qstate-stopped"><span data-count="STOPPED">{{ q.counts.get('STOPPED', 0)|count }}</span> stopped</span>
-    <span class="qstate qstate-exists"><span data-count="EXISTS">{{ q.counts.get('EXISTS', 0)|count }}</span> already exist</span>
-  </p>
-  <form id="queue-remove" class="row-actions queue-tools" method="post" action="{{ url_for('queue_remove') }}">
-    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <button class="secondary" data-remove-selected disabled>Remove selected</button>
-    <button class="danger" name="all" value="1" data-remove-all {% if not q.counts.get('waiting') %}disabled{% endif %}
-            onclick="return confirm('Remove all ' + document.querySelector('[data-count=waiting]').textContent + ' waiting entries from the queue?')">Remove all waiting</button>
-    <button type="button" class="secondary" data-bulk-replace-all title="Replace the originals of all files with a finished encode">Replace all finished…</button>
+    {% elif q.view == 'history' %}
+      <select name="state" aria-label="Show">
+        <option value="">All results</option>
+        {% for key in q.history_results %}
+          <option value="{{ key }}" {% if q.state == key %}selected{% endif %}>{{ 'Replaced' if key == 'REPLACED' else q.states.get(key, key) }}</option>
+        {% endfor %}
+      </select>
+    {% endif %}
+    <noscript><input type="hidden" name="view" value="{{ q.view }}"><button>Show</button></noscript>
   </form>
+  <form id="bulk" class="row-actions queue-tools" method="post" action="{{ url_for('queue_remove') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ url_for('status', view=q.view) }}" data-next>
+    <input type="hidden" name="view" value="{{ q.view }}">
+    <input type="hidden" name="state" value="{{ q.state }}" data-state>
+    {% if q.view == 'queue' %}
+      <button class="secondary" data-needs-selection disabled>Remove selected</button>
+      <button class="danger" name="all" value="1" data-remove-all {% if not q.counts.get('waiting') %}disabled{% endif %}
+              onclick="return confirm('Remove all waiting entries from the queue?')">Remove all waiting</button>
+    {% elif q.view == 'review' %}
+      <button type="button" class="secondary" data-bulk-replace-selected data-needs-selection disabled title="Replace the originals of the selected files">Replace selected…</button>
+      <button type="button" class="secondary" data-bulk-replace-all title="Replace the originals of all files with a finished encode">Replace all finished…</button>
+      <button class="secondary" formaction="{{ url_for('status_dismiss') }}" data-needs-selection disabled title="Hide the selected entries here; the encodes stay where they are">Dismiss selected</button>
+      <button class="secondary" formaction="{{ url_for('status_dismiss') }}" name="all" value="1"
+              onclick="return confirm('Hide all awaiting-review entries here? The encodes stay in the output folder and on the Files page.')">Dismiss all</button>
+    {% else %}
+      <button class="secondary" formaction="{{ url_for('queue_again') }}" data-needs-selection disabled title="Queue the selected failed or stopped files again">Queue again</button>
+      <button class="secondary" formaction="{{ url_for('status_dismiss') }}" data-needs-selection disabled title="Hide the selected entries here; nothing is deleted">Dismiss selected</button>
+      <button class="secondary" formaction="{{ url_for('status_dismiss') }}" name="all" value="1"
+              onclick="return confirm('Hide all entries shown here? Nothing is deleted.')">Dismiss all shown</button>
+      <span class="inline-field"><select name="older_than" form="older-form" aria-label="Older than">
+        {% for d in (1, 7, 30) %}<option value="{{ d }}">older than {{ d }} day{{ 's' if d != 1 }}</option>{% endfor %}
+      </select><button class="secondary" form="older-form" data-older>Dismiss</button></span>
+      <button class="danger" formaction="{{ url_for('results_clear') }}"
+              onclick="return confirm('Delete the history data? This forgets every encode result (done, failed …), deletes finished batch files, logs of failed encodes and results of replace jobs, and all dismissals. Encoded files are not touched.')">Delete history data…</button>
+    {% endif %}
+  </form>
+  {% if q.view == 'history' %}
+  <form id="older-form" method="post" action="{{ url_for('status_dismiss') }}">{# own form: its select must not travel with the other buttons #}
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ url_for('status', view='history') }}">
+    <input type="hidden" name="view" value="history">
+    <input type="hidden" name="state" value="{{ q.state }}" data-state>
+  </form>
+  {% endif %}
   <div class="table-wrap">
-    <table class="queue-table">
-      <thead><tr><th class="check"><input type="checkbox" data-select-waiting aria-label="Select all waiting entries shown"></th><th class="num">#</th>{% for f, label in [('file', 'File'), ('preset', 'Preset'), ('state', 'State')] %}<th aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(q.sort_links[f][1], 'none') }}"><a class="sort-link{{ ' active' if q.sort_links[f][1] }}" href="{{ q.sort_links[f][0] }}" title="Sort: ascending → descending → off (processing order)">{{ label }}{% if q.sort_links[f][1] %} {{ q.sort_links[f][1] }}{% endif %}</a></th>{% endfor %}</tr></thead>
-      <tbody data-queue-rows>{% with rows=q.rows, states=q.states %}{% include "_queue_rows.html" %}{% endwith %}</tbody>
+    <table class="queue-table queue-{{ q.view }}">
+      <thead><tr><th class="check"><input type="checkbox" data-select-all aria-label="Select all entries shown"></th>
+        {% if q.view == 'queue' %}<th class="num">#</th>{% endif %}
+        {% for f in q.fields %}<th aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(q.sort_links[f][1], 'none') }}"><a class="sort-link{{ ' active' if q.sort_links[f][1] }}" href="{{ q.sort_links[f][0] }}" title="Sort: ascending → descending → off">{{ q.fields[f] }}{% if q.sort_links[f][1] %} {{ q.sort_links[f][1] }}{% endif %}</a></th>{% endfor %}
+        {% if q.view != 'queue' %}<th></th>{% endif %}</tr></thead>
+      <tbody data-queue-rows>{% with rows=q.rows, states=q.states, view=q.view %}{% include "_queue_rows.html" %}{% endwith %}</tbody>
     </table>
   </div>
-  <p class="muted small" data-queue-empty {% if q.rows %}hidden{% endif %}>Nothing queued.</p>
+  <p class="muted small" data-queue-empty {% if q.rows %}hidden{% endif %}>{{ {'queue': 'Nothing queued.', 'review': 'No finished encodes are waiting to be replaced.', 'history': 'No history yet.'}[q.view] }}</p>
   {% if q.more_url %}<button type="button" class="secondary" data-queue-more="{{ q.more_url }}">Show more</button>{% endif %}
-  <p class="hint">Only waiting entries can be removed. Removed entries of the current run show as "Removed" and are skipped by the worker. Finished encodes stay in the list (as "Done", with Replace…) until they're replaced, also after the worker's run is over; other results of a run disappear when the run ends. The list shows 100 entries at a time; progress and counts update every few seconds, the list whenever the next file starts.</p>
+  <p class="hint">
+    {% if q.view == 'queue' %}Only waiting entries can be removed. Removed entries of the current run show as "Removed" and are skipped by the worker. Finished files move to Awaiting review (encodes) or History (every result).
+    {% elif q.view == 'review' %}Finished encodes in the output folder, also from earlier runs, until their original is replaced. Dismiss only hides an entry here; the encode stays in the output folder and keeps its Replace… button on the Files page.
+    {% else %}Every encode result and finished replace, newest first{% if q.keep_days %}; entries older than {{ q.keep_days }} days are hidden (<a href="{{ url_for('settings', section='status') }}">change</a>){% endif %}. Dismiss hides entries here without deleting anything; a new result of the same file shows again. A failed file keeps its Failed marker on the Files page until it is encoded successfully.
+    {% endif %}
+    The list shows 100 entries at a time; progress and counts update every few seconds, the list whenever the next file starts.</p>
 </section>
 
 <section class="panel">
@@ -97,32 +135,6 @@
   {% if scan_state.error %}<p class="flash error">{{ scan_state.error }}</p>{% endif %}
 </section>
 
-<section class="panel">
-  <div class="page-head">
-    <h2>Latest results</h2>
-    <div class="row-actions">
-    {% if results %}
-    <form method="post" action="{{ url_for('results_clear') }}"
-          onsubmit="return confirm('Clear the whole results history? This forgets every encode result (done, failed …), deletes finished batch files, logs of failed encodes and results of replace jobs. Encoded files are not touched.')">
-      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-      <button class="secondary">Clear results history</button>
-    </form>
-    {% endif %}
-    </div>
-  </div>
-  {% if results %}
-  <div class="table-wrap">
-    <table data-sortable>
-      <thead><tr><th>Time</th><th>Result</th><th>File</th></tr></thead>
-      <tbody>
-      {% for r in results %}
-        <tr><td data-sort="{{ r.at }}">{{ r.at|localtime }}</td><td data-sort="{{ r.status }}"><span class="result result-{{ r.status|lower }}">{{ r.status }}</span> {% include "_replace_button.html" %}</td><td class="name" title="{{ r.key }}">{{ short(r.key)|wbr }}</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}<p class="muted">No results yet.</p>{% endif %}
-</section>
 {% include "_replace_dialog.html" %}
 {% include "_bulk_replace_dialog.html" %}
 <script src="{{ url_for('static', filename='replace.js') }}"></script>
