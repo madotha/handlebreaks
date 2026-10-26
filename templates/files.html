@@ -50,11 +50,9 @@
       {% for key, (label, _) in added_ranges.items() %}<option value="{{ key }}" {% if key == added %}selected{% endif %}>Added: {{ label|lower if key != 'custom' else 'custom range…' }}</option>{% endfor %}
     </select>
     <span class="date-range" data-date-range {% if added != 'custom' %}hidden{% endif %}>
-      <input name="from" value="{{ date_from }}" placeholder="dd.mm.yyyy" aria-label="Added from (dd.mm.yyyy)" inputmode="numeric"
-             pattern="\d{1,2}\.\d{1,2}\.\d{4}" title="dd.mm.yyyy, e.g. 23.07.2026" size="10">
+      <input type="date" name="from" value="{{ date_from }}" aria-label="Added from" title="Added from (this day is included)">
       <span class="muted">to</span>
-      <input name="to" value="{{ date_to }}" placeholder="dd.mm.yyyy" aria-label="Added until (dd.mm.yyyy)" inputmode="numeric"
-             pattern="\d{1,2}\.\d{1,2}\.\d{4}" title="dd.mm.yyyy, e.g. 23.10.2026 (this day is included)" size="10">
+      <input type="date" name="to" value="{{ date_to }}" aria-label="Added until" title="Added until (this day is included)">
     </span>
     {% for k, v in sort.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}{# keep the column sort #}
     <button>Filter</button>

@@ -9,6 +9,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Files page: the custom date range of the **Date added** filter uses date pickers (the browser's own, also on phones) instead of typed `dd.mm.yyyy` text. Future dates and a start after the end can't be picked. Older links with `dd.mm.yyyy` dates still work.
 - Status page with three tabs and live counts: **Queue** (encoding, waiting, removed), **Awaiting review** (finished encodes waiting for Replace…, also from earlier runs) and **History** (every encode result and finished replace, newest first, filterable by result, paged). Every row can be ticked in every tab.
   - Awaiting review: **Replace selected…** next to Replace all finished…
   - History: **Queue again** for failed or stopped files (per row or selected; the file is queued with the preset it had).

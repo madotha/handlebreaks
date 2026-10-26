@@ -226,7 +226,7 @@ a.sort-link.active, th[aria-sort="ascending"], th[aria-sort="descending"] { colo
 .filters > a { font-size: .88rem; }
 .page-head .filters { margin: 0; }
 .date-range { display: inline-flex; align-items: center; gap: .4rem; }
-.date-range input { width: 7.4rem; font-variant-numeric: tabular-nums; }
+.date-range input { width: 9.6rem; font-variant-numeric: tabular-nums; }
 .multi { position: relative; }
 .multi > summary { list-style: none; cursor: pointer; display: flex; align-items: center; min-height: var(--control-h); padding: 0 2rem 0 .7rem;
   border: 1px solid var(--border-strong); border-radius: var(--radius-sm); white-space: nowrap; font-size: .92rem;

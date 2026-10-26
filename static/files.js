@@ -9,6 +9,19 @@
       document.querySelector("[data-date-range]").hidden = addedSelect.value !== "custom";
     });
   }
+  // The date pickers: no future dates, "from" never after "to"; a click anywhere in a field opens its picker
+  const range = document.querySelector("[data-date-range]");
+  if (range) {
+    const [from, to] = range.querySelectorAll('input[type="date"]');
+    const now = new Date();
+    const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+    const limits = () => { to.min = from.value; from.max = to.value || today; to.max = today; };
+    [from, to].forEach((input) => {
+      input.addEventListener("change", limits);
+      input.addEventListener("click", () => { try { input.showPicker(); } catch (e) { /* already open or unsupported */ } });
+    });
+    limits();
+  }
 
   const form = document.getElementById("queue-form");
   if (!form) return;

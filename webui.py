@@ -552,19 +552,23 @@ ADDED_RANGES = {"24h": ("Last 24 hours", 1), "7d": ("Last 7 days", 7), "30d": ("
                 "custom": ("Custom range", None)}
 
 
-def parse_dmy(text):
-    """dd.mm.yyyy -> datetime (midnight, server time), or None."""
-    try:
-        return datetime.strptime(text.strip(), "%d.%m.%Y")
-    except ValueError:
-        return None
+def parse_date(text):
+    """yyyy-mm-dd (what date inputs send) or dd.mm.yyyy (older links) -> datetime
+    (midnight, server time), or None."""
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y"):
+        try:
+            return datetime.strptime(text.strip(), fmt)
+        except ValueError:
+            pass
+    return None
 
 
 def file_filters(src):
     """Filter values from a request (query string or form). codec is a list: codec
     names, "unknown" (not probed) and the groups in CODEC_GROUPS can be combined.
-    added is one of ADDED_RANGES; "custom" uses from/to (dd.mm.yyyy, either may be
-    empty); invalid dates are left out (see added_problem)."""
+    added is one of ADDED_RANGES; "custom" uses from/to (yyyy-mm-dd, or dd.mm.yyyy from
+    older links, either may be empty); they are kept as yyyy-mm-dd, invalid dates are
+    left out (see added_problem)."""
     filters = {k: src.get(k, "").strip() for k in ("q", "status") if src.get(k, "").strip()}
     codecs = [c.strip() for c in src.getlist("codec") if c.strip()]
     if codecs:
@@ -574,7 +578,7 @@ def file_filters(src):
         if added != "custom":
             filters["added"] = added
         else:
-            dates = {k: src.get(k, "").strip() for k in ("from", "to") if parse_dmy(src.get(k, ""))}
+            dates = {k: parse_date(src.get(k, "")).strftime("%Y-%m-%d") for k in ("from", "to") if parse_date(src.get(k, ""))}
             if dates:
                 filters.update(added="custom", **dates)
     return filters
@@ -584,12 +588,12 @@ def added_problem(src):
     """Message for an invalid custom date range, or None."""
     if src.get("added") != "custom":
         return None
-    bad = [src.get(k, "").strip() for k in ("from", "to") if src.get(k, "").strip() and not parse_dmy(src.get(k, ""))]
+    bad = [src.get(k, "").strip() for k in ("from", "to") if src.get(k, "").strip() and not parse_date(src.get(k, ""))]
     if bad:
-        return f"Not a date: {', '.join(bad)}. Use dd.mm.yyyy, e.g. 23.10.2026."
+        return f"Not a date: {', '.join(bad)}. Pick the dates with the date fields."
     if not any(src.get(k, "").strip() for k in ("from", "to")):
-        return "Enter a start or end date (dd.mm.yyyy) for the custom range."
-    lo, hi = parse_dmy(src.get("from", "")), parse_dmy(src.get("to", ""))
+        return "Pick a start or end date for the custom range."
+    lo, hi = parse_date(src.get("from", "")), parse_date(src.get("to", ""))
     if lo and hi and lo > hi:
         return "The start date is after the end date."
     return None
@@ -601,7 +605,7 @@ def added_bounds(filters):
     if added in ("24h", "7d", "30d"):
         return time.time() - ADDED_RANGES[added][1] * 86400, None
     if added == "custom":
-        lo, hi = parse_dmy(filters.get("from", "")), parse_dmy(filters.get("to", ""))
+        lo, hi = parse_date(filters.get("from", "")), parse_date(filters.get("to", ""))
         return (lo.timestamp() if lo else None,
                 (hi + timedelta(days=1)).timestamp() if hi else None)   # "to" includes that whole day
     return None
@@ -875,7 +879,7 @@ def files():
         statuses=statuses, q=filters.get("q", ""), codec=filters.get("codec", []),
         status=filters.get("status", ""), filtered=bool(filters),
         added=filters.get("added", request.args.get("added", "") if request.args.get("added") in ADDED_RANGES else ""),
-        date_from=request.args.get("from", "").strip(), date_to=request.args.get("to", "").strip(),
+        date_from=filters.get("from", ""), date_to=filters.get("to", ""),
         added_ranges=ADDED_RANGES, added_error=added_problem(request.args),
         codec_groups=[(k, label, sum(n for c, n in codecs if codec_class(c) == k.split(":")[1]))
                       for k, label in CODEC_GROUPS.items()],
