@@ -214,9 +214,9 @@ a.sort-link.active, th[aria-sort="ascending"], th[aria-sort="descending"] { colo
 .codec-other { background: var(--codec-other-bg); color: var(--codec-other-text); }
 .status-h265, .result-ok, .qstate-ok { background: var(--ok-bg); color: var(--ok); }
 .status-offer, .qstate-exists, .qstate-stopped, .result-stopped { background: var(--warn-bg); color: var(--warn); }
-.status-bad, .result-fail, .result-missing, .qstate-fail, .qstate-missing { background: var(--err-bg); color: var(--err); }
+.status-bad, .status-failed, .result-fail, .result-missing, .qstate-fail, .qstate-missing { background: var(--err-bg); color: var(--err); }
 .status-queued, .status-waiting, .qstate-waiting { background: var(--info-bg); color: var(--info); }
-.qstate-encoding { background: var(--accent-soft); color: var(--text); }
+.qstate-encoding, .status-encoding { background: var(--accent-soft); color: var(--text); }
 .qstate-removed { background: transparent; color: var(--muted); text-decoration: line-through; }
 
 /* ─── Files page ───────────────────────────────────────────────────────────── */

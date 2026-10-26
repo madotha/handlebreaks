@@ -9,6 +9,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Files page: the file being encoded shows the status **Encoding** (it showed "Queued"), and an offered file whose last encode failed gets a red **Failed** marker next to its status (until a later encode succeeds or the results are cleared).
+
 - Preset editor shows compatibility with the HandBrakeCLI that encodes: its version and platform, notes for the preset (made with a newer HandBrake, settings that HandBrakeCLI ignores, values it doesn't offer), markers on fields it doesn't know, and platform or hardware notes on options (VideoToolbox and Apple AAC "macOS only", Media Foundation "Windows only", NVENC, Quick Sync, AMD). In the mixed setup the Mac worker publishes its HandBrakeCLI's capabilities (`handbrake-worker.json`, at start, only when HandBrakeCLI changed), so the editor offers e.g. VideoToolbox encoders and Apple AAC and checks against the Mac's HandBrakeCLI instead of the container's older one. New command `encoding.py preset-check [--worker]` prints the compatibility report.
 
 - Preset editor: fields for the settings of HandBrake 1.10 and later: color range, HDR dynamic metadata (HDR10+ / Dolby Vision), automatic audio track naming, and keeping the source's audio and subtitle track names. Old settings HandBrake still exports (`PictureAutoCrop`, `x264Option`, `x264UseAdvancedOptions`) are labeled as such under More.
@@ -62,6 +64,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- A scan saves its ffprobe results every 200 files. An interrupted scan (restart, closed terminal, unreachable NAS) keeps the probes done so far, and the next scan resumes with the remaining files instead of starting over. Files probed by an unfinished scan have no status until a scan completes.
 - Runs with several batches: once the worker had finished the first batch (and moved it to `done/`), the Status page numbered the remaining entries wrongly and showed files as "Done" that hadn't been encoded yet; they couldn't be removed either. **Stop all** in such a run put no files back into the queue and silently dropped the rest of the run. The worker now lists its run's batches in `logs/run.txt`, and the Status page and **Stop all** read the run from it. Entries without a result from the current run show as "Skipped" instead of "Done"; results from earlier runs no longer count.
 - **Replace all finished…** found nothing until the next scan: it looked for files marked "awaiting review", but files encoded since the last scan are still marked "queued" in the database. A file now counts as awaiting review as soon as its encode is in the output folder, also on the Files page (status label and **Replace…** button).
 - Elements hidden with the `hidden` attribute but styled as flex rows stayed visible: the Status page always showed the stop buttons and the "Queue paused" bar with **Resume**, even with nothing encoding or paused.

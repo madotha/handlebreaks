@@ -1,7 +1,7 @@
 {# File rows of one folder level; also returned on their own for "Show more". #}
 {% from "_icons.html" import icon %}
 {% for f in files %}
-  {% set is_queued = f.key in queued and not f.encoded %}
+  {% set is_queued = f.key in queued and not f.encoded and not f.encoding %}
   <tr>
     <td class="sel"><input type="checkbox" name="key" value="{{ f.key }}" aria-label="Select {{ f.name }}" {% if is_queued %}disabled data-locked title="Already queued"{% endif %}></td>
     <td class="sel"><button class="icon-btn" formaction="{{ url_for('start_scan') }}" name="path" value="{{ f.key }}" data-scan-path
@@ -13,7 +13,8 @@
     <td class="c-dur" data-label="Duration">{{ f.duration|duration }}</td>
     <td class="num c-size">{{ f.size|size }}</td>
     <td class="nowrap c-added" data-label="Added">{{ f.added|added }}</td>
-    <td class="c-status"><span class="status status-{{ 'queued' if is_queued else f.status }}">{{ status_labels['queued'] if is_queued else status_labels.get(f.status, f.status) }}</span>
+    <td class="c-status"><span class="status status-{{ 'encoding' if f.encoding else 'queued' if is_queued else f.status }}">{{ 'Encoding' if f.encoding else status_labels['queued'] if is_queued else status_labels.get(f.status, f.status) }}</span>
+      {% if f.failed %}<span class="status status-failed" title="The last encode of this file failed (see the Status page and the log)">Failed</span>{% endif %}
       {% if f.replacing %}<span class="muted small" title="The worker carries out the replace job; the list updates when it's done">Replacing…</span>
       {% elif f.encoded %}<button type="button" class="icon-btn replace-btn" data-replace data-key="{{ f.key }}" data-original="{{ f.name.rsplit('/', 1)[-1] }}"
           data-encoded="{{ f.encoded }}" aria-label="Replace the original" data-tip="Replace the original with the finished encode…">{{ icon('replace') }}</button>{% endif %}</td>

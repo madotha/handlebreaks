@@ -989,6 +989,21 @@ def probe(path):
     return info
 
 
+CHECKPOINT_EVERY = 200      # files probed between saves, so an interrupted scan keeps its progress
+
+
+def save_checkpoint(infos):
+    """Store freshly probed files during a scan. Known rows only get the new size, time and
+    probe data (status stays); new rows have no status until the scan finishes. The next
+    scan then finds them in the cache and resumes."""
+    cols = [c for c in FILE_COLUMNS if c not in ("key", "status")]
+    with closing(connect()) as con, con:
+        con.executemany(
+            f"INSERT INTO files (key, {', '.join(cols)}) VALUES (?, {', '.join('?' * len(cols))}) "
+            f"ON CONFLICT(key) DO UPDATE SET {', '.join(f'{c} = excluded.{c}' for c in cols if c != 'added')}",
+            [(i["key"], *(i.get(c) for c in cols)) for i in infos])
+
+
 def inventory(entries, probe_files, force=False, first_scan=()):
     """Size, modification time and (if wanted) ffprobe data per file.
     ffprobe only runs for new or changed files (all files with force); the rest comes
@@ -1017,11 +1032,12 @@ def inventory(entries, probe_files, force=False, first_scan=()):
     if todo:
         print(f"ffprobe: {len(todo)} new or changed file(s) …", file=sys.stderr)
         with ThreadPoolExecutor(PROBE_WORKERS) as pool:
-            for n, (key, data) in enumerate(zip([k for k, _ in todo],
-                                                pool.map(probe, [f for _, f in todo])), 1):
-                infos[key].update(data)
-                if n % 50 == 0:
-                    print(f"ffprobe: {n}/{len(todo)}", file=sys.stderr)
+            for start in range(0, len(todo), CHECKPOINT_EVERY):
+                chunk = todo[start:start + CHECKPOINT_EVERY]
+                for (key, _), data in zip(chunk, pool.map(probe, [f for _, f in chunk])):
+                    infos[key].update(data)
+                save_checkpoint([infos[k] for k, _ in chunk])
+                print(f"ffprobe: {start + len(chunk)}/{len(todo)}", file=sys.stderr)
     return infos
 
 

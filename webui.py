@@ -759,6 +759,16 @@ def tree_level(path, filters, queued, offset=0, sort=None):
     return ordered, files, len(keys)
 
 
+def activity_version():
+    """Changes when the file being encoded or the results change (folder cache version)."""
+    cur = enc.current_progress()
+    try:
+        size = enc.RESULTS_FILE.stat().st_size
+    except OSError:
+        size = 0
+    return (cur["key"] if cur else None, size)
+
+
 def level_context(path, filters, queued, offset=0, sort=None, dir_offset=0):
     """One folder level: a page of subfolders (dir_offset) and a page of files (offset).
     Large levels are paged so the browser never builds thousands of rows at once."""
@@ -783,6 +793,14 @@ def level_context(path, filters, queued, offset=0, sort=None, dir_offset=0):
             if f["encoded"]:
                 f["status"] = "waiting"
             f["replacing"] = f["key"] in pending
+    # The file being encoded is shown as such, and a file whose last encode failed is marked
+    # (a later success or a rescan to "waiting" clears it: only the latest result counts).
+    cur = enc.current_progress()
+    results = enc.load_results() if files else {}
+    for f in files:
+        f["encoding"] = bool(cur) and cur["key"] == f["key"]
+        r = results.get(f["key"])
+        f["failed"] = bool(r and r[0] == "FAIL" and f["status"] == "offer")
     return {"folders": folders, "files": files, "total_files": total, "shown_files": min(nxt, total),
             "more_url": more, "more_dirs_url": more_dirs, "shown_dirs": min(dir_nxt, total_dirs),
             "total_dirs": total_dirs, "filters": filters, "queued": queued,
@@ -841,7 +859,7 @@ def files():
     queued = set(enc.queued_keys())
     # Folder contents only change with the database or the queue: the browser keeps loaded
     # folders for this version (files.js), so reopening them after a reload needs no request
-    version = hashlib.sha1(repr((STARTED, enc.db_version(), sorted(queued))).encode()).hexdigest()[:12]
+    version = hashlib.sha1(repr((STARTED, enc.db_version(), sorted(queued), activity_version())).encode()).hexdigest()[:12]
     if filters:
         level = level_context("", filters, queued, sort=sort)
     else:                                       # the unfiltered top level is the same until data changes
