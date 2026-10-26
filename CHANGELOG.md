@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-26
+
 ### Added
 
 - Status page: the lists show "Showing 100 of 250" with **Show more** when they have more than 100 entries (History, Awaiting review, Queue), keeping the filter and sort. On phones, where the table header is hidden, "Sort by" chips sort the lists.
@@ -62,6 +64,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- HandBrake compatibility checked against HandBrake 1.11.2 (the newest release, 7 June 2026; preset format 72): `encoding.py preset-check` and `preset-check --worker` report every setting as covered by the preset editor. The Docker image still has Debian's HandBrakeCLI 1.9.2.
 - Status page: finished encodes and results no longer stay in the queue list. They are in Awaiting review and History, where they can be selected, dismissed and (for failed or stopped files) queued again. The "Latest results" list (last 20) is replaced by History. **Clear results history** is now **Delete history data…** in the History tab; it also forgets dismissals.
 - Icon buttons with tooltips for frequent row actions: scan again (round arrow) and **Replace…** (arrows) on the Files and Status pages, reload the queue, collapse all folders, and edit, export, make default and delete on the Presets page. Hovering (or keyboard focus) shows what a button does right away. Primary and destructive actions keep their text.
 - Status page: finished encodes stay in the Queue section (as "Done", with **Replace…**) until they're replaced, also after the worker's run is over. **Replace all finished…** moved into the Queue section.
@@ -73,6 +76,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Settings: for an older `config.env` without `HISTORY_KEEP_DAYS` or `RENAME_QUALITY`, the form showed an empty field or an unticked box, so saving the section turned the defaults (30 days, quality in suggested names on) into 0 / off. The form now shows the effective defaults.
 - Status page: the box with the three tabs no longer shows a scrollbar (the tab underline made it 1 px too tall), and on phones the tabs fit even with large counts ("Awaiting review" is shortened to "Review").
 - Phones: icon buttons no longer shrink to a sliver in a row (Edit and Export on the Presets page), long paths in the share cards of Settings → Library wrap next to the action icons instead of running under them, and the logo, collapsible section headers and preset names have larger touch targets.
 - Settings → Library: the "Output" heading was shown twice.

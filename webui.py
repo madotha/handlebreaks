@@ -115,6 +115,10 @@ SETTINGS = {
     ]),
 }
 
+# Defaults the code uses when a key is missing from an older config.env: shown on the form, so
+# saving a section doesn't turn them into 0 / off
+SETTING_DEFAULTS = {"HISTORY_KEEP_DAYS": "30", "RENAME_QUALITY": "1"}
+
 # Settings overridden by an environment variable of the same name (docker-entrypoint.sh)
 ENV_OVERRIDES = {"WORKER_ENABLED"}
 
@@ -1638,7 +1642,7 @@ def settings(section):
     if section not in SETTINGS:
         abort(404)
     title, fields = SETTINGS[section]
-    cfg = raw_config()
+    cfg = {**SETTING_DEFAULTS, **raw_config()}
     if section == "library":
         fields = library_fields(cfg)
     errors = {}
