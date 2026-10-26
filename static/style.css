@@ -180,6 +180,12 @@ label.inline { display: inline-flex; align-items: center; gap: .5rem; font-size:
 .meter { display: block; height: 6px; background: var(--surface-3); border-radius: 99px; overflow: hidden; margin-top: .55rem; }
 .meter.big { height: 10px; }
 .meter > span { display: block; height: 100%; background: var(--accent); border-radius: 99px; transition: width .4s ease; }
+.badge-warn { background: var(--warn-bg) !important; color: var(--warn) !important; }
+.badge-ok { background: var(--ok-bg) !important; color: var(--ok) !important; }
+.compat summary { cursor: pointer; display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.compat-notes { margin: .8rem 0 .4rem; padding-left: 1.2rem; font-size: .9rem; }
+.compat-notes li { margin: .25rem 0; }
+.field label .badge { margin-left: .35rem; font-size: .68rem; white-space: nowrap; flex: none; }
 .badge { display: inline-block; font-size: .72rem; font-weight: 650; padding: .1rem .5rem; border-radius: 99px; background: var(--accent-soft); color: var(--text); vertical-align: middle; }
 fieldset { border: 1px solid var(--border); border-radius: var(--radius); padding: .9rem 1.1rem; margin: 0 0 1.1rem; }
 legend { font-weight: 650; padding: 0 .35rem; }

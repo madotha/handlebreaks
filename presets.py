@@ -17,7 +17,9 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
+import time
 from functools import lru_cache
 from pathlib import Path
 
@@ -62,7 +64,13 @@ FALLBACK = {
         "colorspace": {"presets": ["bt2020", "bt709", "bt601-6-525", "bt601-6-625"]},
     },
 }
-CAPS_VERSION = 2                                # bump when _capabilities() returns new keys (invalidates the cache)
+CAPS_VERSION = 3                                # bump when _capabilities() returns new keys (invalidates the cache)
+WORKER_FILE = DATA_DIR / "handbrake-worker.json"   # capabilities of the HandBrakeCLI that encodes (written by encode.sh)
+PLATFORMS = {"darwin": "macOS", "linux": "Linux", "win32": "Windows"}
+# Encoders tied to a platform or hardware (by name prefix), shown next to them in the editor
+PLATFORM_NOTES = [("vt_", "macOS only (VideoToolbox)"), ("ca_", "macOS only (Apple AAC)"),
+                  ("mf_", "Windows only (Media Foundation)"), ("nvenc_", "needs an NVIDIA GPU"),
+                  ("qsv_", "needs Intel Quick Sync"), ("vce_", "needs an AMD GPU"), ("vcn_", "needs an AMD GPU")]
 
 
 class PresetError(Exception):
@@ -96,6 +104,14 @@ def load(preset_id):
         return data["PresetList"][0]
     except (OSError, ValueError, KeyError, IndexError) as e:
         raise PresetError(f"Preset {preset_id!r} can't be read: {e}")
+
+
+def file_format(preset_id):
+    """Preset format (VersionMajor) of the stored file, i.e. of the HandBrake that wrote it, or None."""
+    try:
+        return json.loads(path_of(preset_id).read_text(encoding="utf-8")).get("VersionMajor")
+    except (OSError, ValueError):
+        return None
 
 
 def name_of(preset_id):
@@ -318,14 +334,20 @@ def _capabilities():
     caps["samplerates"] = m.group(1).split("/") if m else []
     caps["dithers"] = _help_list(blocks.get("adither", ""), "Select dithering")
     caps["version"] = None
-    with tempfile.TemporaryDirectory() as tmp:     # preset format version via a throwaway export
+    with tempfile.TemporaryDirectory() as tmp:     # preset format and every setting it knows, via a throwaway export
         out = Path(tmp) / "v.json"
         _run("--preset-export", "v", "--preset-export-file", str(out))
         try:
             data = json.loads(out.read_text())
             caps["version"] = {k: data[k] for k in ("VersionMajor", "VersionMinor", "VersionMicro") if k in data}
-        except (OSError, ValueError):
+            exported = data["PresetList"][0]
+            caps["preset_keys"] = sorted(exported)
+            caps["track_keys"] = sorted({k for t in exported.get("AudioList") or [] for k in t})
+        except (OSError, ValueError, KeyError, IndexError):
             pass
+    m = re.search(r"HandBrake (\S+)", _run("--version"))
+    caps["handbrake"] = m.group(1) if m else None
+    caps["platform"] = PLATFORMS.get(sys.platform, sys.platform)
     for key, value in FALLBACK.items():          # never leave a list empty if parsing failed
         if not caps.get(key):
             caps[key] = value
@@ -373,10 +395,55 @@ def from_builtin(name, new_name):
 AUDIO_ALIASES = {"ca_aac": "av_aac", "ca_haac": "av_aac"}
 
 
-def unsupported(preset):
+def publish_worker_capabilities():
+    """Write the capabilities of this machine's HandBrakeCLI to WORKER_FILE, for a web UI
+    elsewhere (e.g. in Docker while the Mac encodes) to offer and check what the worker
+    really supports. Called by encode.sh; only rewrites the file when HandBrakeCLI changed.
+    Returns True if it was written."""
+    if not HANDBRAKE:
+        return False
+    st = os.stat(HANDBRAKE)
+    build = [HANDBRAKE, st.st_size, st.st_mtime_ns, CAPS_VERSION]
+    try:
+        if json.loads(WORKER_FILE.read_text()).get("build") == build:
+            return False
+    except (OSError, ValueError):
+        pass
+    data = dict(capabilities(), build=build, published=time.time())
+    tmp = WORKER_FILE.with_name(WORKER_FILE.name + ".tmp")
+    tmp.write_text(json.dumps(data))
+    os.replace(tmp, WORKER_FILE)
+    return True
+
+
+def worker_capabilities():
+    """Capabilities published by the worker (publish_worker_capabilities), or None."""
+    try:
+        data = json.loads(WORKER_FILE.read_text())
+    except (OSError, ValueError):
+        return None
+    return data if data.get("available") else None
+
+
+def editor_capabilities(encodes_here):
+    """(caps, remote): the capabilities of the HandBrakeCLI that encodes. With encodes_here
+    False (a web UI in Docker while the Mac encodes) and a published worker file, that's
+    the worker's (remote = True: its HandBrakeCLI can't be run here); otherwise this
+    machine's."""
+    worker = None if encodes_here else worker_capabilities()
+    return (worker, True) if worker else (capabilities(), False)
+
+
+def platform_note(value):
+    """"macOS only (VideoToolbox)" etc. for an encoder tied to a platform or hardware, or None."""
+    value = str(value or "")
+    return next((note for prefix, note in PLATFORM_NOTES if value.startswith(prefix)), None)
+
+
+def unsupported(preset, caps=None):
     """Settings the installed HandBrakeCLI doesn't support. HandBrakeCLI itself loads
     presets with unknown encoders without complaint, so they're checked here."""
-    caps = capabilities()
+    caps = caps or capabilities()
     if not caps.get("available"):
         return []
     problems = []
@@ -398,10 +465,13 @@ def unsupported(preset):
     return problems
 
 
-def verify(preset):
-    """Check the preset against the installed HandBrakeCLI and let it load it. Returns
-    an error message, or None if it's fine (or HandBrakeCLI isn't installed, so it
-    can't be checked here)."""
+def verify(preset, caps=None, remote=False):
+    """Check the preset against the HandBrakeCLI that encodes and let it load it. Returns
+    an error message, or None if it's fine. remote: the worker's HandBrakeCLI runs on
+    another machine (caps from its published file), so only its lists are checked."""
+    if remote:
+        problems = unsupported(preset, caps)
+        return ("Not supported by the worker's HandBrakeCLI: " + ", ".join(problems) + ".") if problems else None
     if not HANDBRAKE:
         return None
     problems = unsupported(preset)
@@ -635,9 +705,10 @@ def _options(options, value):
     if options is None:
         return []
     items = list(options.items()) if isinstance(options, dict) else [(o, LABELS.get(o, o) if o != "" else "None") for o in options]
-    items = [(str(v), str(l)) for v, l in items]
+    items = [(str(v), str(l) + (f" · {platform_note(v)}" if platform_note(v) else "")) for v, l in items]
     if value is not None and str(value) not in {v for v, _ in items}:
-        note = f"uses {AUDIO_ALIASES[value]} here" if value in AUDIO_ALIASES else "not offered here"
+        note = (f"uses {AUDIO_ALIASES[value]} there" if value in AUDIO_ALIASES else "not available") + \
+            " with the encoding HandBrakeCLI" + (f"; {platform_note(value)}" if platform_note(value) else "")
         items.insert(0, (str(value), f"{value} ({note})"))
     return items
 
@@ -671,19 +742,80 @@ def _generic(key, value):
     return dict(F(key, label, kind, mono=True), value=value)
 
 
+def _mark(field, known):
+    """Flag a field whose setting the encoding HandBrakeCLI doesn't know (it ignores it)."""
+    key = "PictureRotate" if field["key"].startswith("_rotate") else field["key"]
+    if known and key not in known:
+        field["unsupported"] = True
+    return field
+
+
 def editor(preset, caps):
-    """The preset editor: [(tab, [field with value])], audio track fields, the tracks."""
+    """The preset editor: [(tab, [field with value])], audio track fields, the tracks.
+    Fields whose setting the encoding HandBrakeCLI doesn't know get "unsupported"."""
     angle, flip = _rotate(preset)
     values = dict(preset, _rotate_angle=angle, _rotate_flip=flip)
-    tabs = [(tab, [_resolve(f, values.get(f["key"]), values) for f in fields]) for tab, fields in editor_schema(caps)]
-    known = {f["key"] for _, fields in editor_schema(caps) for f in fields} | {"AudioList", "PictureRotate"} | INTERNAL
-    more = [_generic(k, v) for k, v in preset.items() if k not in known]
+    known, track_known = set(caps.get("preset_keys") or []), set(caps.get("track_keys") or [])
+    tabs = [(tab, [_mark(_resolve(f, values.get(f["key"]), values), known) for f in fields])
+            for tab, fields in editor_schema(caps)]
+    schema_keys = {f["key"] for _, fields in editor_schema(caps) for f in fields} | {"AudioList", "PictureRotate"} | INTERNAL
+    more = [_mark(_generic(k, v), known) for k, v in preset.items() if k not in schema_keys]
     if more:
         tabs.append(("More", more))
     track_fields = audio_track_schema(caps)
-    tracks = [[_resolve(f, t.get(f["key"])) for f in track_fields] for t in (preset.get("AudioList") or [])]
-    template = [_resolve(f, DEFAULT_TRACK.get(f["key"])) for f in track_fields]
+    tracks = [[_mark(_resolve(f, t.get(f["key"])), track_known) for f in track_fields] for t in (preset.get("AudioList") or [])]
+    template = [_mark(_resolve(f, DEFAULT_TRACK.get(f["key"])), track_known) for f in track_fields]
     return tabs, tracks, template
+
+
+def compatibility(preset, caps, remote, preset_format=None):
+    """What the editor shows about the HandBrakeCLI that encodes: {"worker": description,
+    "notes": [...], "missing": settings that HandBrakeCLI knows but the editor has no
+    field for}. Each note says what won't work, or works differently, when encoding."""
+    known = set(caps.get("preset_keys") or [])
+    where = f"HandBrakeCLI {caps.get('handbrake') or '?'} on {caps.get('platform') or '?'}"
+    worker = where + (" (the encoding worker; its capabilities were published to this web UI)" if remote else "")
+    notes = []
+    fmt = (caps.get("version") or {}).get("VersionMajor")
+    if preset_format and fmt and preset_format > fmt:
+        notes.append(f"This preset comes from a newer HandBrake (preset format {preset_format}); the encoding "
+                     f"HandBrakeCLI reads format {fmt} and ignores settings it doesn't know (marked below).")
+    ignored = sorted(k for k in preset if known and k not in known and k not in INTERNAL)
+    if ignored:
+        notes.append("Ignored when encoding (unknown to the encoding HandBrakeCLI): " + ", ".join(ignored) + ".")
+    for problem in unsupported(preset, caps):
+        notes.append(f"Not available with the encoding HandBrakeCLI: {problem}.")
+    for value in ([preset.get("VideoEncoder"), preset.get("AudioEncoderFallback")]
+                  + [t.get("AudioEncoder") for t in preset.get("AudioList") or []]):
+        if platform_note(value):
+            notes.append(f"{value}: {platform_note(value)}; " + (f"HandBrakeCLI on other platforms uses {AUDIO_ALIASES[value]} instead."
+                         if value in AUDIO_ALIASES else "a worker on another platform can't encode with this preset."))
+    schema = {f["key"] for _, fields in editor_schema(caps) for f in fields} | {"AudioList", "PictureRotate"} | INTERNAL | set(LEGACY)
+    missing = sorted(k for k in known if k not in schema and k not in preset)
+    return {"worker": worker, "notes": list(dict.fromkeys(notes)), "missing": missing}
+
+
+def audit(caps):
+    """Compatibility report of the editor and the stored presets against a HandBrakeCLI
+    (encoding.py preset-check). Run it after every new HandBrake release: settings the
+    editor has no field for need one in editor_schema() / audio_track_schema()."""
+    fmt = (caps.get("version") or {}).get("VersionMajor")
+    lines = [f"HandBrakeCLI {caps.get('handbrake') or '?'} on {caps.get('platform') or '?'}, preset format {fmt}"]
+    known, track_known = set(caps.get("preset_keys") or []), set(caps.get("track_keys") or [])
+    schema = {f["key"] for _, fields in editor_schema(caps) for f in fields if not f["key"].startswith("_")}
+    track_schema = {f["key"] for f in audio_track_schema(caps)}
+    missing = compatibility({}, caps, False)["missing"] + sorted(track_known - track_schema)
+    lines.append("Settings without an editor field: " + (", ".join(missing) or "none"))
+    unknown = sorted((schema - known) | (track_schema - track_known)) if known else []
+    lines.append("Editor fields this HandBrakeCLI doesn't know (marked as ignored): " + (", ".join(unknown) or "none"))
+    for item in all_presets():
+        pid = item[0] if isinstance(item, (tuple, list)) else item["id"]
+        try:
+            notes = compatibility(load(pid), caps, False, file_format(pid))["notes"]
+        except PresetError as e:
+            notes = [str(e)]
+        lines.append(f"Preset {name_of(pid)}: " + (" ".join(notes) if notes else "fully supported"))
+    return lines
 
 
 DEFAULT_TRACK = {"AudioEncoder": "av_aac", "AudioMixdown": "dpl2", "AudioSamplerate": "auto", "AudioBitrate": 160,

@@ -22,6 +22,7 @@ logs/
 .scan.lock
 .migrate.lock
 .handbrake-cache.json
+handbrake-worker.json
 presets/
 config.env.v2.bak
 TODO.md

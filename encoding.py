@@ -61,6 +61,8 @@ Examples
     python3 encoding.py unskip 2              # show no. 2 from "skipped" again
     python3 encoding.py status
     python3 encoding.py replace-jobs          # run pending replace jobs (normally done by encode.sh)
+    python3 encoding.py handbrake-caps        # publish this machine's HandBrakeCLI capabilities (encode.sh)
+    python3 encoding.py preset-check [--worker]   # editor/preset compatibility with this (or the worker's) HandBrakeCLI
     python3 encoding.py stop-rest <n>         # after "Stop all": requeue the run after entry n, pause (encode.sh)
     python3 encoding.py version
 """
@@ -1511,6 +1513,16 @@ def main():
     cmd, rest = args[0], args[1:]
     if cmd in ("version", "--version", "-V"):
         print(f"encoding.py v{__version__}")
+        return
+    if cmd == "preset-check":                   # compatibility of the editor and presets with a HandBrakeCLI
+        caps = presets.worker_capabilities() if "--worker" in rest else presets.capabilities()
+        if not caps or not caps.get("available"):
+            raise SystemExit("No HandBrakeCLI here" + (" and no published worker file." if "--worker" in rest else "."))
+        print("\n".join(presets.audit(caps)))
+        return
+    if cmd == "handbrake-caps":                 # encode.sh: publish what this worker's HandBrakeCLI supports
+        if presets.publish_worker_capabilities():
+            print(f"{now_str()} HandBrakeCLI capabilities published to {presets.WORKER_FILE.name}")
         return
     apply_config(load_config())
     if cmd == "replace-jobs":                   # file moves only, no database (see run_replace_jobs)

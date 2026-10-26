@@ -1442,6 +1442,7 @@ def preset_edit(pid):
     if not presets.exists(pid):
         abort(404)
     preset, error, json_text, new = presets.load(pid), None, None, None
+    caps, remote = presets.editor_capabilities(encodes_here())   # the HandBrakeCLI that encodes
     if request.method == "POST":
         try:
             if request.form.get("mode") == "json":
@@ -1453,9 +1454,9 @@ def preset_edit(pid):
                 if isinstance(new, dict) and isinstance(new.get("PresetList"), list) and new["PresetList"]:
                     new = new["PresetList"][0]         # a whole export file was pasted
             else:
-                new = presets.apply_form(preset, request.form, presets.capabilities())
+                new = presets.apply_form(preset, request.form, caps)
             presets.check(new)
-            problem = presets.verify(new)
+            problem = presets.verify(new, caps, remote)
             if problem:
                 raise presets.PresetError(problem)
             presets.save(pid, new)
@@ -1464,13 +1465,22 @@ def preset_edit(pid):
         except (presets.PresetError, ValueError, TypeError) as e:
             error = str(e)
     usage, default = preset_usage()
-    caps = presets.capabilities()
     shown = new if error and new and request.form.get("mode") != "json" else preset   # keep the user's input on errors
     tabs, tracks, track_template = presets.editor(shown, caps)
     return render_template(
-        "preset_edit.html", pid=pid, p=preset, caps=caps, error=error, tabs=tabs, tracks=tracks,
+        "preset_edit.html", pid=pid, p=preset, caps=caps, error=error, tabs=tabs, tracks=tracks, remote=remote,
+        compat=presets.compatibility(shown, caps, remote, presets.file_format(pid)),
         track_template=track_template, json_text=json_text or json.dumps(preset, indent=2, ensure_ascii=False),
         shares=usage.get(pid, []), is_default=pid == default)
+
+
+def encodes_here():
+    """True if this machine's HandBrakeCLI is the one that encodes: always natively, in
+    Docker only with WORKER_ENABLED (the environment variable wins, like for the worker)."""
+    if not Path("/.dockerenv").exists():
+        return True
+    value = os.environ.get("WORKER_ENABLED") or raw_config().get("WORKER_ENABLED") or "1"
+    return value.strip() == "1"
 
 
 @app.route("/presets/<pid>/export")

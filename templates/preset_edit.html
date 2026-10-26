@@ -3,13 +3,15 @@
 {% block title %}{{ p.PresetName }}{% endblock %}
 
 {# One editor field. name: the input name (audio tracks use a<n>-<key>) #}
+{% macro ignored(f) %}{% if f.unsupported %} <span class="badge badge-warn" data-tip="The encoding HandBrakeCLI doesn't know this setting and ignores it when encoding">ignored by the worker</span>{% endif %}{% endmacro %}
+
 {% macro field(f, name) %}
   {% set id = 'f-' ~ name %}
   <div class="field{{ ' field-wide' if f.kind in ('json', 'multi') or f.attrs.mono }}" {% if f.show %}data-show='{{ f.show|tojson }}'{% endif %}>
     {% if f.kind == 'bool' %}
-      <label class="check"><input type="checkbox" id="{{ id }}" name="{{ name }}" value="1" data-field="{{ f.key }}" {% if f.value %}checked{% endif %}> {{ f.label }}</label>
+      <label class="check"><input type="checkbox" id="{{ id }}" name="{{ name }}" value="1" data-field="{{ f.key }}" {% if f.value %}checked{% endif %}> {{ f.label }}{{ ignored(f) }}</label>
     {% else %}
-      <label for="{{ id }}">{{ f.label }}</label>
+      <label for="{{ id }}">{{ f.label }}{{ ignored(f) }}</label>
       {% if f.kind == 'select' %}
         <select id="{{ id }}" name="{{ name }}" data-field="{{ f.key }}"
                 {% if f.depends %}data-depends="{{ f.depends }}" data-map='{{ f.dmap|tojson }}' data-current="{{ '' if f.value is none else f.value }}"{% endif %}>
@@ -55,8 +57,23 @@
     <a class="button" href="{{ url_for('presets_page') }}">All presets</a>
   </div>
 </div>
-<p class="muted">Used by: {{ shares|join(', ') if shares else 'no share' }}{% if not caps.available %} · HandBrakeCLI isn't installed here, so the options below are generic lists and changes can't be checked.{% endif %}</p>
+<p class="muted">Used by: {{ shares|join(', ') if shares else 'no share' }}</p>
 {% if error %}<p class="flash error">{{ error }}</p>{% endif %}
+
+<details class="panel compat" {% if compat.notes or not caps.available %}open{% endif %}>
+  <summary>
+    {% if caps.available %}<strong>Encoding with {{ compat.worker }}</strong>{% else %}<strong>No HandBrakeCLI here and no worker has published one yet</strong>{% endif %}
+    {% if not caps.available %}<span class="badge badge-warn">generic lists, no checks</span>
+    {% elif compat.notes %}<span class="badge badge-warn">{{ compat.notes|length }} note{{ '' if compat.notes|length == 1 else 's' }}</span>
+    {% else %}<span class="badge badge-ok">fully supported</span>{% endif %}
+  </summary>
+  {% if compat.notes %}<ul class="compat-notes">{% for n in compat.notes %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
+  {% if compat.missing %}<p class="hint">This HandBrakeCLI also knows settings the editor has no field for: <code>{{ compat.missing|join('</code>, <code>')|safe }}</code>. Add them in the JSON below if you need them.</p>{% endif %}
+  <p class="hint">The choices below come from this HandBrakeCLI{% if remote %} (the worker publishes them when it starts; saving checks against them, the full check happens when encoding){% endif %}.
+    Options tied to a platform or hardware are marked (e.g. "macOS only", "needs an NVIDIA GPU"); a worker on another platform can't encode with them.
+    Settings marked "ignored by the worker" are unknown to this HandBrakeCLI (e.g. from a newer HandBrake app) and have no effect.
+    Options HandBrakeCLI only takes per job (time range, title, chapter range, …) aren't part of presets.</p>
+</details>
 
 <form method="post" class="panel preset-editor" data-preset-editor>
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">

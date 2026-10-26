@@ -154,6 +154,11 @@ replace_jobs() {
 }
 replace_jobs
 
+# What this worker's HandBrakeCLI supports, for the preset editor of a web UI that runs
+# elsewhere (e.g. in Docker while the Mac encodes). Only rewritten when HandBrakeCLI changed
+# (that takes ~20 s once), so it runs in the background and encoding doesn't wait for it.
+python3 "$BASE/encoding.py" handbrake-caps >> "$LOGS/encode.log" 2>&1 &!
+
 # ── Paused by "Stop all" in the web UI: wait for "Resume" ────────────────────
 # Replace jobs still run. After 10 minutes the worker exits; launchd or the Docker
 # loop start it again as long as batches are waiting.

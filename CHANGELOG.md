@@ -9,6 +9,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Preset editor shows compatibility with the HandBrakeCLI that encodes: its version and platform, notes for the preset (made with a newer HandBrake, settings that HandBrakeCLI ignores, values it doesn't offer), markers on fields it doesn't know, and platform or hardware notes on options (VideoToolbox and Apple AAC "macOS only", Media Foundation "Windows only", NVENC, Quick Sync, AMD). In the mixed setup the Mac worker publishes its HandBrakeCLI's capabilities (`handbrake-worker.json`, at start, only when HandBrakeCLI changed), so the editor offers e.g. VideoToolbox encoders and Apple AAC and checks against the Mac's HandBrakeCLI instead of the container's older one. New command `encoding.py preset-check [--worker]` prints the compatibility report.
+
 - Preset editor: fields for the settings of HandBrake 1.10 and later: color range, HDR dynamic metadata (HDR10+ / Dolby Vision), automatic audio track naming, and keeping the source's audio and subtitle track names. Old settings HandBrake still exports (`PictureAutoCrop`, `x264Option`, `x264UseAdvancedOptions`) are labeled as such under More.
 
 - The name suggested by **Replace…** ends with the encode's quality after the release group: `x265-donm.rf20` (constant quality) or `x265-donm.avg2000` (average bitrate in kbit/s). `encode.sh` records the preset and quality of every finished encode in `logs/encodes.tsv`; for older encodes the preset is looked up (queued with, share's, default). Setting `RENAME_QUALITY` (Settings → Replace, on by default).
