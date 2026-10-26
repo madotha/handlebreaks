@@ -9,6 +9,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Preset editor: fields for the settings of HandBrake 1.10 and later: color range, HDR dynamic metadata (HDR10+ / Dolby Vision), automatic audio track naming, and keeping the source's audio and subtitle track names. Old settings HandBrake still exports (`PictureAutoCrop`, `x264Option`, `x264UseAdvancedOptions`) are labeled as such under More.
+
 - The name suggested by **Replace…** ends with the encode's quality after the release group: `x265-donm.rf20` (constant quality) or `x265-donm.avg2000` (average bitrate in kbit/s). `encode.sh` records the preset and quality of every finished encode in `logs/encodes.tsv`; for older encodes the preset is looked up (queued with, share's, default). Setting `RENAME_QUALITY` (Settings → Replace, on by default).
 - Settings → Library: the shares as a compact list (name, folders with ✓/✗, preset, files, last scan), expandable to edit them, with icon buttons to edit, scan (initial or full rescan) and remove a share, and **+** to add one. Removing comments the share out, so its number stays reserved; the last share can't be removed.
 

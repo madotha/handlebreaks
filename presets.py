@@ -449,6 +449,9 @@ def langs(value):
 # nothing is lost. Choices come from the installed HandBrakeCLI (capabilities()).
 
 INTERNAL = {"ChildrenArray", "Default", "Folder", "FolderOpen", "Type", "PresetDisabled"}  # HandBrake app bookkeeping
+# Older settings HandBrake still exports for compatibility; shown under "More" with a note
+LEGACY = {"PictureAutoCrop": "replaced by Crop", "x264Option": "replaced by Extra encoder options",
+          "x264UseAdvancedOptions": "no longer used"}
 
 LABELS = {"off": "Off", "default": "Default", "custom": "Custom", "none": "None", "auto": "Automatic",
           "yadif": "Yadif", "decomb": "Decomb", "bwdif": "Bwdif", "nlmeans": "NLMeans", "hqdn3d": "HQDN3D",
@@ -579,6 +582,10 @@ def editor_schema(caps):
             F("VideoQSVDecode", "Intel Quick Sync decoding", "bool"),
             F("VideoColorMatrixCodeOverride", "Color matrix override", "int", "0 = as in the source.", min=0),
             F("VideoScaler", "Scaler", "select", ["swscale", "zscale"]),
+            F("VideoColorRange", "Color range", "select", {"auto": "Same as source", "limited": "Limited (TV, usual)", "full": "Full (PC)"}),
+            F("VideoPasshtruHDRDynamicMetadata", "Keep HDR dynamic metadata", "select",   # sic: HandBrake's key
+              {"off": "Off", "hdr10plus": "HDR10+", "dolbyvision": "Dolby Vision", "all": "HDR10+ and Dolby Vision"},
+              "Passes HDR10+ / Dolby Vision metadata of HDR sources through (HandBrake 1.10 and later)."),
         ]),
         ("Audio", [
             F("AudioTrackSelectionBehavior", "Tracks", "select", TRACK_BEHAVIORS),
@@ -587,6 +594,10 @@ def editor_schema(caps):
             F("AudioCopyMask", "Allowed passthru (copy)", "multi", copy_encoders,
               "Codecs that \"copy\" tracks keep as they are; other tracks use the fallback encoder."),
             F("AudioEncoderFallback", "Passthru fallback encoder", "select", plain_encoders + ["none"]),
+            F("AudioTrackNamePassthru", "Keep the source's track names", "bool"),
+            F("AudioAutomaticNamingBehavior", "Name tracks automatically", "select",
+              {"off": "Off", "unnamed": "Only tracks without a name", "all": "All tracks"},
+              "Names like \"Stereo\" or \"Surround 5.1\" (HandBrake 1.10 and later)."),
         ]),
         ("Subtitles", [
             F("SubtitleTrackSelectionBehavior", "Tracks", "select", TRACK_BEHAVIORS),
@@ -597,6 +608,7 @@ def editor_schema(caps):
             F("SubtitleBurnBehavior", "Burn in", "select", BURN_BEHAVIORS),
             F("SubtitleBurnBDSub", "Burn in Blu-ray subtitles (PGS)", "bool"),
             F("SubtitleBurnDVDSub", "Burn in DVD subtitles (VobSub)", "bool"),
+            F("SubtitleTrackNamePassthru", "Keep the source's track names", "bool"),
         ]),
     ]
 
@@ -655,7 +667,8 @@ def _generic(key, value):
     kind = ("bool" if isinstance(value, bool) else "int" if isinstance(value, int) else "float" if isinstance(value, float)
             else "langs" if isinstance(value, list) and all(isinstance(x, str) for x in value)
             else "text" if isinstance(value, str) or value is None else "json")
-    return dict(F(key, key, kind, mono=True), value=value)
+    label = f"{key} (old setting, {LEGACY[key]})" if key in LEGACY else key
+    return dict(F(key, label, kind, mono=True), value=value)
 
 
 def editor(preset, caps):
