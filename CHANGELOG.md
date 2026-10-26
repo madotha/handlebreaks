@@ -9,6 +9,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Status page: the lists show "Showing 100 of 250" with **Show more** when they have more than 100 entries (History, Awaiting review, Queue), keeping the filter and sort. On phones, where the table header is hidden, "Sort by" chips sort the lists.
 - Files page: the custom date range of the **Date added** filter uses date pickers (the browser's own, also on phones) instead of typed `dd.mm.yyyy` text. Future dates and a start after the end can't be picked. Older links with `dd.mm.yyyy` dates still work.
 - Status page with three tabs and live counts: **Queue** (encoding, waiting, removed), **Awaiting review** (finished encodes waiting for Replace…, also from earlier runs) and **History** (every encode result and finished replace, newest first, filterable by result, paged). Every row can be ticked in every tab.
   - Awaiting review: **Replace selected…** next to Replace all finished…
@@ -72,6 +73,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
+- Status page: the box with the three tabs no longer shows a scrollbar (the tab underline made it 1 px too tall), and on phones the tabs fit even with large counts ("Awaiting review" is shortened to "Review").
+- Phones: icon buttons no longer shrink to a sliver in a row (Edit and Export on the Presets page), long paths in the share cards of Settings → Library wrap next to the action icons instead of running under them, and the logo, collapsible section headers and preset names have larger touch targets.
+- Settings → Library: the "Output" heading was shown twice.
 - Files that finished or failed in the worker's current run no longer count as queued until the run ends. A file that just failed shows as offered with its red **Failed** marker right after the next scan (it stayed "Queued"), its checkbox on the Files page is no longer locked as "Already queued", and the status note and `encoding.py status` count only waiting and encoding files (finished ones were included).
 - A file that already finished (or failed) in the worker's current run can be queued again right away. It was refused as "already in the queue" until the run was over, because entries of finished files stay in the run's batch.
 - A scan saves its ffprobe results every 200 files. An interrupted scan (restart, closed terminal, unreachable NAS) keeps the probes done so far, and the next scan resumes with the remaining files instead of starting over. Files probed by an unfinished scan have no status until a scan completes.

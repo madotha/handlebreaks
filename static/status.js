@@ -37,6 +37,10 @@
     updateSelection();
     $("[data-queue-empty]").hidden = rows.children.length > 0;
     const next = r.headers.get("X-Next");
+    const shownBox = $("[data-queue-shown]");               // "Showing 100 of 250" while there is more
+    shownBox.hidden = !next;
+    shownBox.querySelector("[data-shown]").textContent = rows.children.length.toLocaleString();
+    shownBox.querySelector("[data-total]").textContent = Number(r.headers.get("X-Shown-Total") || 0).toLocaleString();
     let btn = $("[data-queue-more]");
     if (next) {
       if (!btn) {
@@ -46,7 +50,7 @@
         btn.textContent = "Show more";
         btn.setAttribute("data-queue-more", next);
         btn.addEventListener("click", () => reloadQueue(true));
-        rows.closest(".table-wrap").after(btn);
+        shownBox.after(btn);
       }
       btn.dataset.queueMore = next;
     } else if (btn) {

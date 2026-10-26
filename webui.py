@@ -132,8 +132,7 @@ def raw_config():
 def library_fields(cfg):
     """Settings fields of the library section below the share list (shares have their own
     forms, see share_list() and share_save())."""
-    return [("ENCODED", "Output", "heading", ""),
-            ("ENCODED_DIR", "Output folder", "paths", "Finished files land here and wait for your review.")]
+    return [("ENCODED_DIR", "Output folder", "paths", "Finished files land here and wait for your review.")]
 
 
 def share_list(cfg):

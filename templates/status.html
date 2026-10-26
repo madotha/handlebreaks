@@ -51,7 +51,7 @@
 <section class="panel">
   <nav class="view-tabs" aria-label="Status views">
     {% for key, label in views.items() %}
-      <a href="{{ url_for('status', view=key) }}" {% if key == q.view %}aria-current="page"{% endif %}>{{ label }} <span class="tab-count" data-count="{{ key }}">{{ q.counts.get(key, 0)|count }}</span></a>
+      <a href="{{ url_for('status', view=key) }}" {% if key == q.view %}aria-current="page"{% endif %}>{% if key == 'review' %}<span class="tab-long">{{ label }}</span><span class="tab-short">Review</span>{% else %}{{ label }}{% endif %} <span class="tab-count" data-count="{{ key }}">{{ q.counts.get(key, 0)|count }}</span></a>
     {% endfor %}
   </nav>
   <form class="filters queue-filter" method="get" data-queue-filter data-view="{{ q.view }}" data-sort="{{ q.sort.get('sort', '') }}" data-dir="{{ q.sort.get('dir', '') }}">
@@ -99,6 +99,11 @@
               onclick="return confirm('Delete the history data? This forgets every encode result (done, failed …), deletes finished batch files, logs of failed encodes and results of replace jobs, and all dismissals. Encoded files are not touched.')">Delete history data…</button>
     {% endif %}
   </form>
+  <nav class="sort-bar status-sort" aria-label="Sort the list">{# phones: the table header is hidden #}
+    <span class="muted small">Sort by</span>
+    {% for f in q.fields %}<a class="sort-chip{{ ' active' if q.sort_links[f][1] }}" href="{{ q.sort_links[f][0] }}"
+       aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(q.sort_links[f][1], 'none') }}">{{ q.fields[f] }}{% if q.sort_links[f][1] %} {{ q.sort_links[f][1] }}{% endif %}</a>{% endfor %}
+  </nav>
   {% if q.view == 'history' %}
   <form id="older-form" method="post" action="{{ url_for('status_dismiss') }}">{# own form: its select must not travel with the other buttons #}
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -117,6 +122,7 @@
     </table>
   </div>
   <p class="muted small" data-queue-empty {% if q.rows %}hidden{% endif %}>{{ {'queue': 'Nothing queued.', 'review': 'No finished encodes are waiting to be replaced.', 'history': 'No history yet.'}[q.view] }}</p>
+  <p class="muted small" data-queue-shown {% if not q.more_url %}hidden{% endif %}>Showing <span data-shown>{{ q.rows|length|count }}</span> of <span data-total>{{ q.shown_total|count }}</span></p>
   {% if q.more_url %}<button type="button" class="secondary" data-queue-more="{{ q.more_url }}">Show more</button>{% endif %}
   <p class="hint">
     {% if q.view == 'queue' %}Only waiting entries can be removed. Removed entries of the current run show as "Removed" and are skipped by the worker. Finished files move to Awaiting review (encodes) or History (every result).
