@@ -93,6 +93,8 @@ SETTINGS = {
          "\"Replace…\" suggests the original name with its codec tag (h264, x264, H.264, AVC, XviD …) "
          "replaced by the encode's codec. Format: codec=tag pairs, e.g. \"hevc=x265 av1=AV1\". "
          "Empty = hevc=x265 av1=AV1 vvc=VVC h264=x264."),
+        ("RENAME_QUALITY", "Add the quality after the release group (e.g. x265-donm.rf20 or x265-donm.avg2000)", "bool",
+         "From the preset the file was encoded with: rf<RF value> for constant quality, avg<kbit/s> for average bitrate."),
         ("RENAME_GROUP", "Your release group", "text",
          "Optional. Replaces the release group after the codec tag, e.g. \"donm\": "
          "\"…h264-NTB.mkv\" becomes \"…x265-donm.mkv\". Empty = keep the original group."),
@@ -124,26 +126,63 @@ def raw_config():
 
 
 def library_fields(cfg):
-    """Settings fields of the library section: name, folder and preset of every share,
-    an empty group to add a share, and the output folder."""
-    fields = []
-    for sh in enc.shares(enc.parse_config(enc.CONFIG_FILE)) if enc.CONFIG_FILE.exists() else []:
+    """Settings fields of the library section below the share list (shares have their own
+    forms, see share_list() and share_save())."""
+    return [("ENCODED", "Output", "heading", ""),
+            ("ENCODED_DIR", "Output folder", "paths", "Finished files land here and wait for your review.")]
+
+
+def share_list(cfg):
+    """The shares for the Library settings: config values as written, path checks, preset
+    name, number of files and last scan."""
+    info = share_info()
+    names = dict(preset_choices())
+    out = []
+    for sh in enc.shares(cfg):
         n = sh["n"]
-        fields += [
-            (f"SHARE_{n}", f"Share {n}", "heading", f"share{n}"),
-            (f"SHARE_{n}_NAME", "Name", "text", "Shown in the web UI, the notes and the CLI."),
-            (f"SHARE_{n}", "Folder", "paths", "Read only, never modified. Clear it to remove the share."),
-            (f"SHARE_{n}_PRESET", "Preset", "share_preset", ""),
-        ]
-    fields += [
-        ("SHARE_new", f"Add a share (saved as share {enc.next_share_number()})", "heading", ""),
-        ("SHARE_new_NAME", "Name", "text", "Optional. Defaults to the folder name."),
-        ("SHARE_new", "Folder", "paths_new", "Optional."),
-        ("SHARE_new_PRESET", "Preset", "share_preset", ""),
-        ("ENCODED", "Output", "heading", ""),
-        ("ENCODED_DIR", "Output folder", "paths", "Finished files land here and wait for your review."),
-    ]
-    return fields
+        preset = cfg.get(f"SHARE_{n}_PRESET", "")
+        out.append(dict(sh, folder=cfg.get(f"SHARE_{n}", ""), raw_name=cfg.get(f"SHARE_{n}_NAME", ""),
+                        checks=path_checks(cfg.get(f"SHARE_{n}", "")), preset_id=preset,
+                        preset_name=names.get(preset, preset) if preset else None,
+                        **info.get(sh["prefix"], {"files": 0, "scanned": None})))
+    return out
+
+
+@app.route("/settings/shares/<n>", methods=["POST"])
+def share_save(n):
+    """Add a share (n = "new", gets the next free number) or change one."""
+    cfg = raw_config()
+    if n != "new" and (not n.isdigit() or not cfg.get(f"SHARE_{n}")):
+        abort(404)
+    folder, name, preset = (request.form.get(k, "").strip() for k in ("folder", "name", "preset"))
+    problem = ("Enter the share's folder. To remove a share, use its delete button." if not folder else
+               'Not allowed: " ` \\ line breaks and $ (except $HOME).' if any(FORBIDDEN_RE.search(v) for v in (folder, name)) else
+               "Unknown preset." if preset and preset not in dict(preset_choices()) else None)
+    if problem:
+        flash(problem, "error")
+        return redirect(url_for("settings", section="library", open=f"share{n}" if n != "new" else "new"))
+    num = enc.next_share_number() if n == "new" else int(n)
+    name = name or Path(enc.path_list(os.path.expandvars(folder))[0]).name or f"Share {num}"
+    enc.write_config({f"SHARE_{num}": folder, f"SHARE_{num}_NAME": name, f"SHARE_{num}_PRESET": preset})
+    flash(f"Share \"{name}\" {'added' if n == 'new' else 'saved'}."
+          + (" Start its initial scan with the scan button." if n == "new" else ""), "ok")
+    return redirect(url_for("settings", section="library"))
+
+
+@app.route("/settings/shares/<int:n>/delete", methods=["POST"])
+def share_delete(n):
+    """Remove a share: its settings are commented out, so its number stays reserved."""
+    cfg = raw_config()
+    current = enc.shares(cfg)
+    share = next((s for s in current if s["n"] == n), None)
+    if not share:
+        abort(404)
+    if len(current) == 1:
+        flash("At least one share is needed. Add another one before removing this one.", "error")
+    else:
+        enc.write_config({f"SHARE_{n}": None, f"SHARE_{n}_NAME": None, f"SHARE_{n}_PRESET": None})
+        flash(f"Removed {share['name']}. Its files disappear from the list with the next scan.", "ok")
+    return redirect(url_for("settings", section="library"))
 
 
 def path_checks(value):
@@ -999,7 +1038,8 @@ def replace_suggest():
     if not encoded:
         return {"error": "No finished encode of this file in the output folder."}, 404
     codec = enc.probe(enc_dir / encoded)["video_codec"] if enc.FFPROBE else None
-    return {"name": enc.suggest_name(key.rsplit("/", 1)[-1], encoded, codec), "codec": codec}
+    quality = enc.encode_quality(key)
+    return {"name": enc.suggest_name(key.rsplit("/", 1)[-1], encoded, codec, quality), "codec": codec, "quality": quality}
 
 
 BULK_REPLACE_MAX = 500                          # files per bulk replace
@@ -1030,7 +1070,8 @@ def replace_preview():
         codecs = list(pool.map(lambda e: enc.probe(enc_dir / e)["video_codec"] if enc.FFPROBE else None,
                                [e for _, e in rows]))
     items = [{"key": k, "short": enc.short(k), "original": k.rsplit("/", 1)[-1], "encoded": e,
-              "suggested": enc.suggest_name(k.rsplit("/", 1)[-1], e, c)} for (k, e), c in zip(rows, codecs)]
+              "suggested": enc.suggest_name(k.rsplit("/", 1)[-1], e, c, enc.encode_quality(k))}
+             for (k, e), c in zip(rows, codecs)]
     return {"items": items, "left_out": len(keys) - len(items), "limit": BULK_REPLACE_MAX}
 
 
@@ -1506,23 +1547,6 @@ def settings(section):
                 val = str(int(val)) if re.fullmatch(r"\d{1,6}", val) else (val or "0")
             if not key.startswith("SHARE_new"):
                 updates[key] = val
-        # Shares whose folder was cleared are removed (commented out, number stays reserved)
-        for key in [k for k in updates if re.fullmatch(r"SHARE_\d+", k)]:
-            if not updates[key]:
-                removed.append(updates.get(f"{key}_NAME") or key)
-                for k in (key, f"{key}_NAME", f"{key}_PRESET"):
-                    updates[k] = None
-        if section == "library":
-            new_folder = request.form.get("SHARE_new", "").strip()
-            if new_folder and not FORBIDDEN_RE.search(new_folder):
-                n = enc.next_share_number()
-                updates[f"SHARE_{n}"] = new_folder
-                updates[f"SHARE_{n}_NAME"] = (request.form.get("SHARE_new_NAME", "").strip()
-                                             or Path(enc.path_list(os.path.expandvars(new_folder))[0]).name)
-                updates[f"SHARE_{n}_PRESET"] = request.form.get("SHARE_new_PRESET", "")
-            remaining = [k for k, v in updates.items() if re.fullmatch(r"SHARE_\d+", k) and v]
-            if not remaining:
-                errors["SHARE_new"] = "At least one share is needed."
         if not errors:
             enc.write_config(updates)
             msg = f"{title}: saved."
@@ -1538,6 +1562,8 @@ def settings(section):
         checks={k: path_checks(cfg.get(k) or "") for k, _, t, _ in fields if t in ("paths", "path")},
         preset_list=preset_choices(), default_preset=presets.name_of(cfg.get("DEFAULT_PRESET", "")),
         share_info=share_info() if section == "library" else {},
+        shares=share_list(cfg) if section == "library" else [], open_share=request.args.get("open", ""),
+        next_share=enc.next_share_number() if section == "library" else None,
         plex_status=plex_status(cfg) if section == "plex" else None,
         config_file=enc.CONFIG_FILE, config_exists=enc.CONFIG_FILE.exists(),
         env_overrides={k: os.environ[k] for k, _, _, _ in fields if k in ENV_OVERRIDES and k in os.environ})

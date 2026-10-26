@@ -125,6 +125,7 @@ LOG_DIR      = DATA_DIR / "logs"
 RESULTS_FILE = LOG_DIR / "results.tsv"
 CURRENT_FILE = LOG_DIR / "current.txt"
 RUN_FILE     = LOG_DIR / "run.txt"            # batch file names of the worker's current run, in order
+ENCODES_FILE = LOG_DIR / "encodes.tsv"        # date, key, preset id, quality of every finished encode
 PROGRESS_LOG = LOG_DIR / "progress.log"
 
 # Find ffprobe even when launchd or another caller sets a minimal PATH
@@ -615,8 +616,9 @@ def clear_results():
     with closing(connect()) as con, con:
         n = con.execute("DELETE FROM results").rowcount
         con.execute("INSERT OR REPLACE INTO meta VALUES ('results_offset', '0')")
-    if RESULTS_FILE.exists():
-        RESULTS_FILE.write_bytes(b"")       # truncate: encode.sh appends to the same file
+    for f in (RESULTS_FILE, ENCODES_FILE):
+        if f.exists():
+            f.write_bytes(b"")              # truncate: encode.sh appends to the same files
     for d, pattern in ((DONE_DIR, "*.txt"), (LOG_DIR, "fail-*.log")):
         for f in d.glob(pattern) if d.exists() else []:
             f.unlink(missing_ok=True)
@@ -682,13 +684,46 @@ def codec_tags():
     return tags
 
 
-def suggest_name(original_name, encoded_name, codec=None):
+def encode_quality(key):
+    """Quality of the finished encode of key ("rf20", "avg2000"), or None. encode.sh records it
+    in encodes.tsv; for older encodes the preset is looked up: the one chosen when queueing
+    (latest batch with the key), the share's, the default."""
+    if ENCODES_FILE.exists():
+        found = None
+        for line in ENCODES_FILE.read_text(encoding="utf-8").splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 4 and parts[1] == key and parts[3]:
+                found = parts[3]
+        if found:
+            return found
+    preset_id = None
+    for d in (DONE_DIR, PROC_DIR, QUEUE_DIR):
+        for f in sorted(d.glob("*.txt"), reverse=True) if d.exists() else []:
+            for _, k, p in read_batch(f):
+                if k == key:
+                    preset_id = p
+                    break
+            if preset_id is not None:
+                break
+        if preset_id is not None:
+            break
+    if not preset_id:
+        preset_id = CONFIG.get(f"SHARE_{key.split('/', 1)[0][5:]}_PRESET") or CONFIG.get("DEFAULT_PRESET")
+    try:
+        return presets.quality_tag(presets.load(preset_id)) if preset_id else None
+    except Exception:
+        return None
+
+
+def suggest_name(original_name, encoded_name, codec=None, quality=None):
     """Suggested name for an encode replacing original_name: the last codec tag (h264,
     x264, H.264, AVC, XviD …) becomes the tag of the encode's codec (codec_tags(); an
     unknown codec counts as hevc), and with RENAME_GROUP set, the release group right
-    after it ("-NTB") becomes "-<RENAME_GROUP>". A name without a codec tag but with a
-    release group at the end gets the tag before the group ("WEBRip-LAMA" ->
-    "WEBRip.x265-LAMA"); other names stay as they are. The extension follows the encode."""
+    after it ("-NTB") becomes "-<RENAME_GROUP>". With a quality ("rf20", "avg2000") and
+    RENAME_QUALITY on (default), it follows the release group: "x265-donm.rf20". A name
+    without a codec tag but with a release group at the end gets the tag before the group
+    ("WEBRip-LAMA" -> "WEBRip.x265-LAMA.rf20"); other names stay as they are. The extension
+    follows the encode."""
     stem = Path(original_name).stem
     ext = Path(encoded_name).suffix
     m = None
@@ -696,13 +731,17 @@ def suggest_name(original_name, encoded_name, codec=None):
         pass
     tag = codec_tags().get((codec or "hevc").lower())
     group = str(CONFIG.get("RENAME_GROUP", "")).strip().strip("-")
+    q = f".{quality}" if quality and str(CONFIG.get("RENAME_QUALITY", "1")).strip() != "0" else ""
     if m and tag:
         rest = stem[m.end():]
-        if group and GROUP_RE.match(rest):
-            rest = GROUP_RE.sub("-" + group, rest, count=1)
+        g = GROUP_RE.match(rest)
+        if g:                                   # codec-group[.quality]
+            rest = ("-" + group if group else g.group(0)) + q + rest[g.end():]
+        else:
+            rest = q + rest
         stem = stem[:m.start()] + tag + rest
     elif tag and (g := END_GROUP_RE.search(stem)):
-        stem = stem[:g.start()] + "." + tag + ("-" + group if group else g.group(0)) + stem[g.end():]
+        stem = stem[:g.start()] + "." + tag + ("-" + group if group else g.group(0)) + q + stem[g.end():]
     return stem + ext
 
 

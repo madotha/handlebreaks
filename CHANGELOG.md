@@ -9,6 +9,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- The name suggested by **Replace…** ends with the encode's quality after the release group: `x265-donm.rf20` (constant quality) or `x265-donm.avg2000` (average bitrate in kbit/s). `encode.sh` records the preset and quality of every finished encode in `logs/encodes.tsv`; for older encodes the preset is looked up (queued with, share's, default). Setting `RENAME_QUALITY` (Settings → Replace, on by default).
+- Settings → Library: the shares as a compact list (name, folders with ✓/✗, preset, files, last scan), expandable to edit them, with icon buttons to edit, scan (initial or full rescan) and remove a share, and **+** to add one. Removing comments the share out, so its number stays reserved; the last share can't be removed.
+
 - Preset editor with every HandBrake setting, in the tabs of the HandBrake app: Summary, Dimensions (crop, size, anamorphic, rotation, borders), Filters (detelecine, interlace detection, deinterlace, denoise, chroma smooth, sharpen, deblock, color space, grayscale), Video (also tune, profile, level, multi-pass, frame rate mode, extra encoder options, hardware decoding, scaler), Audio (passthru, fallback, any number of tracks with all their settings) and Subtitles; other settings under More. Choices (encoders and their speeds, tunes, profiles and levels, filter presets and tunes, sample rates, dither) come from the installed HandBrakeCLI and follow each other (e.g. the tunes of the chosen encoder). Saving an unchanged form changes nothing.
 
 - Docker: `WEB_BIND` in `.env` sets who can reach the web UI (default `127.0.0.1` = this machine only; `0.0.0.0` = the whole network, without a login).

@@ -1,5 +1,30 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Settings{% endblock %}
+
+{# Form of one share (n = its number, or "new") #}
+{% macro share_form(sh, n) %}
+  <form class="share-form" method="post" action="{{ url_for('share_save', n=n) }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <div class="grid-3">
+      <div class="field"><label for="name-{{ n }}">Name</label>
+        <input id="name-{{ n }}" name="name" value="{{ sh.raw_name if sh else '' }}" placeholder="{{ 'the folder name' if not sh else '' }}">
+        <p class="hint">Shown in the web UI, the notes and the CLI.</p></div>
+      <div class="field field-wide"><label for="folder-{{ n }}">Folder</label>
+        <input id="folder-{{ n }}" name="folder" class="mono" value="{{ sh.folder if sh else '' }}" required spellcheck="false" autocomplete="off">
+        <p class="hint">Read only, never modified. Several paths for the same folder (e.g. on the Mac and in Docker) separated by <code>:</code>; the first that exists is used.</p></div>
+      <div class="field"><label for="preset-{{ n }}">Preset</label>
+        <select id="preset-{{ n }}" name="preset">
+          <option value="">Default preset ({{ default_preset }})</option>
+          {% for pid, name in preset_list %}<option value="{{ pid }}" {% if sh and sh.preset_id == pid %}selected{% endif %}>{{ name }}</option>{% endfor %}
+        </select></div>
+    </div>
+    <div class="row-actions">
+      <button>{{ 'Add share' if n == 'new' else 'Save' }}</button>
+      <button type="button" class="secondary" data-share-cancel>Cancel</button>
+    </div>
+  </form>
+{% endmacro %}
 {% block content %}
 <h1>Settings</h1>
 <div class="settings">
@@ -9,8 +34,57 @@
     {% endfor %}
   </nav>
 
+  <div class="settings-main">
+  {% if section == 'library' %}
+  <section class="panel shares-panel">
+    <div class="page-head">
+      <h2>Shares <span class="muted small">{{ shares|length }}</span></h2>
+      <button type="button" class="icon-btn icon-lg" data-share-add aria-label="Add a share" data-tip="Add a share">{{ icon('plus') }}</button>
+    </div>
+    <div class="share-list">
+      {% for sh in shares %}
+        <details class="share-card" id="share{{ sh.n }}" {% if open_share == sh.prefix %}open{% endif %}>
+          <summary>
+            <span class="share-main">
+              <span class="share-name">{{ sh.name }} <span class="muted small">share {{ sh.n }}</span></span>
+              <span class="share-paths">{% for p, ok in sh.checks %}<span class="{{ 'ok' if ok else 'missing' }}" title="{{ 'Reachable' if ok else 'Not reachable here' }}">{{ '✓' if ok else '✗' }} {{ p }}</span>{% endfor %}</span>
+            </span>
+            <span class="share-meta">
+              <span>{{ sh.preset_name or 'Default preset' }}</span>
+              <span>{% if sh.files %}{{ sh.files|count }} files · {{ sh.scanned|localtime if sh.scanned else 'scanned before 3.0' }}{% else %}not scanned yet{% endif %}</span>
+            </span>
+            <span class="share-actions">
+              <button type="button" class="icon-btn icon-lg" data-share-edit aria-label="Edit {{ sh.name }}" data-tip="Edit">{{ icon('edit') }}</button>
+              {% if sh.files %}
+                <button class="icon-btn icon-lg" form="share-action" formaction="{{ url_for('start_scan') }}" name="share" value="{{ sh.prefix }}:force"
+                        aria-label="Full rescan" data-tip="Full rescan (re-reads all {{ sh.files|count }} files with ffprobe)" {% if scan_state.running %}disabled{% endif %}
+                        onclick="return confirm('Re-read all {{ sh.files }} files of {{ sh.name }} with ffprobe? This takes about {{ ((sh.files * 0.03) / 60)|round(0, 'ceil')|int }} min or more.')">{{ icon('refresh') }}</button>
+              {% else %}
+                <button class="icon-btn icon-lg" form="share-action" formaction="{{ url_for('start_scan') }}" name="share" value="{{ sh.prefix }}"
+                        aria-label="Initial scan" data-tip="Initial scan of this share" {% if scan_state.running %}disabled{% endif %}>{{ icon('refresh') }}</button>
+              {% endif %}
+              <button class="icon-btn icon-lg danger-icon" form="share-action" formaction="{{ url_for('share_delete', n=sh.n) }}"
+                      aria-label="Remove {{ sh.name }}" data-tip="Remove this share" {% if shares|length == 1 %}disabled{% endif %}
+                      onclick="return confirm('Remove the share {{ sh.name }}? Its files disappear from the list with the next scan; the folder itself is not touched.')">{{ icon('trash') }}</button>
+            </span>
+          </summary>
+          {{ share_form(sh, sh.n) }}
+        </details>
+      {% endfor %}
+      <details class="share-card share-new" id="share-new" {% if open_share == 'new' or not shares %}open{% else %}hidden{% endif %}>
+        <summary><span class="share-main"><span class="share-name">New share <span class="muted small">will be share {{ next_share }}</span></span></span></summary>
+        {{ share_form(none, 'new') }}
+      </details>
+    </div>
+    <form id="share-action" method="post" hidden>
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="next" value="{{ url_for('settings', section='library') }}">
+    </form>
+  </section>
+  {% endif %}
+
   <form class="panel" method="post">
-    <h2>{{ title }}</h2>
+    <h2>{{ 'Output' if section == 'library' else title }}</h2>
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <input type="hidden" name="next" value="{{ request.path }}">
     <button class="visually-hidden" tabindex="-1" aria-hidden="true">Save</button>{# default for Enter: save, not scan #}
@@ -66,5 +140,28 @@
     <button>Save</button>
     <p class="hint">Saved to <code>{{ config_file }}</code>. <code>$HOME</code> is allowed, but no other <code>$</code>, no quotes and no backslash.</p>
   </form>
+  </div>
 </div>
+{% if section == 'library' %}
+<script>
+  // Share list: the edit button opens a share, Cancel closes it, + shows the new share
+  (function () {
+    const list = document.querySelector(".share-list");
+    list.addEventListener("click", (e) => {
+      const card = e.target.closest(".share-card");
+      if (e.target.closest("[data-share-edit]")) { e.preventDefault(); card.open = !card.open; }
+      if (e.target.closest("[data-share-cancel]")) {
+        card.open = false;
+        card.querySelector("form").reset();
+        if (card.classList.contains("share-new")) card.hidden = true;
+      }
+    });
+    document.querySelector("[data-share-add]").addEventListener("click", () => {
+      const card = document.getElementById("share-new");
+      card.hidden = false; card.open = true;
+      card.querySelector('[name="folder"]').focus();
+    });
+  })();
+</script>
+{% endif %}
 {% endblock %}

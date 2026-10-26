@@ -214,14 +214,18 @@ for b in $batches; do
 
     preset_id="${override:-${SHARE_PRESET[$prefix]:-$DEFAULT_PRESET}}"
     preset_file="$PRESET_DIR/$preset_id.json"
-    # Name and container of the preset (HandBrake export JSON with one preset)
+    # Name, container and quality ("rf20" or "avg2000", same as presets.quality_tag) of the
+    # preset (HandBrake export JSON with one preset)
     preset_info=$(python3 -c 'import json, sys
 p = json.load(open(sys.argv[1]))["PresetList"][0]
-print(p["PresetName"]); print({"av_mp4": "mp4", "av_webm": "webm"}.get(p.get("FileFormat"), "mkv"))' "$preset_file" 2>/dev/null)
+print(p["PresetName"]); print({"av_mp4": "mp4", "av_webm": "webm"}.get(p.get("FileFormat"), "mkv"))
+print("avg%d" % int(p.get("VideoAvgBitrate") or 0) if p.get("VideoQualityType", 2) == 1
+      else "rf" + format(float(p.get("VideoQualitySlider") or 0), "g"))' "$preset_file" 2>/dev/null)
     if [[ -z "$preset_info" ]]; then
       log "Preset '$preset_id' not found or unreadable: $key"; result FAIL "$key"; continue
     fi
-    preset_name="${preset_info%$'\n'*}"; ext="${preset_info##*$'\n'}"
+    info=("${(@f)preset_info}")
+    preset_name=$info[1]; ext=$info[2]; quality=$info[3]
 
     stem="${${src:t}:r}"
     out="$OUT/$stem.$ext"
@@ -275,6 +279,8 @@ print(p["PresetName"]); print({"av_mp4": "mp4", "av_webm": "webm"}.get(p.get("Fi
       done
       if (( moved )); then
         log "  done: $out"; result OK "$key"
+        # which preset and quality made this encode (for the name suggested by Replace…)
+        print -r -- "$(date '+%Y-%m-%d %H:%M')	$key	$preset_id	$quality" >> "$LOGS/encodes.tsv"
       else
         log "  FAILED: encoded, but the file couldn't be moved; it stays in $tmp: $key"; result FAIL "$key"
       fi

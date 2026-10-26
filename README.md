@@ -352,6 +352,7 @@ All machine-specific settings live in `config.env` in the data folder. It is cre
 | `SCAN_INTERVAL` | Automatic rescan of all shares, in **minutes**: a scan starts once the last scan is that old. `0` (default) = off. See [Automatic rescan](#automatic-rescan). |
 | `WORKER_ENABLED` | Docker only: `1` encodes in the container, `0` only runs web UI and scans |
 | `RENAME_CODEC_TAGS` | Tag per codec for the name suggested by **Replace…**, as `codec=tag` pairs. Empty = `hevc=x265 av1=AV1 vvc=VVC h264=x264`. |
+| `RENAME_QUALITY` | `1` (default) adds the encode's quality after the release group in the suggested name: `.rf20` for constant quality, `.avg2000` for average bitrate. `0` = off. |
 | `RENAME_GROUP` | Optional: your release group, replacing the original one after the codec tag in the suggested name (e.g. `donm`). Empty = keep it. |
 | `PLEX_URL`, `PLEX_TOKEN` | Optional: Plex server address(es) and token, so Plex is refreshed after **Replace…**. See [Connecting Plex](#connecting-plex). |
 
@@ -407,7 +408,7 @@ Presets are stored as HandBrake export files in `presets/` in the data folder, n
 
 Finished encodes wait in the output folder for your review. When you're happy with one, click **Replace…** next to the original on the **Files** page, or next to the finished entry on the **Status** page (in the queue and in "Latest results"; entries already replaced show "Replaced"):
 
-1. Choose the file name. It's pre-filled with a suggestion: the original name with its codec tag (`h264`, `x264`, `H.264`, `AVC`, `XviD` …) changed to the encode's codec, e.g. `…WEB.h264-NTB.mkv` → `…WEB.x265-NTB.mkv`. Names without a codec tag get it before the release group (`…WEBRip-LAMA` → `…WEBRip.x265-LAMA`); others keep their name. With `RENAME_GROUP` set, the release group is replaced with yours. The extension follows the encoded container (e.g. `.mp4` → `.mkv`). Edit the name as you like; with the same name Plex analyzes the item again, with a new name it scans the folder.
+1. Choose the file name. It's pre-filled with a suggestion: the original name with its codec tag (`h264`, `x264`, `H.264`, `AVC`, `XviD` …) changed to the encode's codec, e.g. `…WEB.h264-NTB.mkv` → `…WEB.x265-NTB.mkv`. Names without a codec tag get it before the release group (`…WEBRip-LAMA` → `…WEBRip.x265-LAMA`); others keep their name. With `RENAME_GROUP` set, the release group is replaced with yours, and the quality of the preset the file was encoded with follows it (`…x265-donm.rf20.mkv`, or `…x265-donm.avg2000.mkv` for an average bitrate preset; `RENAME_QUALITY=0` turns that off). The extension follows the encoded container (e.g. `.mp4` → `.mkv`). Edit the name as you like; with the same name Plex analyzes the item again, with a new name it scans the folder.
 2. Choose whether to keep the original in `<output folder>/.replaced/` (default, same folder structure as in the share) or delete it.
 To replace several files at once, tick them (or whole folders) on the **Files** page and click **Replace selected…**, or click **Replace all finished…** on the **Status** page. The list shows every file with a finished encode and its suggested name, which you can edit per file; Plex is then refreshed once per folder.
 

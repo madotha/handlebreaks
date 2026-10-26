@@ -763,6 +763,14 @@ def apply_form(preset, form, caps=None):
     return p
 
 
+def quality_tag(preset):
+    """The preset's quality for file names: "rf20" (constant quality) or "avg2000" (average
+    bitrate in kbit/s). encode.sh computes the same when it encodes."""
+    if preset.get("VideoQualityType", 2) == 1:
+        return "avg%d" % int(preset.get("VideoAvgBitrate") or 0)
+    return "rf" + format(float(preset.get("VideoQualitySlider") or 0), "g")
+
+
 def summary(preset):
     """One-line description of the key settings."""
     q = (f"RF {preset.get('VideoQualitySlider')}" if preset.get("VideoQualityType", 2) == 2
