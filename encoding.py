@@ -580,15 +580,10 @@ def queued_entries():
     return [(k, p) for f, k, p in batch_entries() if (f.name, k) not in cancelled]
 
 
-def queued_keys():
-    """All keys waiting in queue/ or processing/ to be encoded."""
-    return [k for k, _ in queued_entries()]
-
-
 def pending_keys():
-    """Keys still to be encoded: waiting or being encoded now. Unlike queued_keys() this
-    leaves out entries of the current run that already finished (they stay in processing/
-    until their batch is done), so such a file can be queued again."""
+    """Keys still to be encoded: waiting or being encoded now. Entries of the current run
+    that already finished (they stay in processing/ until their batch is done) don't
+    count, so such a file is offered and can be queued again."""
     return {i["key"] for i in queue_items() if i["state"] in ("waiting", "encoding")}
 
 
@@ -1169,7 +1164,7 @@ def share_scans():
 def _scan(state, probe_files, only=None, force=False, path=None):
     enc_dir = first_existing(ENCODED_CANDIDATES)
     done_stems = encoded_stems(enc_dir)
-    in_queue = set(queued_keys())
+    in_queue = pending_keys()                   # not the finished entries of the current run: they leave the queue
     results = load_results()
     baseline = set(state["baseline"])
     skipped = state["skipped"]
@@ -1484,7 +1479,7 @@ def resume_queue():
 
 
 def status_text():
-    q = queued_keys()
+    q = pending_keys()
     lines = []
     cur = current_progress()
     if cur:
@@ -1495,7 +1490,7 @@ def status_text():
     if not lines:
         lines.append("No encode running.")
     if q:
-        lines.append(f"{len(q)} file(s) queued in total (including the current one).")
+        lines.append(f"{len(q)} file(s) waiting or encoding.")
     res = load_results()
     recent = sorted(res.items(), key=lambda kv: kv[1][1], reverse=True)[:5]
     if recent:

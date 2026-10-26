@@ -864,7 +864,7 @@ def files():
             shown = con.execute(f"SELECT COUNT(*) FROM files{clause}", params).fetchone()[0]
     else:
         shown = total
-    queued = set(enc.queued_keys())
+    queued = enc.pending_keys()
     # Folder contents only change with the database or the queue: the browser keeps loaded
     # folders for this version (files.js), so reopening them after a reload needs no request
     version = hashlib.sha1(repr((STARTED, enc.db_version(), sorted(queued), activity_version())).encode()).hexdigest()[:12]
@@ -897,7 +897,7 @@ def files_folder():
     path = request.args.get("path", "").strip("/")
     offset = max(int(request.args.get("offset", 0) or 0), 0)
     dir_offset = max(int(request.args.get("dirs", 0) or 0), 0)
-    ctx = level_context(path, file_filters(request.args), set(enc.queued_keys()), offset, sort_args(request.args),
+    ctx = level_context(path, file_filters(request.args), enc.pending_keys(), offset, sort_args(request.args),
                         dir_offset)
     if request.args.get("rows"):
         resp = app.make_response(squeeze(render_template("_file_rows.html", **ctx)))
