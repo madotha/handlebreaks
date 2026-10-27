@@ -4,7 +4,7 @@
 // changes, on "Refresh", or when the filter changes.
 (function () {
   const script = document.currentScript;
-  const liveUrl = script.dataset.liveUrl, queueUrl = script.dataset.queueUrl;
+  const liveUrl = script.dataset.liveUrl, queueUrl = script.dataset.queueUrl, moveUrl = script.dataset.moveUrl;
   const $ = (sel) => document.querySelector(sel);
   const panel = $("[data-current-panel]");
   const rows = $("[data-queue-rows]");
@@ -77,6 +77,70 @@
     rows.querySelectorAll('input[name="key"]').forEach((c) => { c.checked = selectAll.checked; });
     updateSelection();
   });
+
+  // Changing the order of waiting entries (Queue tab): the arrow buttons and dragging a row's
+  // handle. Ticked rows move together when the row you grab is ticked. "Move to top / bottom"
+  // are ordinary buttons of the #bulk form.
+  async function move(op, keys, target) {
+    const body = new URLSearchParams({ csrf: $("#bulk input[name=csrf]").value, op, json: "1", target: target || "" });
+    keys.forEach((k) => body.append("key", k));
+    const r = await fetch(moveUrl, { method: "POST", body });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) alert(j.message || "The entries could not be moved.");
+    await reloadQueue();
+  }
+  const keysOf = (tr) => {
+    const box = tr.querySelector('input[name="key"]');
+    return box && box.checked ? [...rows.querySelectorAll('input[name="key"]:checked')].map((c) => c.value) : [tr.dataset.key];
+  };
+  rows.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-move]");
+    if (b) move(b.dataset.move, keysOf(b.closest("tr")));
+  });
+
+  let dragKeys = null;
+  const clearDrop = () => rows.querySelectorAll(".drop-before, .drop-after, .dragging")
+    .forEach((r) => r.classList.remove("drop-before", "drop-after", "dragging"));
+  // Where a drop on this row lands: the key to insert before ("" = the end), or null if
+  // that place isn't known (the end of a list with more rows to load)
+  function dropTarget(tr, after) {
+    if (!after) return tr.dataset.key;
+    let next = tr.nextElementSibling;
+    while (next && !next.matches("[data-waiting]")) next = next.nextElementSibling;
+    if (next) return next.dataset.key;
+    return $("[data-queue-more]") ? null : "";
+  }
+  rows.addEventListener("dragstart", (e) => {
+    const grip = e.target.closest && e.target.closest("[data-grip]");
+    if (!grip) return;
+    const tr = grip.closest("tr");
+    dragKeys = keysOf(tr);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", dragKeys.join("\n"));
+    e.dataTransfer.setDragImage(tr, 12, 12);
+    tr.classList.add("dragging");
+  });
+  rows.addEventListener("dragover", (e) => {
+    const tr = dragKeys && e.target.closest("tr[data-waiting]");
+    if (!tr) return;
+    const after = e.clientY > tr.getBoundingClientRect().top + tr.offsetHeight / 2;
+    const target = dropTarget(tr, after);
+    rows.querySelectorAll(".drop-before, .drop-after").forEach((r) => r.classList.remove("drop-before", "drop-after"));
+    if (target === null || dragKeys.includes(tr.dataset.key)) return;
+    e.preventDefault();
+    tr.classList.add(after ? "drop-after" : "drop-before");
+  });
+  rows.addEventListener("drop", (e) => {
+    const tr = dragKeys && e.target.closest("tr[data-waiting]");
+    if (!tr) return;
+    e.preventDefault();
+    const target = dropTarget(tr, e.clientY > tr.getBoundingClientRect().top + tr.offsetHeight / 2);
+    const keys = dragKeys;
+    clearDrop();
+    dragKeys = null;
+    if (target !== null && !keys.includes(tr.dataset.key)) move("before", keys, target);
+  });
+  rows.addEventListener("dragend", () => { clearDrop(); dragKeys = null; });
 
   async function poll(force) {
     if (running) return;

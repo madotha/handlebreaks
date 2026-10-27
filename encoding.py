@@ -1340,7 +1340,8 @@ QUEUE_STATES = {"encoding": "Encoding", "waiting": "Waiting", "removed": "Remove
 
 def queue_items():
     """Every entry of the current run and the queue, in the order encode.sh works through
-    them: [{"key", "preset", "state", "batch"}]. The run's entries come from run_entries()
+    them: [{"key", "preset", "state", "batch", "run"}] ("run": the entry belongs to the
+    worker's current run, otherwise it starts with the next one). The run's entries come from run_entries()
     and are numbered like encode.sh does (current.txt holds the number of the file being
     encoded): earlier entries are finished (state = their result from this run, or
     "skipped" if there is none), the current one is "encoding", the rest "waiting".
@@ -1363,21 +1364,19 @@ def queue_items():
                 state = "encoding"
             else:
                 state = "waiting"
-            items.append({"key": key, "preset": preset, "state": state, "batch": f})
+            items.append({"key": key, "preset": preset, "state": state, "batch": f, "run": True})
         rest = [e for e in batch_entries() if e[0].parent == QUEUE_DIR]
     else:
         rest = batch_entries()
-    items += [{"key": key, "preset": preset, "state": "waiting", "batch": f} for f, key, preset in rest]
+    items += [{"key": key, "preset": preset, "state": "waiting", "batch": f, "run": False} for f, key, preset in rest]
     return items
 
 
-def remove_queued(keys=None):
-    """Remove waiting entries from the queue: all of them, or the given keys. Batches in
-    queue/ are rewritten; entries of the current run (processing/, already counted by
-    encode.sh) go to the cancel list, which encode.sh checks before each file and clears
-    when the run is over. Returns the keys removed."""
-    wanted = None if keys is None else set(keys)
-    waiting = [i for i in queue_items() if i["state"] == "waiting" and (wanted is None or i["key"] in wanted)]
+def take_out_of_queue(waiting):
+    """Take these waiting items (from queue_items()) out of the batches they are in:
+    batches in queue/ are rewritten, entries of the current run (processing/, already
+    counted by encode.sh) go to the cancel list, which encode.sh checks before each file
+    and clears when the run is over."""
     cancel = [(i["batch"].name, i["key"]) for i in waiting if i["batch"].parent == PROC_DIR]
     drop = {}
     for i in waiting:
@@ -1401,9 +1400,79 @@ def remove_queued(keys=None):
     if cancel:
         with open(CANCEL_FILE, "a", encoding="utf-8") as f:
             f.writelines(f"{b}\t{k}\n" for b, k in cancel)
+
+
+def remove_queued(keys=None):
+    """Remove waiting entries from the queue: all of them, or the given keys.
+    Returns the keys removed."""
+    wanted = None if keys is None else set(keys)
+    waiting = [i for i in queue_items() if i["state"] == "waiting" and (wanted is None or i["key"] in wanted)]
+    take_out_of_queue(waiting)
     removed = list(dict.fromkeys(i["key"] for i in waiting))
     unqueue_status(removed)
     return removed
+
+
+MOVES = ("top", "bottom", "up", "down", "before")
+
+
+def moved_order(waiting, op, keys, target=""):
+    """The waiting keys (in queue order) after moving `keys` to the top or bottom, one
+    step up or down, or in front of `target` ("" = to the end). The moved keys keep their
+    order among themselves; keys that aren't waiting are ignored."""
+    chosen = set(keys)
+    sel = [k for k in waiting if k in chosen]
+    rest = [k for k in waiting if k not in chosen]
+    out = list(waiting)
+    if not sel:
+        return out
+    if op == "top":
+        return sel + rest
+    if op == "bottom":
+        return rest + sel
+    if op == "before":
+        if target in chosen:
+            return out
+        at = rest.index(target) if target in rest else len(rest)
+        return rest[:at] + sel + rest[at:]
+    if op == "up":
+        for n in range(1, len(out)):
+            if out[n] in chosen and out[n - 1] not in chosen:
+                out[n - 1], out[n] = out[n], out[n - 1]
+    elif op == "down":
+        for n in range(len(out) - 2, -1, -1):
+            if out[n] in chosen and out[n + 1] not in chosen:
+                out[n], out[n + 1] = out[n + 1], out[n]
+    return out
+
+
+def reorder_queued(order):
+    """Put the waiting entries in a new order (all their keys, see moved_order). The worker
+    works through its run's batch files as it read them, so entries from the first changed
+    position on are taken out of their batches (take_out_of_queue) and written as one new
+    batch in queue/, which the next run starts with; the entries before it stay where they
+    are. The new batch is staged in .queue-edit/ until the old ones are rewritten, so the
+    worker never sees an entry twice. Presets chosen when queueing are kept.
+    Returns the number of entries that got a new place."""
+    waiting = [i for i in queue_items() if i["state"] == "waiting"]
+    current = list(dict.fromkeys(i["key"] for i in waiting))
+    order = [k for k in dict.fromkeys(order) if k in current]
+    order += [k for k in current if k not in order]
+    first = next((n for n, (a, b) in enumerate(zip(current, order)) if a != b), None)
+    if first is None:
+        return 0
+    tail = order[first:]
+    presets_of = {}
+    for i in waiting:
+        presets_of.setdefault(i["key"], i["preset"])
+    QUEUE_DIR.mkdir(parents=True, exist_ok=True)
+    QUEUE_EDIT.mkdir(parents=True, exist_ok=True)
+    name = f"batch-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.txt"   # sorts after the batches in queue/
+    staged = QUEUE_EDIT / name
+    staged.write_text("".join(f"{k}\t{presets_of[k]}\n" if presets_of[k] else f"{k}\n" for k in tail), encoding="utf-8")
+    take_out_of_queue([i for i in waiting if i["key"] in set(tail)])
+    os.replace(staged, QUEUE_DIR / name)         # only now does the worker see the new batch
+    return len(tail)
 
 
 def unqueue_status(keys):

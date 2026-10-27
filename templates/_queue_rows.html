@@ -2,12 +2,15 @@
 {% from "_icons.html" import icon %}
 {% for r in rows %}
   {% if view == 'queue' %}
-  <tr class="{{ 'is-current' if r.state == 'encoding' }}">
+  {% if r.first_next %}<tr class="run-divider"><td colspan="7">Next run <span class="muted">· starts a new worker once the current run is finished</span></td></tr>{% endif %}
+  <tr class="{{ 'is-current' if r.state == 'encoding' }}"{% if r.state == 'waiting' %} data-key="{{ r.key }}" data-waiting{% endif %}>
+    <td class="grip">{% if r.state == 'waiting' and can_move %}<span class="grip-handle" draggable="true" data-grip aria-label="Drag to change the order" data-tip="Drag to change the order">{{ icon('grip') }}</span>{% endif %}</td>
     <td class="check">{% if r.state == 'waiting' %}<input type="checkbox" name="key" value="{{ r.key }}" form="bulk" aria-label="Select">{% endif %}</td>
     <td class="num muted">{{ r.n }}</td>
     <td class="name" title="{{ r.key }}">{{ r.short|wbr }}</td>
     <td class="small">{{ r.preset_name or "Share's preset" }}</td>
-    <td><span class="qstate qstate-{{ r.state|lower }}">{{ states.get(r.state, r.state) }}</span></td>
+    <td><span class="qstate qstate-{{ r.state|lower }}">{{ states.get(r.state, r.state) }}</span>{% if r.next_run and r.state == 'waiting' and not can_move %} <span class="qrun muted small">next run</span>{% endif %}</td>
+    <td class="move">{% if r.state == 'waiting' and can_move %}<button type="button" class="icon-btn" data-move="up" aria-label="Move up" data-tip="Move up">{{ icon('up') }}</button><button type="button" class="icon-btn" data-move="down" aria-label="Move down" data-tip="Move down">{{ icon('down') }}</button>{% endif %}</td>
   </tr>
   {% elif view == 'review' %}
   <tr>

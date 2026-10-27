@@ -78,6 +78,8 @@
     <input type="hidden" name="view" value="{{ q.view }}">
     <input type="hidden" name="state" value="{{ q.state }}" data-state>
     {% if q.view == 'queue' %}
+      <button class="secondary" formaction="{{ url_for('queue_move') }}" name="op" value="top" data-needs-selection disabled title="Encode the selected waiting entries first">Move to top</button>
+      <button class="secondary" formaction="{{ url_for('queue_move') }}" name="op" value="bottom" data-needs-selection disabled title="Encode the selected waiting entries last">Move to bottom</button>
       <button class="secondary" data-needs-selection disabled>Remove selected</button>
       <button class="danger" name="all" value="1" data-remove-all {% if not q.counts.get('waiting') %}disabled{% endif %}
               onclick="return confirm('Remove all waiting entries from the queue?')">Remove all waiting</button>
@@ -114,18 +116,18 @@
   {% endif %}
   <div class="table-wrap">
     <table class="queue-table queue-{{ q.view }}">
-      <thead><tr><th class="check"><input type="checkbox" data-select-all aria-label="Select all entries shown"></th>
+      <thead><tr>{% if q.view == 'queue' %}<th class="grip"></th>{% endif %}<th class="check"><input type="checkbox" data-select-all aria-label="Select all entries shown"></th>
         {% if q.view == 'queue' %}<th class="num">#</th>{% endif %}
         {% for f in q.fields %}<th aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(q.sort_links[f][1], 'none') }}"><a class="sort-link{{ ' active' if q.sort_links[f][1] }}" href="{{ q.sort_links[f][0] }}" title="Sort: ascending → descending → off">{{ q.fields[f] }}{% if q.sort_links[f][1] %} {{ q.sort_links[f][1] }}{% endif %}</a></th>{% endfor %}
-        {% if q.view != 'queue' %}<th></th>{% endif %}</tr></thead>
-      <tbody data-queue-rows>{% with rows=q.rows, states=q.states, view=q.view %}{% include "_queue_rows.html" %}{% endwith %}</tbody>
+        <th></th></tr></thead>
+      <tbody data-queue-rows>{% with rows=q.rows, states=q.states, view=q.view, can_move=q.can_move %}{% include "_queue_rows.html" %}{% endwith %}</tbody>
     </table>
   </div>
   <p class="muted small" data-queue-empty {% if q.rows %}hidden{% endif %}>{{ {'queue': 'Nothing queued.', 'review': 'No finished encodes are waiting to be replaced.', 'history': 'No history yet.'}[q.view] }}</p>
   <p class="muted small" data-queue-shown {% if not q.more_url %}hidden{% endif %}>Showing <span data-shown>{{ q.rows|length|count }}</span> of <span data-total>{{ q.shown_total|count }}</span></p>
   {% if q.more_url %}<button type="button" class="secondary" data-queue-more="{{ q.more_url }}">Show more</button>{% endif %}
   <p class="hint">
-    {% if q.view == 'queue' %}Only waiting entries can be removed. Removed entries of the current run show as "Removed" and are skipped by the worker. Finished files move to Awaiting review (encodes) or History (every result).
+    {% if q.view == 'queue' %}Waiting entries can be reordered (drag the handle, the arrows, or Move to top / bottom for the ticked entries; not while a column sort is on) and removed. Entries of the current run stay where they are until the worker takes them; moving an entry that is part of the running batch puts it and everything after it into a new batch, the next run, which a new worker starts once this run has finished. Removed entries of the current run show as "Removed" and are skipped by the worker. Finished files move to Awaiting review (encodes) or History (every result).
     {% elif q.view == 'review' %}Finished encodes in the output folder, also from earlier runs, until their original is replaced. Dismiss only hides an entry here; the encode stays in the output folder and keeps its Replace… button on the Files page.
     {% else %}Every encode result and finished replace, newest first{% if q.keep_days %}; entries older than {{ q.keep_days }} days are hidden (<a href="{{ url_for('settings', section='status') }}">change</a>){% endif %}. Dismiss hides entries here without deleting anything; a new result of the same file shows again. A failed file keeps its Failed marker on the Files page until it is encoded successfully.
     {% endif %}
@@ -146,5 +148,5 @@
 <script src="{{ url_for('static', filename='replace.js') }}"></script>
 <script src="{{ url_for('static', filename='bulkreplace.js') }}"></script>
 <script src="{{ url_for('static', filename='rangeselect.js') }}"></script>
-<script src="{{ url_for('static', filename='status.js') }}" data-live-url="{{ url_for('status_live') }}" data-queue-url="{{ url_for('status_queue') }}"></script>
+<script src="{{ url_for('static', filename='status.js') }}" data-live-url="{{ url_for('status_live') }}" data-queue-url="{{ url_for('status_queue') }}" data-move-url="{{ url_for('queue_move') }}"></script>
 {% endblock %}

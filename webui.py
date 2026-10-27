@@ -1034,10 +1034,12 @@ def awaiting_review():
 def queue_rows(view, state):
     """All rows of a tab (before sorting and paging) and the counts shown in the tabs."""
     items = enc.queue_items()
+    has_run = any(i["run"] for i in items)
     n = 0
     for item in items:                          # processing order of the run and queue
         n += 1
         item["n"] = n
+        item["next_run"] = has_run and not item["run"]      # waits for a new worker run
     active = [i for i in items if i["state"] in ("encoding", "waiting", "removed")]
     review = awaiting_review()
     history = enc.history_entries(state if view == "history" else "")
@@ -1059,6 +1061,12 @@ def queue_view(view="queue", state="", offset=0, sort=None):
     shown, counts = queue_rows(view, state)
     if sort:
         shown = sorted(shown, key=fields[sort["sort"]][1], reverse=sort["dir"] == "desc")
+    # Waiting entries can be reordered in the queue's own order; a divider shows where the next run starts
+    can_move = view == "queue" and not sort and state in ("", "waiting")
+    if can_move and any(i["run"] for i in shown):
+        first = next((i for i in shown if i["next_run"] and i["state"] == "waiting"), None)
+        if first:
+            first["first_next"] = True
     page = shown[offset:offset + QUEUE_PAGE]
     names = {}
     rows = []
@@ -1072,7 +1080,7 @@ def queue_view(view="queue", state="", offset=0, sort=None):
     nxt = offset + QUEUE_PAGE
     return {"rows": rows, "counts": counts, "shown_total": len(shown), "view": view,
             "more_url": url_for("status_queue", view=view, state=state, offset=nxt, **sort) if nxt < len(shown) else None,
-            "states": enc.QUEUE_STATES, "state": state, "sort": sort,
+            "states": enc.QUEUE_STATES, "state": state, "sort": sort, "can_move": can_move,
             "sort_links": {f: (url_for("status", view=view, state=state, **next_sort(f, sort)), sort_arrow(f, sort))
                            for f in fields},
             "fields": {f: v[0] for f, v in fields.items()},
@@ -1248,6 +1256,29 @@ def queue_remove():
         removed = enc.remove_queued(keys)
         flash(f"{len(removed):,} entr{'y' if len(removed) == 1 else 'ies'} removed from the queue."
               if removed else "Nothing removed: the entries aren't waiting any more.", "ok" if removed else "error")
+    return safe_next(url_for("status"))
+
+
+@app.route("/queue/move", methods=["POST"])
+def queue_move():
+    """Change the order of waiting entries: op = top, bottom, up, down (for the given keys)
+    or before (in front of `target`, "" = at the end). With json=1 the answer is JSON
+    for the page's drag and arrow buttons, otherwise the page is shown again."""
+    op = request.form.get("op", "")
+    if op not in enc.MOVES:
+        abort(400, "Unknown move.")
+    keys = request.form.getlist("key")
+    waiting = [i["key"] for i in enc.queue_items() if i["state"] == "waiting"]
+    moved = [k for k in keys if k in waiting]
+    if not moved:
+        ok, msg = False, "Nothing moved: the entries aren't waiting any more." if keys else "No entries selected."
+    else:
+        n = enc.reorder_queued(enc.moved_order(waiting, op, moved, request.form.get("target", "")))
+        ok, msg = True, (f"{len(set(moved)):,} entr{'y' if len(set(moved)) == 1 else 'ies'} moved." if n
+                         else "Already in that place.")
+    if request.form.get("json"):
+        return {"ok": ok, "message": msg}, 200 if ok else 409
+    flash(msg, "ok" if ok else "error")
     return safe_next(url_for("status"))
 
 

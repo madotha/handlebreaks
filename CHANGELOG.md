@@ -9,6 +9,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Status page, Queue tab: change the order of waiting entries. Drag a row by its handle (mouse; a ticked row takes all ticked rows along), use the up/down arrows of a row (also on phones), or tick rows and click **Move to top** / **Move to bottom**. A divider marks where the next run starts: entries of the worker's current run stay put until it takes them, while moving one of them puts it and everything after it into a new batch that a new worker run starts once the current run has finished (the old places show as "Removed"). Presets chosen when queueing are kept. Reordering is off while a column sort is active.
 - Selecting several rows at once on the Files and Status pages: **Shift+click** ticks (or unticks) everything between the last clicked row and this one, and **dragging** over the checkboxes of several rows ticks them all (unticks them if the first row was ticked). The folder checkboxes on the Files page work the same way among the folders of one level. Mouse only; on touch screens dragging still scrolls.
 
 ## [3.1.0] - 2026-10-26
