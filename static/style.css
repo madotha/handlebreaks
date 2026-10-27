@@ -565,3 +565,6 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
   .bulk-list .name-input textarea { min-width: 12rem; }
   .replace-dialog .row-actions button { flex: 1; }
 }
+
+/* Dragging over rows to select them (static/rangeselect.js) */
+.range-dragging { user-select: none; -webkit-user-select: none; cursor: default; }

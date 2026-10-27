@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Selecting several rows at once on the Files and Status pages: **Shift+click** ticks (or unticks) everything between the last clicked row and this one, and **dragging** over the checkboxes of several rows ticks them all (unticks them if the first row was ticked). Mouse only; on touch screens dragging still scrolls.
+
 ## [3.1.0] - 2026-10-26
 
 ### Added
