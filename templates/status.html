@@ -51,7 +51,7 @@
 <section class="panel">
   <nav class="view-tabs" aria-label="Status views">
     {% for key, label in views.items() %}
-      <a href="{{ url_for('status', view=key) }}" {% if key == q.view %}aria-current="page"{% endif %}>{% if key == 'review' %}<span class="tab-long">{{ label }}</span><span class="tab-short">Review</span>{% else %}{{ label }}{% endif %} <span class="tab-count" data-count="{{ key }}">{{ q.counts.get(key, 0)|count }}</span></a>
+      <a href="{{ url_for('status', view=key) }}" {% if key == q.view %}aria-current="page"{% endif %}>{% if key in ('review', 'originals') %}<span class="tab-long">{{ label }}</span><span class="tab-short">{{ 'Review' if key == 'review' else 'Originals' }}</span>{% else %}{{ label }}{% endif %} <span class="tab-count" data-count="{{ key }}">{{ q.counts.get(key, 0)|count }}</span></a>
     {% endfor %}
   </nav>
   <form class="filters queue-filter" method="get" data-queue-filter data-view="{{ q.view }}" data-sort="{{ q.sort.get('sort', '') }}" data-dir="{{ q.sort.get('dir', '') }}">
@@ -89,6 +89,11 @@
       <button class="secondary" formaction="{{ url_for('status_dismiss') }}" data-needs-selection disabled title="Hide the selected entries here; the encodes stay where they are">Dismiss selected</button>
       <button class="secondary" formaction="{{ url_for('status_dismiss') }}" name="all" value="1"
               onclick="return confirm('Hide all awaiting-review entries here? The encodes stay in the output folder and on the Files page.')">Dismiss all</button>
+    {% elif q.view == 'originals' %}
+      <button class="danger" formaction="{{ url_for('originals_delete') }}" data-needs-selection data-confirm-delete disabled title="Delete the selected originals permanently">Delete selected…</button>
+      <span class="inline-field"><select name="older_than" form="kept-older-form" aria-label="Kept longer than">
+        {% for d in (7, 30, 90, 180, 365) %}<option value="{{ d }}">kept more than {{ d }} days</option>{% endfor %}
+      </select><button class="danger" form="kept-older-form" title="Delete all originals kept longer than this, permanently">Delete…</button></span>
     {% else %}
       <button class="secondary" formaction="{{ url_for('queue_again') }}" data-needs-selection disabled title="Queue the selected failed or stopped files again">Queue again</button>
       <button class="secondary" formaction="{{ url_for('status_dismiss') }}" data-needs-selection disabled title="Hide the selected entries here; nothing is deleted">Dismiss selected</button>
@@ -106,6 +111,14 @@
     {% for f in q.fields %}<a class="sort-chip{{ ' active' if q.sort_links[f][1] }}" href="{{ q.sort_links[f][0] }}"
        aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(q.sort_links[f][1], 'none') }}">{{ q.fields[f] }}{% if q.sort_links[f][1] %} {{ q.sort_links[f][1] }}{% endif %}</a>{% endfor %}
   </nav>
+  {% if q.view == 'originals' %}
+  <form id="kept-older-form" method="post" action="{{ url_for('originals_delete') }}" data-confirm="Delete all originals that were kept longer than the chosen time, permanently? This cannot be undone.">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ url_for('status', view='originals') }}">
+  </form>
+  <p class="muted small" data-kept-summary>{{ q.shown_total|count }} original{{ '' if q.shown_total == 1 else 's' }} kept, {{ q.kept_total|size }} in total ·
+    {% if q.kept_auto_days %}deleted automatically after {{ q.kept_auto_days }} days{% else %}never deleted automatically{% endif %} (<a href="{{ url_for('settings', section='replace') }}">change</a>)</p>
+  {% endif %}
   {% if q.view == 'history' %}
   <form id="older-form" method="post" action="{{ url_for('status_dismiss') }}">{# own form: its select must not travel with the other buttons #}
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -119,15 +132,16 @@
       <thead><tr>{% if q.view == 'queue' %}<th class="grip"></th>{% endif %}<th class="check"><input type="checkbox" data-select-all aria-label="Select all entries shown"></th>
         {% if q.view == 'queue' %}<th class="num">#</th>{% endif %}
         {% for f in q.fields %}<th aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(q.sort_links[f][1], 'none') }}"><a class="sort-link{{ ' active' if q.sort_links[f][1] }}" href="{{ q.sort_links[f][0] }}" title="Sort: ascending → descending → off">{{ q.fields[f] }}{% if q.sort_links[f][1] %} {{ q.sort_links[f][1] }}{% endif %}</a></th>{% endfor %}
-        <th></th></tr></thead>
+        <th>{% if q.view == 'originals' %}Replacement{% endif %}</th></tr></thead>
       <tbody data-queue-rows>{% with rows=q.rows, states=q.states, view=q.view, can_move=q.can_move %}{% include "_queue_rows.html" %}{% endwith %}</tbody>
     </table>
   </div>
-  <p class="muted small" data-queue-empty {% if q.rows %}hidden{% endif %}>{{ {'queue': 'Nothing queued.', 'review': 'No finished encodes are waiting to be replaced.', 'history': 'No history yet.'}[q.view] }}</p>
+  <p class="muted small" data-queue-empty {% if q.rows %}hidden{% endif %}>{{ {'queue': 'Nothing queued.', 'review': 'No finished encodes are waiting to be replaced.', 'history': 'No history yet.', 'originals': 'No originals are kept. Replace… keeps them here when "Keep the original" is ticked.'}[q.view] }}</p>
   <p class="muted small" data-queue-shown {% if not q.more_url %}hidden{% endif %}>Showing <span data-shown>{{ q.rows|length|count }}</span> of <span data-total>{{ q.shown_total|count }}</span></p>
   {% if q.more_url %}<button type="button" class="secondary" data-queue-more="{{ q.more_url }}">Show more</button>{% endif %}
   <p class="hint">
     {% if q.view == 'queue' %}Waiting entries can be reordered (drag the handle, the arrows, or Move to top / bottom for the ticked entries; not while a column sort is on) and removed. Entries of the current run stay where they are until the worker takes them; moving an entry that is part of the running batch puts it and everything after it into a new batch, the next run, which a new worker starts once this run has finished. Removed entries of the current run show as "Removed" and are skipped by the worker. Finished files move to Awaiting review (encodes) or History (every result).
+    {% elif q.view == 'originals' %}The originals that Replace… moved to the <code>.replaced</code> folder inside the output folder, with the folder structure of the share. Deleting them is permanent: the files are removed from disk, not hidden. The replacement column shows how much space the encode saved, and warns if the file that replaced an original is no longer in the library (it may only have been renamed, so check before deleting).
     {% elif q.view == 'review' %}Finished encodes in the output folder, also from earlier runs, until their original is replaced. Dismiss only hides an entry here; the encode stays in the output folder and keeps its Replace… button on the Files page.
     {% else %}Every encode result and finished replace, newest first{% if q.keep_days %}; entries older than {{ q.keep_days }} days are hidden (<a href="{{ url_for('settings', section='status') }}">change</a>){% endif %}. Dismiss hides entries here without deleting anything; a new result of the same file shows again. A failed file keeps its Failed marker on the Files page until it is encoded successfully.
     {% endif %}

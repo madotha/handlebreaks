@@ -12,6 +12,19 @@
     <td><span class="qstate qstate-{{ r.state|lower }}">{{ states.get(r.state, r.state) }}</span>{% if r.next_run and r.state == 'waiting' and not can_move %} <span class="qrun muted small">next run</span>{% endif %}</td>
     <td class="move">{% if r.state == 'waiting' and can_move %}<button type="button" class="icon-btn" data-move="up" aria-label="Move up" data-tip="Move up">{{ icon('up') }}</button><button type="button" class="icon-btn" data-move="down" aria-label="Move down" data-tip="Move down">{{ icon('down') }}</button>{% endif %}</td>
   </tr>
+  {% elif view == 'originals' %}
+  <tr>
+    <td class="check"><input type="checkbox" name="key" value="{{ r.key }}" form="bulk" data-size="{{ r.size }}" aria-label="Select"></td>
+    <td class="name" title="{{ r.key }}">{{ r.short|wbr }}</td>
+    <td class="small nowrap num">{{ r.size|size }}</td>
+    <td class="small nowrap">{{ r.kept|localtime }}</td>
+    <td class="small">
+      {% if r.warn == 'missing' %}<span class="badge badge-warn" data-tip="The file that replaced this original is no longer in the library (it may have been renamed, moved or deleted). Check before deleting the original.">replacement missing</span>
+      {% elif r.warn == 'offline' %}<span class="muted" data-tip="The share of the replacing file can't be reached right now.">library not reachable</span>
+      {% elif r.warn == 'unknown' %}<span class="muted" data-tip="There is no replace job on record for this file (e.g. the history data was deleted).">no record</span>
+      {% elif r.new_size is not none %}{% if r.size > r.new_size %}saved {{ (r.size - r.new_size)|size }}{% else %}no space saved{% endif %}{% endif %}
+    </td>
+  </tr>
   {% elif view == 'review' %}
   <tr>
     <td class="check"><input type="checkbox" name="key" value="{{ r.key }}" form="bulk" aria-label="Select"></td>

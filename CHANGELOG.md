@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Status page, new tab **Kept originals**: lists the originals that Replace… kept in `<output folder>/.replaced` with their size, when they were kept and how much space the replacing encode saved, with a warning if the file that replaced an original is no longer in the library. Delete selected originals, or all kept longer than 7, 30, 90, 180 or 365 days, permanently (always after a confirmation with the number of files and the space).
+- `KEEP_ORIGINALS_DAYS` (Settings → Replace, default 0 = never): deletes kept originals automatically once they were kept that long, checked hourly while the web UI runs. `python3 encoding.py purge-originals [days]` does the same on demand.
+
 ## [3.3.0] - 2026-10-27
 
 ### Added

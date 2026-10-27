@@ -99,6 +99,10 @@ SETTINGS = {
          "Empty = hevc=x265 av1=AV1 vvc=VVC h264=x264."),
         ("RENAME_QUALITY", "Add the quality after the release group (e.g. x265-donm.rf20 or x265-donm.avg2000)", "bool",
          "From the preset the file was encoded with: rf<RF value> for constant quality, avg<kbit/s> for average bitrate."),
+        ("KEEP_ORIGINALS_DAYS", "Delete kept originals after (days)", "number",
+         "\"Replace…\" keeps the original in the output folder's .replaced folder (see Status → Kept originals). "
+         "With a number here they are deleted permanently once they were kept that long, "
+         "checked hourly while the web UI runs. 0 = never (default)."),
         ("RENAME_GROUP", "Your release group", "text",
          "Optional. Replaces the release group after the codec tag, e.g. \"donm\": "
          "\"…h264-NTB.mkv\" becomes \"…x265-donm.mkv\". Empty = keep the original group."),
@@ -117,7 +121,7 @@ SETTINGS = {
 
 # Defaults the code uses when a key is missing from an older config.env: shown on the form, so
 # saving a section doesn't turn them into 0 / off
-SETTING_DEFAULTS = {"HISTORY_KEEP_DAYS": "30", "RENAME_QUALITY": "1"}
+SETTING_DEFAULTS = {"HISTORY_KEEP_DAYS": "30", "RENAME_QUALITY": "1", "KEEP_ORIGINALS_DAYS": "0"}
 
 # Settings overridden by an environment variable of the same name (docker-entrypoint.sh)
 ENV_OVERRIDES = {"WORKER_ENABLED"}
@@ -284,6 +288,24 @@ def auto_scan_loop():
             print(f"Automatic scan skipped: {e}", file=sys.stderr)
         except Exception as e:                  # keep the loop alive
             print(f"Automatic scan failed: {type(e).__name__}: {e}", file=sys.stderr)
+
+
+def originals_purge_loop():
+    """Deletes kept originals older than KEEP_ORIGINALS_DAYS: two minutes after the start, then hourly."""
+    time.sleep(120)
+    while True:
+        try:
+            enc.apply_config(enc.load_config())
+            count, freed = enc.purge_kept()
+            if count:
+                _KEPT_GEN[0] += 1
+                print(f"{enc.now_str()} {count} kept original(s) older than {enc.keep_originals_days()} days "
+                      f"deleted, {fmt_size(freed)} freed.", file=sys.stderr)
+        except SystemExit as e:                 # e.g. config.env incomplete: try again later
+            print(f"Deleting old originals skipped: {e}", file=sys.stderr)
+        except Exception as e:                  # keep the loop alive
+            print(f"Deleting old originals failed: {type(e).__name__}: {e}", file=sys.stderr)
+        time.sleep(3600)
 
 
 REPLACE_SYNC = threading.Lock()
@@ -975,7 +997,7 @@ def replace_info(rows):
 
 TAB_ICONS = {"Summary": "summary", "Dimensions": "crop", "Filters": "sliders", "Video": "film",
              "Audio": "speaker", "Subtitles": "captions", "More": "dots"}      # preset editor tabs (_icons.html)
-VIEWS = {"queue": "Queue", "review": "Awaiting review", "history": "History"}   # tabs of the Status page
+VIEWS = {"queue": "Queue", "review": "Awaiting review", "history": "History", "originals": "Kept originals"}   # tabs of the Status page
 
 # Sortable columns per tab: field -> (label, sort key of a row). No sorting = the tab's own order:
 # processing order (queue), by file (awaiting review), newest first (history).
@@ -988,6 +1010,11 @@ VIEW_SORT = {
     "review": {
         "file": ("File", lambda i: natural(enc.short(i["key"]))),
         "at":   ("Encoded", lambda i: i["at"]),
+    },
+    "originals": {
+        "file": ("File", lambda i: natural(i["key"])),
+        "size": ("Size", lambda i: i["size"]),
+        "kept": ("Kept since", lambda i: i["kept"]),
     },
     "history": {
         "at":     ("Time", lambda i: i["at"]),
@@ -1033,6 +1060,39 @@ def awaiting_review():
     return [dict(f, preset="") for f in found if dismissed.get(f["key"], "") < f["at"]]
 
 
+_KEPT_GEN = [0]
+
+
+def kept_list():
+    """enc.kept_originals(), kept for 30 seconds (walking the folder isn't free) and until
+    something is deleted."""
+    return cached("kept", (int(time.time() // 30), _KEPT_GEN[0]), enc.kept_originals)
+
+
+def kept_short(rel):
+    parts = rel.split("/")
+    return f"{parts[-2]} › {parts[-1]}" if len(parts) > 1 else rel
+
+
+def kept_info(rows):
+    """For the rows of one page: how big the replacing file is now, and whether it is still in
+    the library (a warning, not a block: it may just have been renamed)."""
+    for r in rows:
+        r["new_size"], r["warn"] = None, ""
+        if not r["new_key"]:
+            r["warn"] = "unknown"               # no replace job on record (older install, or the log was cleared)
+            continue
+        prefix, _, rel = r["new_key"].partition("/")
+        root = enc.first_existing(enc.ROOT_CANDIDATES.get(prefix, []))
+        if root is None:
+            r["warn"] = "offline"
+            continue
+        try:
+            r["new_size"] = (root / rel).stat().st_size
+        except OSError:
+            r["warn"] = "missing"
+
+
 def queue_rows(view, state):
     """All rows of a tab (before sorting and paging) and the counts shown in the tabs."""
     items = enc.queue_items()
@@ -1045,11 +1105,14 @@ def queue_rows(view, state):
     active = [i for i in items if i["state"] in ("encoding", "waiting", "removed")]
     review = awaiting_review()
     history = enc.history_entries(state if view == "history" else "")
+    kept = kept_list()
     counts = Counter(i["state"] for i in items)
-    counts.update({"queue": counts["encoding"] + counts["waiting"], "review": len(review),
+    counts.update({"queue": counts["encoding"] + counts["waiting"], "review": len(review), "originals": len(kept),
                    "history": len(history) if view == "history" and not state else len(enc.history_entries())})
     if view == "review":
         return review, counts
+    if view == "originals":
+        return kept, counts
     if view == "history":
         return history, counts
     return [i for i in active if not state or i["state"] == state], counts
@@ -1076,9 +1139,12 @@ def queue_view(view="queue", state="", offset=0, sort=None):
         pid = item.get("preset")
         if pid and pid not in names:
             names[pid] = presets.name_of(pid)
-        rows.append(dict(item, short=enc.short(item["key"]), preset_name=names.get(pid, "")))
+        rows.append(dict(item, short=kept_short(item["key"]) if view == "originals" else enc.short(item["key"]),
+                         preset_name=names.get(pid, "")))
     if view == "review":
         replace_info(rows)
+    elif view == "originals":
+        kept_info(rows)
     nxt = offset + QUEUE_PAGE
     return {"rows": rows, "counts": counts, "shown_total": len(shown), "view": view,
             "more_url": url_for("status_queue", view=view, state=state, offset=nxt, **sort) if nxt < len(shown) else None,
@@ -1086,7 +1152,9 @@ def queue_view(view="queue", state="", offset=0, sort=None):
             "sort_links": {f: (url_for("status", view=view, state=state, **next_sort(f, sort)), sort_arrow(f, sort))
                            for f in fields},
             "fields": {f: v[0] for f, v in fields.items()},
-            "keep_days": enc.history_keep_days(), "history_results": HISTORY_RESULTS}
+            "keep_days": enc.history_keep_days(), "history_results": HISTORY_RESULTS,
+            "kept_total": sum(i["size"] for i in shown) if view == "originals" else 0,
+            "kept_auto_days": enc.keep_originals_days()}
 
 
 def live_status():
@@ -1101,7 +1169,8 @@ def live_status():
         "can_stop": enc.worker_can_stop(),
         "counts": {"encoding": states["encoding"], "waiting": states["waiting"],
                    "queue": states["encoding"] + states["waiting"],
-                   "review": len(awaiting_review()), "history": len(enc.history_entries())},
+                   "review": len(awaiting_review()), "history": len(enc.history_entries()),
+                   "originals": len(kept_list())},
         "scan": dict({k: SCAN[k] for k in ("running", "label", "summary", "error")},
                      started=(to_datetime(SCAN["started"]) or datetime.now()).isoformat() if SCAN["started"] else None),
     }
@@ -1311,6 +1380,27 @@ def status_dismiss():
         n = len(set(keys))
     flash(f"{n:,} entr{'y' if n == 1 else 'ies'} hidden." if n else "Nothing to hide.", "ok" if n else "error")
     return safe_next(url_for("status", view=view))
+
+
+@app.route("/originals/delete", methods=["POST"])
+def originals_delete():
+    """Permanently delete kept originals: the selected ones (paths inside .replaced/), or
+    with older_than=N all that were kept for more than N days."""
+    older = request.form.get("older_than", "")
+    if older:
+        if not older.isdigit() or int(older) < 1:
+            abort(400, "Invalid number of days.")
+        count, freed = enc.purge_kept(int(older))
+    else:
+        keys = request.form.getlist("key")
+        if not keys:
+            flash("No entries selected.", "error")
+            return safe_next(url_for("status", view="originals"))
+        count, freed = enc.delete_kept(keys)
+    _KEPT_GEN[0] += 1
+    flash(f"{count:,} original{'' if count == 1 else 's'} deleted, {fmt_size(freed)} freed." if count
+          else "Nothing deleted: no matching originals found.", "ok" if count else "error")
+    return safe_next(url_for("status", view="originals"))
 
 
 @app.route("/queue/again", methods=["POST"])
@@ -1733,6 +1823,7 @@ def main():
     print(f"Web UI: http://{args.host}:{args.port}", file=sys.stderr)
     threading.Thread(target=auto_scan_loop, daemon=True).start()
     threading.Thread(target=replace_sync_loop, daemon=True).start()
+    threading.Thread(target=originals_purge_loop, daemon=True).start()
     try:
         from waitress import serve
     except ImportError:

@@ -547,7 +547,8 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
   .files-level td[data-label]::before { content: attr(data-label) ": "; }
 
   /* Status page queue: stacked rows */
-  .view-tabs a { padding: .5rem .45rem; gap: .25rem; font-size: .88rem; }
+  .view-tabs a { padding: .5rem .35rem; gap: .2rem; font-size: .84rem; }
+  .view-tabs .tab-count { padding: .03rem .35rem; font-size: .7rem; }
   .status-sort { display: flex; margin: 0 0 .6rem; border-top: 0; padding-top: 0; }
   .brand { padding: .6rem 0; }
   details:not(.dir):not(.share-card):not(.multi) > summary { padding-block: .6rem; }

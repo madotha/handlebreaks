@@ -61,6 +61,7 @@ Examples
     python3 encoding.py unskip 2              # show no. 2 from "skipped" again
     python3 encoding.py status
     python3 encoding.py replace-jobs          # run pending replace jobs (normally done by encode.sh)
+    python3 encoding.py purge-originals [N]   # delete kept originals older than N days (default KEEP_ORIGINALS_DAYS)
     python3 encoding.py handbrake-caps        # publish this machine's HandBrakeCLI capabilities (encode.sh)
     python3 encoding.py preset-check [--worker]   # editor/preset compatibility with this (or the worker's) HandBrakeCLI
     python3 encoding.py stop-rest <n>         # after "Stop all": requeue the run after entry n, pause (encode.sh)
@@ -937,6 +938,114 @@ def replaced_keys():
     return {key for _, key in replaced_log()}
 
 
+_REPLACE_RECORDS = [None, {}]
+
+
+def replace_records():
+    """{original key: (finished time, new key)} of the finished replace jobs, the latest per
+    key; read again only when replace/done/ changes."""
+    try:
+        stamp = REPLACE_DONE.stat().st_mtime_ns
+    except OSError:
+        return {}
+    if _REPLACE_RECORDS[0] != stamp:
+        records = {}
+        for f in REPLACE_DONE.glob("*.json"):
+            try:
+                job = json.loads(f.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                continue
+            if job.get("state") == "done" and job.get("keep_original") is not False:
+                when = job.get("finished") or ""
+                if job["key"] not in records or when >= records[job["key"]][0]:
+                    records[job["key"]] = (when, job.get("new_key") or "")
+        _REPLACE_RECORDS[:] = [stamp, records]
+    return _REPLACE_RECORDS[1]
+
+
+def kept_dir():
+    """The folder with the originals that Replace… kept (<output folder>/.replaced), or None."""
+    enc_dir = first_existing(ENCODED_CANDIDATES)
+    return enc_dir / ".replaced" if enc_dir else None
+
+
+def kept_originals():
+    """The originals Replace… kept, newest first: [{"key": path inside .replaced/ (the same
+    as the original's path in its share), "size", "kept" (when it was kept, "YYYY-MM-DD
+    HH:MM"), "orig_key", "new_key" (of the replacing file; "" if there is no record of the
+    replace)}]. The share isn't part of the path, so with the same path in two shares the
+    latest replace job is taken."""
+    base = kept_dir()
+    if base is None or not base.is_dir():
+        return []
+    by_path = {}
+    for key, (when, new_key) in replace_records().items():
+        rel = key.split("/", 1)[-1]
+        if rel not in by_path or when >= by_path[rel][0]:
+            by_path[rel] = (when, key, new_key)
+    out = []
+    for folder, _, names in os.walk(base):
+        for name in names:
+            path = Path(folder) / name
+            try:
+                if path.is_symlink():           # never follow links out of the folder
+                    continue
+                st = path.stat()
+            except OSError:
+                continue
+            rel = path.relative_to(base).as_posix()
+            when, orig_key, new_key = by_path.get(rel, (None, "", ""))
+            out.append({"key": rel, "size": st.st_size, "orig_key": orig_key, "new_key": new_key,
+                        "kept": when or datetime.fromtimestamp(st.st_ctime).strftime("%Y-%m-%d %H:%M")})
+    return sorted(out, key=lambda o: (o["kept"], o["key"]), reverse=True)
+
+
+def delete_kept(rels):
+    """Permanently delete kept originals, given by their path inside .replaced/ (anything
+    that isn't a file there is ignored), and remove the folders left empty.
+    Returns (files deleted, bytes freed)."""
+    base = kept_dir()
+    if base is None or not base.is_dir():
+        return 0, 0
+    base_real = base.resolve()
+    count = freed = 0
+    for rel in dict.fromkeys(rels):
+        path = base / rel
+        try:
+            if not path.resolve().is_relative_to(base_real) or not path.is_file():
+                continue
+            size = path.stat().st_size
+            path.unlink()
+        except OSError:
+            continue
+        count += 1
+        freed += size
+        folder = path.parent
+        while folder != base and folder.is_relative_to(base):    # empty folders up to .replaced/
+            try:
+                folder.rmdir()
+            except OSError:
+                break
+            folder = folder.parent
+    return count, freed
+
+
+def keep_originals_days():
+    """KEEP_ORIGINALS_DAYS: after how many days kept originals are deleted (0 = never, the default)."""
+    value = str(CONFIG.get("KEEP_ORIGINALS_DAYS", "0")).strip()
+    return int(value) if value.isdigit() else 0
+
+
+def purge_kept(days=None):
+    """Delete the kept originals that were kept for more than `days` days (default:
+    KEEP_ORIGINALS_DAYS; 0 = nothing). Returns (files deleted, bytes freed)."""
+    days = keep_originals_days() if days is None else days
+    if days <= 0:
+        return 0, 0
+    cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M")
+    return delete_kept([o["key"] for o in kept_originals() if o["kept"] < cutoff])
+
+
 def move_file(src, dst, attempts=6, wait=10):
     """Move a file, retrying while a NAS briefly refuses it (e.g. its media indexer)."""
     for attempt in range(1, attempts + 1):
@@ -1715,6 +1824,10 @@ def main():
     apply_config(load_config())
     if cmd == "replace-jobs":                   # file moves only, no database (see run_replace_jobs)
         run_replace_jobs()
+        return
+    if cmd == "purge-originals":                # delete kept originals older than N days (default KEEP_ORIGINALS_DAYS)
+        n, freed = purge_kept(int(rest[0]) if rest and rest[0].isdigit() else None)
+        print(f"{n} kept original(s) deleted, {freed / 2**30:.2f} GiB freed.")
         return
     if cmd == "stop-rest":                      # encode.sh after "Stop all"; no database either
         print(requeue_rest(int(rest[0])))

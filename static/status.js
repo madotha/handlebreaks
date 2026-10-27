@@ -13,6 +13,8 @@
   const view = filterForm.dataset.view;
   const liveBox = $("[data-live]");
   let currentKey = panel.dataset.currentKey;
+  const currentTab = $(".view-tabs [aria-current]");        // narrow screens: the tab strip scrolls, so show the open tab
+  if (currentTab) currentTab.parentElement.scrollLeft = Math.max(0, currentTab.offsetLeft + currentTab.offsetWidth - currentTab.parentElement.clientWidth);
   let running = false;
 
   function sortParams() {                        // keep the column sort when reloading the list
@@ -77,6 +79,20 @@
     rows.querySelectorAll('input[name="key"]').forEach((c) => { c.checked = selectAll.checked; });
     updateSelection();
   });
+
+  // Permanent deletes (Kept originals tab) ask first: how many files and how much space
+  const gb = (n) => {                              // the same units as the size filter of the pages
+    for (const unit of ["B", "KB", "MB", "GB"]) { if (n < 1024) return unit === "B" ? `${n} B` : `${n.toFixed(1)} ${unit}`; n /= 1024; }
+    return `${n.toFixed(2)} TB`;
+  };
+  document.querySelectorAll("[data-confirm-delete]").forEach((b) => b.addEventListener("click", (e) => {
+    const picked = [...rows.querySelectorAll('input[name="key"]:checked')];
+    const bytes = picked.reduce((sum, c) => sum + Number(c.dataset.size || 0), 0);
+    if (!confirm(`Delete ${picked.length.toLocaleString()} original${picked.length === 1 ? "" : "s"} (${gb(bytes)}) permanently? This cannot be undone.`)) e.preventDefault();
+  }));
+  document.querySelectorAll("form[data-confirm]").forEach((f) => f.addEventListener("submit", (e) => {
+    if (!confirm(f.dataset.confirm)) e.preventDefault();
+  }));
 
   // Changing the order of waiting entries (Queue tab): the arrow buttons and dragging a row's
   // handle. Ticked rows move together when the row you grab is ticked. "Move to top / bottom"
