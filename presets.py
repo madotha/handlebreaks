@@ -23,6 +23,8 @@ import time
 from functools import lru_cache
 from pathlib import Path
 
+import preset_tips
+
 BASE = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("ENCODING_DATA_DIR") or BASE)
 PRESET_DIR = DATA_DIR / "presets"
@@ -541,6 +543,11 @@ def F(key, label, kind="text", options=None, hint="", show=None, **attrs):
     return dict(key=key, label=label, kind=kind, options=options, hint=hint, show=show or {}, attrs=attrs)
 
 
+def G(name, *fields):
+    """Fields of one section of an editor tab (shown under a heading)."""
+    return [dict(f, group=name) for f in fields]
+
+
 def _filter(caps, name, kind="presets"):
     return list(caps.get("filters", {}).get(name, {}).get(kind, [])) or list(FALLBACK["filters"].get(name, {}).get(kind, []))
 
@@ -552,24 +559,33 @@ def editor_schema(caps):
     plain_encoders = [e for e in caps["audio_encoders"] if not e.startswith("copy")]
     by_encoder = lambda k, extra=(): {"depends": "VideoEncoder",
                                        "map": {e: list(extra) + v for e, v in caps.get(k, {}).items()}}
-    return [
+    tabs = [
         ("Summary", [
+            *G("General",
             F("PresetName", "Name", required=True),
             F("PresetDescription", "Description"),
+            ),
+            *G("Container",
             F("FileFormat", "Container", "select", caps["formats"]),
             F("Optimize", "Web optimized (moov atom at the start, for streaming)", "bool", show={"FileFormat": ["av_mp4"]}),
             F("Mp4iPodCompatible", "iPod 5G support", "bool", show={"FileFormat": ["av_mp4"]}),
             F("AlignAVStart", "Align A/V start (pad the start so audio and video begin together)", "bool"),
             F("InlineParameterSets", "Inline parameter sets (for some players and streaming)", "bool"),
+            ),
+            *G("Content",
             F("MetadataPassthru", "Pass through metadata (title, year, …) from the source", "bool"),
             F("ChapterMarkers", "Chapter markers", "bool"),
+            ),
         ]),
         ("Dimensions", [
+            *G("Crop",
             F("PictureCropMode", "Crop", "select", CROP_MODES, cast=int),
             F("PictureTopCrop", "Crop top", "int", show={"PictureCropMode": ["3"]}, min=0),
             F("PictureBottomCrop", "Crop bottom", "int", show={"PictureCropMode": ["3"]}, min=0),
             F("PictureLeftCrop", "Crop left", "int", show={"PictureCropMode": ["3"]}, min=0),
             F("PictureRightCrop", "Crop right", "int", show={"PictureCropMode": ["3"]}, min=0),
+            ),
+            *G("Size",
             F("PictureWidth", "Maximum width", "int", "Larger sources are scaled down to fit. 0 = no limit.", min=0, quick="size"),
             F("PictureHeight", "Maximum height", "int", "0 = no limit.", min=0),
             F("PictureUseMaximumSize", "Use the width and height as a maximum (keeps smaller sources as they are)", "bool"),
@@ -578,13 +594,19 @@ def editor_schema(caps):
             F("PictureForceWidth", "Force width", "int", "0 = off. Overrides the maximum.", min=0),
             F("PictureForceHeight", "Force height", "int", "0 = off.", min=0),
             F("PictureModulus", "Modulus (sizes divisible by)", "select", [2, 4, 8, 16], cast=int),
+            ),
+            *G("Aspect ratio",
             F("PicturePAR", "Anamorphic", "select", ["off", "auto", "loose", "custom"]),
             F("PicturePARWidth", "Pixel aspect width", "int", show={"PicturePAR": ["custom"]}, min=1),
             F("PicturePARHeight", "Pixel aspect height", "int", show={"PicturePAR": ["custom"]}, min=1),
             F("PictureDARWidth", "Display width", "int", "0 = from the pixel aspect.", show={"PicturePAR": ["custom"]}, min=0),
             F("PictureItuPAR", "Use ITU pixel aspect (for underscanned sources)", "bool"),
+            ),
+            *G("Rotation",
             F("_rotate_angle", "Rotate", "select", {"0": "No rotation", "90": "90° clockwise", "180": "180°", "270": "270° clockwise"}),
             F("_rotate_flip", "Flip horizontally", "bool"),
+            ),
+            *G("Borders",
             F("PicturePadMode", "Borders (padding)", "select", ["none", "letterbox", "pillarbox", "fill", "custom"]),
             F("PicturePadColor", "Border color", "text", "An HTML color name (black, white, …) or #rrggbb.",
               show={"PicturePadMode": ["!none"]}, list="pad-colors"),
@@ -592,8 +614,13 @@ def editor_schema(caps):
             F("PicturePadBottom", "Border bottom", "int", show={"PicturePadMode": ["custom"]}, min=0),
             F("PicturePadLeft", "Border left", "int", show={"PicturePadMode": ["custom"]}, min=0),
             F("PicturePadRight", "Border right", "int", show={"PicturePadMode": ["custom"]}, min=0),
+            ),
         ]),
         ("Filters", [
+            *G("Filters",
+            F("UsesPictureFilters", "Use the filters of this tab", "bool"),
+            ),
+            *G("Interlacing",
             F("PictureDetelecine", "Detelecine", "select", ["off", "default", "custom"]),
             F("PictureDetelecineCustom", "Detelecine parameters", show={"PictureDetelecine": ["custom"]}, mono=True),
             F("PictureCombDetectPreset", "Interlace detection", "select", ["off", "default"] + f("comb-detect") + ["custom"]),
@@ -605,6 +632,8 @@ def editor_schema(caps):
                                                               "bwdif": ["default"] + f("bwdif") + ["custom"]}},
               show={"PictureDeinterlaceFilter": ["!off"]}),
             F("PictureDeinterlaceCustom", "Deinterlace parameters", show={"PictureDeinterlacePreset": ["custom"]}, mono=True),
+            ),
+            *G("Denoise and smoothing",
             F("PictureDenoiseFilter", "Denoise", "select", ["off", "nlmeans", "hqdn3d"]),
             F("PictureDenoisePreset", "Denoise preset", "select",
               {"depends": "PictureDenoiseFilter", "map": {"nlmeans": f("nlmeans") + ["custom"], "hqdn3d": f("hqdn3d") + ["custom"]}},
@@ -615,6 +644,8 @@ def editor_schema(caps):
             F("PictureChromaSmoothTune", "Chroma smooth tune", "select", f("chroma-smooth", "tunes"),
               show={"PictureChromaSmoothPreset": ["!off", "!custom"]}),
             F("PictureChromaSmoothCustom", "Chroma smooth parameters", show={"PictureChromaSmoothPreset": ["custom"]}, mono=True),
+            ),
+            *G("Sharpen and deblock",
             F("PictureSharpenFilter", "Sharpen", "select", ["off", "unsharp", "lapsharp"]),
             F("PictureSharpenPreset", "Sharpen preset", "select",
               {"depends": "PictureSharpenFilter", "map": {"unsharp": f("unsharp") + ["custom"], "lapsharp": f("lapsharp") + ["custom"]}},
@@ -626,61 +657,87 @@ def editor_schema(caps):
             F("PictureDeblockPreset", "Deblock", "select", ["off"] + f("deblock") + ["custom"]),
             F("PictureDeblockTune", "Deblock tune", "select", f("deblock", "tunes"), show={"PictureDeblockPreset": ["!off", "!custom"]}),
             F("PictureDeblockCustom", "Deblock parameters", show={"PictureDeblockPreset": ["custom"]}, mono=True),
+            ),
+            *G("Color",
             F("PictureColorspacePreset", "Color space", "select", ["off"] + f("colorspace") + ["custom"]),
             F("PictureColorspaceCustom", "Color space parameters", show={"PictureColorspacePreset": ["custom"]}, mono=True),
             F("VideoGrayScale", "Grayscale", "bool"),
-            F("UsesPictureFilters", "Use the filters above", "bool"),
+            ),
         ]),
         ("Video", [
+            *G("Encoder",
             F("VideoEncoder", "Encoder", "select", caps["video_encoders"]),
-            F("VideoPreset", "Encoder speed", "select", by_encoder("encoder_presets"), "Slower = smaller files at the same quality."),
+            F("VideoPreset", "Encoder speed", "select", by_encoder("encoder_presets")),
             F("VideoTune", "Tune", "select", by_encoder("encoder_tunes", [""])),
             F("VideoProfile", "Profile", "select", by_encoder("encoder_profiles")),
             F("VideoLevel", "Level", "select", by_encoder("encoder_levels")),
+            F("VideoOptionExtra", "Extra encoder options", "text", mono=True),
+            ),
+            *G("Quality",
             F("VideoQualityType", "Quality", "select", QUALITY_TYPES, cast=int),
-            F("VideoQualitySlider", "RF value", "float", "Lower = better quality, bigger files. Typical for x265: 20–24.",
+            F("VideoQualitySlider", "RF value", "float",
               show={"VideoQualityType": ["2"]}, min=0, max=63, step=0.5),
             F("VideoAvgBitrate", "Bitrate (kbit/s)", "int", show={"VideoQualityType": ["1"]}, min=100, step=100),
             F("VideoMultiPass", "Multi-pass encoding", "bool", show={"VideoQualityType": ["1"]}),
             F("VideoTurboMultiPass", "Turbo first pass", "bool", show={"VideoQualityType": ["1"]}),
+            ),
+            *G("Frame rate",
             F("VideoFramerate", "Frame rate", "select", FRAMERATES),
             F("VideoFramerateMode", "Frame rate mode", "select", ["vfr", "cfr", "pfr"]),
-            F("VideoOptionExtra", "Extra encoder options", "text",
-              "Passed to the encoder as is, e.g. for x265: aq-mode=3:psy-rd=2.", mono=True),
+            ),
+            *G("Hardware decoding",
             F("VideoHWDecode", "Hardware decoding", "int", "0 = software decoding. Other values enable a hardware decoder "
               "if HandBrakeCLI supports one here (as set by the HandBrake app).", min=0),
             F("VideoQSVDecode", "Intel Quick Sync decoding", "bool"),
+            ),
+            *G("Color and HDR",
             F("VideoColorMatrixCodeOverride", "Color matrix override", "int", "0 = as in the source.", min=0),
             F("VideoScaler", "Scaler", "select", ["swscale", "zscale"]),
             F("VideoColorRange", "Color range", "select", {"auto": "Same as source", "limited": "Limited (TV, usual)", "full": "Full (PC)"}),
             F("VideoPasshtruHDRDynamicMetadata", "Keep HDR dynamic metadata", "select",   # sic: HandBrake's key
               {"off": "Off", "hdr10plus": "HDR10+", "dolbyvision": "Dolby Vision", "all": "HDR10+ and Dolby Vision"},
               "Passes HDR10+ / Dolby Vision metadata of HDR sources through (HandBrake 1.10 and later)."),
+            ),
         ]),
         ("Audio", [
+            *G("Track selection",
             F("AudioTrackSelectionBehavior", "Tracks", "select", TRACK_BEHAVIORS),
             F("AudioLanguageList", "Languages", "langs", "ISO 639-2 codes, e.g. ger, eng. Empty = any language."),
             F("AudioSecondaryEncoderMode", "Use only the first track's encoder for further languages", "bool"),
+            ),
+            *G("Passthru",
             F("AudioCopyMask", "Allowed passthru (copy)", "multi", copy_encoders,
               "Codecs that \"copy\" tracks keep as they are; other tracks use the fallback encoder."),
             F("AudioEncoderFallback", "Passthru fallback encoder", "select", plain_encoders + ["none"]),
+            ),
+            *G("Names",
             F("AudioTrackNamePassthru", "Keep the source's track names", "bool"),
             F("AudioAutomaticNamingBehavior", "Name tracks automatically", "select",
               {"off": "Off", "unnamed": "Only tracks without a name", "all": "All tracks"},
               "Names like \"Stereo\" or \"Surround 5.1\" (HandBrake 1.10 and later)."),
+            ),
         ]),
         ("Subtitles", [
+            *G("Track selection",
             F("SubtitleTrackSelectionBehavior", "Tracks", "select", TRACK_BEHAVIORS),
             F("SubtitleLanguageList", "Languages", "langs", "ISO 639-2 codes. Empty = any language."),
+            ),
+            *G("Foreign audio and captions",
             F("SubtitleAddForeignAudioSearch", "Foreign audio search (finds forced subtitles for foreign-language scenes)", "bool"),
             F("SubtitleAddForeignAudioSubtitle", "Add a subtitle track for foreign audio", "bool"),
             F("SubtitleAddCC", "Add closed captions", "bool"),
+            ),
+            *G("Burn in",
             F("SubtitleBurnBehavior", "Burn in", "select", BURN_BEHAVIORS),
             F("SubtitleBurnBDSub", "Burn in Blu-ray subtitles (PGS)", "bool"),
             F("SubtitleBurnDVDSub", "Burn in DVD subtitles (VobSub)", "bool"),
+            ),
+            *G("Names",
             F("SubtitleTrackNamePassthru", "Keep the source's track names", "bool"),
+            ),
         ]),
     ]
+    return [(tab, [f for part in parts for f in (part if isinstance(part, list) else [part])]) for tab, parts in tabs]
 
 
 def audio_track_schema(caps):
@@ -714,7 +771,8 @@ def _options(options, value):
 
 
 def _resolve(field, value, values=None):
-    out = dict(field, value=value)
+    out = dict(field, value=value, tip=preset_tips.FIELD_TIPS.get(field["key"], ""),
+               option_tips=preset_tips.OPTION_TIPS.get(field["key"], {}))
     opts = field["options"]
     if isinstance(opts, dict) and "depends" in opts:
         out["depends"] = opts["depends"]
@@ -751,17 +809,23 @@ def _mark(field, known):
 
 
 def editor(preset, caps):
-    """The preset editor: [(tab, [field with value])], audio track fields, the tracks.
-    Fields whose setting the encoding HandBrakeCLI doesn't know get "unsupported"."""
+    """The preset editor: [(tab, [(section, [field with value])])], audio track fields, the
+    tracks. Fields whose setting the encoding HandBrakeCLI doesn't know get "unsupported"."""
     angle, flip = _rotate(preset)
     values = dict(preset, _rotate_angle=angle, _rotate_flip=flip)
     known, track_known = set(caps.get("preset_keys") or []), set(caps.get("track_keys") or [])
-    tabs = [(tab, [_mark(_resolve(f, values.get(f["key"]), values), known) for f in fields])
-            for tab, fields in editor_schema(caps)]
+    tabs = []
+    for tab, fields in editor_schema(caps):
+        sections = []
+        for f in fields:
+            if not sections or sections[-1][0] != f.get("group"):
+                sections.append((f.get("group"), []))
+            sections[-1][1].append(_mark(_resolve(f, values.get(f["key"]), values), known))
+        tabs.append((tab, sections))
     schema_keys = {f["key"] for _, fields in editor_schema(caps) for f in fields} | {"AudioList", "PictureRotate"} | INTERNAL
     more = [_mark(_generic(k, v), known) for k, v in preset.items() if k not in schema_keys]
     if more:
-        tabs.append(("More", more))
+        tabs.append(("More", [("", more)]))
     track_fields = audio_track_schema(caps)
     tracks = [[_mark(_resolve(f, t.get(f["key"])), track_known) for f in track_fields] for t in (preset.get("AudioList") or [])]
     template = [_mark(_resolve(f, DEFAULT_TRACK.get(f["key"])), track_known) for f in track_fields]
@@ -807,6 +871,9 @@ def audit(caps):
     missing = compatibility({}, caps, False)["missing"] + sorted(track_known - track_schema)
     lines.append("Settings without an editor field: " + (", ".join(missing) or "none"))
     unknown = sorted((schema - known) | (track_schema - track_known)) if known else []
+    untipped = sorted(f["key"] for _, fields in editor_schema(caps) for f in fields if f["key"] not in preset_tips.FIELD_TIPS)
+    untipped += sorted(f["key"] for f in audio_track_schema(caps) if f["key"] not in preset_tips.FIELD_TIPS)
+    lines.append("Editor fields without a description (preset_tips.py): " + (", ".join(untipped) or "none"))
     lines.append("Editor fields this HandBrakeCLI doesn't know (marked as ignored): " + (", ".join(unknown) or "none"))
     for item in all_presets():
         pid = item[0] if isinstance(item, (tuple, list)) else item["id"]

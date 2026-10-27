@@ -11,6 +11,7 @@
   function show(el) {
     target = el;
     tip.textContent = el.dataset.tip;
+    tip.classList.toggle("wide", el.hasAttribute("data-info"));      // descriptions in the preset editor are longer
     tip.hidden = false;
     const r = el.getBoundingClientRect(), t = tip.getBoundingClientRect();
     const left = Math.min(Math.max(8, r.left + r.width / 2 - t.width / 2), window.innerWidth - t.width - 8);

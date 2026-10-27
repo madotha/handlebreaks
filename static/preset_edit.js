@@ -1,6 +1,7 @@
-// Preset editor: tabs, choices that depend on another field (e.g. tunes per encoder),
-// fields shown only for some values (custom filter parameters, …), quick size buttons,
-// and audio tracks that can be added and removed.
+// Preset editor: tabs (with a dot when a tab has unsaved changes), choices that depend on
+// another field (e.g. tunes per encoder), fields shown only for some values (custom filter
+// parameters, …), descriptions (the (i) buttons and the text under a chosen option), quick
+// size buttons, and audio tracks that can be added and removed.
 (function () {
   const form = document.querySelector("[data-preset-editor]");
   if (!form) return;
@@ -36,6 +37,18 @@
     if (list.length && !values.includes(current)) {   // e.g. another encoder: pick its default
       sel.value = values.includes("medium") ? "medium" : values.includes("auto") ? "auto" : values.includes("") ? "" : values[Math.floor(values.length / 2)];
     }
+    showOptionTip(sel);
+  }
+
+  // The description of the chosen option under a dropdown (and as the hover text of each option)
+  function showOptionTip(sel) {
+    if (!sel.dataset.optionTips) return;
+    const tips = JSON.parse(sel.dataset.optionTips);
+    const p = sel.closest(".field").querySelector("[data-option-tip]");
+    const text = tips[sel.value] || "";
+    p.textContent = text;
+    p.hidden = !text;
+    [...sel.options].forEach((o) => { if (tips[o.value]) o.title = tips[o.value]; else o.removeAttribute("title"); });
   }
 
   function syncShown() {
@@ -47,10 +60,14 @@
         return (!yes.length || yes.includes(v)) && !no.includes(v);
       });
     });
+    form.querySelectorAll("[data-section]").forEach((sec) => {        // a heading only shows while one of its fields does
+      sec.hidden = ![...sec.querySelectorAll(".field")].some((f) => !f.hidden);
+    });
   }
 
   function init(root) {
     root.querySelectorAll("select[data-depends]").forEach(refillDependent);
+    root.querySelectorAll("select[data-option-tips]").forEach(showOptionTip);
     root.querySelectorAll("[data-size]").forEach((b) => b.addEventListener("click", () => {
       const [w, h] = b.dataset.size.split("x");
       form.querySelector('[data-field="PictureWidth"]').value = w;
@@ -63,7 +80,17 @@
       const scope = e.target.closest("[data-track]") || form;
       scope.querySelectorAll(`select[data-depends="${key}"]`).forEach(refillDependent);
     }
+    if (e.target.matches("select[data-option-tips]")) showOptionTip(e.target);
     syncShown();
+  });
+
+  // The (i) button shows the description of a setting below it (the only way on phones)
+  form.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-info]");
+    if (!b) return;
+    const text = b.closest(".field").querySelector("[data-tip-text]");
+    text.hidden = !text.hidden;
+    b.setAttribute("aria-expanded", String(!text.hidden));
   });
 
   // Audio tracks
@@ -84,14 +111,25 @@
       init(list.lastElementChild);
       renumber();
       syncShown();
+      markChanges();
     });
     list.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-track-remove]");
-      if (btn) { btn.closest("[data-track]").remove(); renumber(); }
+      if (btn) { btn.closest("[data-track]").remove(); renumber(); markChanges(); }
     });
     form.addEventListener("submit", renumber);
   }
 
   init(form);
   syncShown();
+
+  // A dot on each tab whose fields differ from what was loaded (i.e. from the saved preset)
+  const state = (panel) => [...panel.querySelectorAll("input, select, textarea")]
+    .map((el) => `${el.name}=${el.type === "checkbox" ? (el.checked ? 1 : 0) : el.value}`).join("&");
+  const saved = new Map(panels.map((p) => [p, state(p)]));
+  function markChanges() {
+    panels.forEach((p, n) => { tabs[n].querySelector("[data-tab-dot]").hidden = state(p) === saved.get(p); });
+  }
+  form.addEventListener("input", markChanges);
+  form.addEventListener("change", markChanges);
 })();

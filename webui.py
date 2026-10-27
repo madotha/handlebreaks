@@ -973,6 +973,8 @@ def replace_info(rows):
     return rows
 
 
+TAB_ICONS = {"Summary": "summary", "Dimensions": "crop", "Filters": "sliders", "Video": "film",
+             "Audio": "speaker", "Subtitles": "captions", "More": "dots"}      # preset editor tabs (_icons.html)
 VIEWS = {"queue": "Queue", "review": "Awaiting review", "history": "History"}   # tabs of the Status page
 
 # Sortable columns per tab: field -> (label, sort key of a row). No sorting = the tab's own order:
@@ -1612,7 +1614,7 @@ def preset_edit(pid):
     shown = new if error and new and request.form.get("mode") != "json" else preset   # keep the user's input on errors
     tabs, tracks, track_template = presets.editor(shown, caps)
     return render_template(
-        "preset_edit.html", pid=pid, p=preset, caps=caps, error=error, tabs=tabs, tracks=tracks, remote=remote,
+        "preset_edit.html", pid=pid, p=preset, caps=caps, error=error, tabs=tabs, tracks=tracks, remote=remote, tab_icons=TAB_ICONS,
         compat=presets.compatibility(shown, caps, remote, presets.file_format(pid)),
         track_template=track_template, json_text=json_text or json.dumps(preset, indent=2, ensure_ascii=False),
         shares=usage.get(pid, []), is_default=pid == default)

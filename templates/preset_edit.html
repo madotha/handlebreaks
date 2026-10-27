@@ -5,21 +5,25 @@
 {# One editor field. name: the input name (audio tracks use a<n>-<key>) #}
 {% macro ignored(f) %}{% if f.unsupported %} <span class="badge badge-warn" data-tip="The encoding HandBrakeCLI doesn't know this setting and ignores it when encoding">ignored by the worker</span>{% endif %}{% endmacro %}
 
+{# The (i) button next to a label: hover or focus shows the description, a click shows it below the field #}
+{% macro info(f) %}{% if f.tip %}<button type="button" class="info-btn" data-info data-tip="{{ f.tip }}" aria-expanded="false" aria-label="What does “{{ f.label }}” do?">{{ icon('info') }}</button>{% endif %}{% endmacro %}
+
 {% macro field(f, name) %}
   {% set id = 'f-' ~ name %}
   <div class="field{{ ' field-wide' if f.kind in ('json', 'multi') or f.attrs.mono }}" {% if f.show %}data-show='{{ f.show|tojson }}'{% endif %}>
     {% if f.kind == 'bool' %}
-      <label class="check"><input type="checkbox" id="{{ id }}" name="{{ name }}" value="1" data-field="{{ f.key }}" {% if f.value %}checked{% endif %}> {{ f.label }}{{ ignored(f) }}</label>
+      <div class="check-line"><label class="check"><input type="checkbox" id="{{ id }}" name="{{ name }}" value="1" data-field="{{ f.key }}" {% if f.value %}checked{% endif %}> {{ f.label }}{{ ignored(f) }}</label>{{ info(f) }}</div>
     {% else %}
-      <label for="{{ id }}">{{ f.label }}{{ ignored(f) }}</label>
+      <div class="label-line"><label for="{{ id }}">{{ f.label }}{{ ignored(f) }}</label>{{ info(f) }}</div>
       {% if f.kind == 'select' %}
-        <select id="{{ id }}" name="{{ name }}" data-field="{{ f.key }}"
+        <select id="{{ id }}" name="{{ name }}" data-field="{{ f.key }}"{% if f.option_tips %} data-option-tips='{{ f.option_tips|tojson }}'{% endif %}
                 {% if f.depends %}data-depends="{{ f.depends }}" data-map='{{ f.dmap|tojson }}' data-current="{{ '' if f.value is none else f.value }}"{% endif %}>
-          {% for v, l in f.options %}<option value="{{ v }}" {% if v == ('' if f.value is none else f.value|string) %}selected{% endif %}>{{ l }}</option>{% endfor %}
+          {% for v, l in f.options %}<option value="{{ v }}" {% if f.option_tips.get(v) %}title="{{ f.option_tips[v] }}" {% endif %}{% if v == ('' if f.value is none else f.value|string) %}selected{% endif %}>{{ l }}</option>{% endfor %}
         </select>
+        {% if f.option_tips %}<p class="option-tip" data-option-tip hidden></p>{% endif %}
       {% elif f.kind == 'multi' %}
         <div class="checks-row">
-          {% for v, l in f.options %}<label class="check"><input type="checkbox" name="{{ name }}" value="{{ v }}" {% if v in (f.value or []) %}checked{% endif %}> {{ l }}</label>{% endfor %}
+          {% for v, l in f.options %}<label class="check"{% if f.option_tips.get(v) %} data-tip="{{ f.option_tips[v] }}"{% endif %}><input type="checkbox" name="{{ name }}" value="{{ v }}" {% if v in (f.value or []) %}checked{% endif %}> {{ l }}</label>{% endfor %}
         </div>
       {% elif f.kind in ('int', 'float') %}
         <input id="{{ id }}" name="{{ name }}" data-field="{{ f.key }}" type="number" value="{{ '' if f.value is none else f.value }}"
@@ -37,6 +41,7 @@
       {% endif %}
     {% endif %}
     {% if f.hint %}<p class="hint">{{ f.hint }}</p>{% endif %}
+    {% if f.tip %}<p class="tip-text" data-tip-text hidden>{{ f.tip }}</p>{% endif %}
   </div>
 {% endmacro %}
 
@@ -79,14 +84,19 @@
   <input type="hidden" name="csrf" value="{{ csrf_token() }}">
   <input type="hidden" name="mode" value="form">
   <nav class="editor-tabs" aria-label="Settings" data-tabs>
-    {% for tab, _ in tabs %}<button type="button" class="sort-chip" data-tab="{{ tab }}">{{ tab }}</button>{% endfor %}
+    {% for tab, _ in tabs %}<button type="button" data-tab="{{ tab }}">{{ icon(tab_icons.get(tab, 'dots')) }}{{ tab }}<span class="tab-dot" data-tab-dot hidden data-tip="This tab has unsaved changes"><span class="sr-only">(unsaved changes)</span></span></button>{% endfor %}
   </nav>
 
-  {% for tab, fields in tabs %}
+  {% for tab, sections in tabs %}
     <section class="tab-panel" data-tab-panel="{{ tab }}">
-      <h2>{{ tab }}</h2>
+      <h2>{{ icon(tab_icons.get(tab, 'dots')) }}{{ tab }}</h2>
       {% if tab == 'More' %}<p class="hint">Settings of this preset the editor doesn't have a field for (e.g. from a newer HandBrake), by their type.</p>{% endif %}
-      <div class="grid-3">{% for f in fields %}{{ field(f, f.key) }}{% endfor %}</div>
+      {% for group, fields in sections %}
+        <div class="field-section" data-section>
+          {% if group %}<h3 class="field-group">{{ group }}</h3>{% endif %}
+          <div class="grid-3">{% for f in fields %}{{ field(f, f.key) }}{% endfor %}</div>
+        </div>
+      {% endfor %}
       {% if tab == 'Audio' %}
         <h3 class="field-group">Tracks</h3>
         <p class="hint">One entry per output track, in order. The first matching source track uses track 1, and so on.</p>

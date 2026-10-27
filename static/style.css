@@ -364,13 +364,35 @@ h3.field-group:first-of-type { border-top: 0; padding-top: 0; margin-top: .4rem;
 .preset-list td:last-child { width: 1%; white-space: nowrap; }
 .preset-list td:last-child .row-actions { flex-wrap: nowrap; }
 textarea.json { width: 100%; min-height: 28rem; font: .8rem/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-2); padding: .7rem; }
-.preset-editor .editor-tabs { display: flex; flex-wrap: wrap; gap: .35rem; margin: -.1rem 0 1.1rem; padding-bottom: .9rem; border-bottom: 1px solid var(--border); }
-.editor-tabs .sort-chip { cursor: pointer; }
-.editor-tabs .sort-chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-.tab-panel h2 { margin-bottom: 1rem; }
+.preset-editor .editor-tabs { position: sticky; top: var(--header-h); z-index: 9; display: flex; gap: .15rem; margin: -.4rem 0 1.2rem;
+  background: var(--surface); box-shadow: inset 0 -1px 0 var(--border); overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+.editor-tabs::-webkit-scrollbar { display: none; }
+.editor-tabs button { position: relative; display: flex; align-items: center; gap: .45rem; flex: none; min-height: 0; height: auto; padding: .65rem .9rem;
+  background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); font-weight: 600; white-space: nowrap; cursor: pointer; }
+.editor-tabs button:hover:not(:disabled) { color: var(--text); background: none; }
+.editor-tabs button.active { color: var(--text); border-bottom-color: var(--accent); }
+.editor-tabs .i { width: 1.1rem; height: 1.1rem; }
+.editor-tabs button.active .i { color: var(--accent); }
+.tab-dot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--info); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.tab-panel h2 { display: flex; align-items: center; gap: .55rem; margin-bottom: 1rem; }
+.tab-panel h2 .i { width: 1.2rem; height: 1.2rem; color: var(--muted); }
+.tab-panel > h3.field-group, .field-section > h3.field-group { border-top: 1px solid var(--border); padding-top: 1.1rem; margin-top: 1.4rem; }
+.field-section:first-of-type > h3.field-group { border-top: 0; padding-top: 0; margin-top: .2rem; }
+.label-line { display: flex; align-items: center; gap: .3rem; margin-bottom: .35rem; }
+.label-line label { margin-bottom: 0; }
+.check-line { display: flex; align-items: center; gap: .3rem; }
+.info-btn { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 1.3rem; height: 1.3rem; min-height: 0; padding: 0;
+  background: none; border: 0; border-radius: 50%; color: var(--muted); cursor: help; }
+.info-btn:hover:not(:disabled), .info-btn[aria-expanded="true"] { color: var(--link); background: none; }
+.info-btn .i { width: 1rem; height: 1rem; }
+.tip-text, .option-tip { margin: .4rem 0 0; padding: .45rem .65rem; font-size: .8rem; line-height: 1.4; color: var(--text); background: var(--info-bg);
+  border-radius: var(--radius-sm); }
+.option-tip { margin-top: .35rem; background: none; padding: 0 .15rem; color: var(--muted); }
+.tooltip.wide { max-width: min(26rem, 90vw); }
 .grid-3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 0 1.25rem; align-items: start; }
 .grid-3 .field-wide { grid-column: 1 / -1; }
-.grid-3 .field > label.check { margin-top: 1.75rem; }
+.grid-3 .field > .check-line { margin-top: 1.75rem; }
 input.mono, textarea.small-json { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .84rem; }
 textarea.small-json { width: 100%; min-height: 4rem; background: var(--surface-2); padding: .5rem; }
 .checks-row { display: flex; flex-wrap: wrap; gap: .4rem 1.1rem; }
@@ -556,7 +578,7 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
   .new-preset label.inline { flex: 1 1 100%; }
   .editor-tabs { flex-wrap: nowrap !important; overflow-x: auto; scrollbar-width: none; }
   .editor-save { bottom: var(--tabbar-h); }
-  .grid-3 .field > label.check { margin-top: 0; }
+  .grid-3 .field > .check-line { margin-top: 0; }
   .new-preset label.inline select, .new-preset label.inline input[type=file] { flex: 1; width: 100%; }
   .new-preset form > button { flex: none; }
 

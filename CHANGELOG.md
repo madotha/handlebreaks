@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Preset editor: every setting has an ⓘ button with a description of what it does (tooltip on hover or focus, expands below the field on click and on phones), and dropdowns explain the chosen option below the box (encoders, speed presets, tunes, profiles, levels, filters, deinterlacing, mixdowns, sample rates, …). The texts are in `preset_tips.py`.
+- Preset editor: the tabs are now a proper tab bar with icons that stays visible while scrolling, the long tabs are split into sections (Crop, Size, Encoder, Quality, …), and a dot marks tabs with unsaved changes.
+- `encoding.py preset-check` lists editor fields without a description.
+
 ## [3.2.0] - 2026-10-27
 
 ### Added
