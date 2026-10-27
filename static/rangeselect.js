@@ -3,18 +3,35 @@
 // - Press on a row's checkbox cell, drag over other rows and release: all rows in between
 //   take the state the first one is getting. Mouse only; on touch screens dragging scrolls.
 // Works on the visible, enabled checkboxes in `td.sel` / `td.check` cells in page order, so
-// rows loaded later (folders, "Show more") need no setup.
+// rows loaded later (folders, "Show more") need no setup. The folder checkboxes of the Files
+// page (`.dir-toggle`) form their own ranges among the folders of the same level; setting one
+// fires `change`, which files.js answers by covering the folder's content.
 (() => {
   const CELL = "td.sel, td.check";
-  const BOX = "td.sel > input[type=checkbox], td.check > input[type=checkbox]";
-  const visible = () => [...document.querySelectorAll(BOX)].filter((b) => !b.disabled && b.offsetParent !== null);
+  const FILE_BOX = "td.sel > input[type=checkbox], td.check > input[type=checkbox]";
+  const BOX = FILE_BOX + ", .dir-toggle";
+  const ok = (b) => !b.disabled && b.offsetParent !== null;
+  // The boxes a range can span from `box`: file rows in page order, or the folders of its level
+  const members = (box) => {
+    if (box.matches(".dir-toggle")) {
+      const level = box.closest("details").parentElement;
+      return [...level.querySelectorAll(":scope > details.dir > summary > .dir-toggle")].filter(ok);
+    }
+    return [...document.querySelectorAll(FILE_BOX)].filter(ok);
+  };
   const boxOf = (el) => {
+    if (el && el.matches && el.matches(".dir-toggle")) return el;
     const cell = el && el.closest && el.closest(CELL);
     return cell ? cell.querySelector("input[type=checkbox]") : null;
   };
-  const rowBox = (el) => {
+  // The box of the row (or folder header) under the pointer, in the same kind as `like`
+  const rowBox = (el, like) => {
+    if (like.matches(".dir-toggle")) {
+      const sum = el && el.closest && el.closest("summary");
+      return sum ? sum.querySelector(":scope > .dir-toggle") : null;
+    }
     const tr = el && el.closest && el.closest("tr");
-    return tr ? tr.querySelector(BOX) : null;
+    return tr ? tr.querySelector(FILE_BOX) : null;
   };
 
   // Set the boxes between a and b (inclusive) to `on`; every other box in `base` keeps its
@@ -39,14 +56,14 @@
     const box = boxOf(e.target);
     if (!box || box.disabled) return;
     if (e.shiftKey) e.preventDefault();           // no text selection while shift-clicking
-    const list = visible();
+    const list = members(box);
     drag = { start: box, on: !box.checked, list, base: new Map(list.map((b) => [b, b.checked])), moved: false };
   });
 
   document.addEventListener("mouseover", (e) => {
     if (!drag || !(e.buttons & 1)) return;
-    const box = rowBox(e.target);
-    if (!box || box.disabled) return;
+    const box = rowBox(e.target, drag.start);
+    if (!box || box.disabled || !drag.list.includes(box)) return;
     if (!drag.moved && box === drag.start) return;
     if (!drag.moved) {
       drag.moved = true;
@@ -75,7 +92,7 @@
     const box = e.target.matches && e.target.matches(BOX) ? e.target : null;
     if (!box) return;
     if (e.shiftKey && anchor && anchor !== box && document.contains(anchor)) {
-      apply(visible(), anchor, box, box.checked, null);
+      apply(members(box), anchor, box, box.checked, null);
     }
     anchor = box;
   });

@@ -160,6 +160,8 @@
     // The folder checkbox sits inside <summary>: cancel the click so the folder
     // doesn't open or close, then apply the new state ourselves.
     root.querySelectorAll(".dir-toggle").forEach((t) => {
+      // Set from outside (static/rangeselect.js): cover the content like a click would
+      t.addEventListener("change", () => cover(t.closest("details").querySelector(":scope > .dir-body"), t.checked));
       t.addEventListener("click", (e) => {
         const wanted = t.checked;
         e.preventDefault();
