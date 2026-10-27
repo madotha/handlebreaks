@@ -984,8 +984,11 @@ def kept_originals():
         if rel not in by_path or when >= by_path[rel][0]:
             by_path[rel] = (when, key, new_key)
     out = []
-    for folder, _, names in os.walk(base):
+    for folder, dirs, names in os.walk(base):
+        dirs[:] = [d for d in dirs if d != "@eaDir"]        # Synology's index data, not originals
         for name in names:
+            if Path(name).suffix.lower() not in VIDEO_EXTS:   # only the video files Replace… moved
+                continue
             path = Path(folder) / name
             try:
                 if path.is_symlink():           # never follow links out of the folder
@@ -1002,7 +1005,8 @@ def kept_originals():
 
 def delete_kept(rels):
     """Permanently delete kept originals, given by their path inside .replaced/ (anything
-    that isn't a file there is ignored), and remove the folders left empty.
+    that isn't a file there is ignored), together with a Synology NAS's index data of the
+    file (@eaDir/<name>), and remove the folders left empty.
     Returns (files deleted, bytes freed)."""
     base = kept_dir()
     if base is None or not base.is_dir():
@@ -1020,7 +1024,12 @@ def delete_kept(rels):
             continue
         count += 1
         freed += size
+        shutil.rmtree(path.parent / "@eaDir" / path.name, ignore_errors=True)   # a Synology NAS's index data of this file
         folder = path.parent
+        try:
+            (folder / "@eaDir").rmdir()          # if that was its last entry
+        except OSError:
+            pass
         while folder != base and folder.is_relative_to(base):    # empty folders up to .replaced/
             try:
                 folder.rmdir()
