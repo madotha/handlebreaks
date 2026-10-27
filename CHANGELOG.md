@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.4.1] - 2026-10-27
+
 ### Fixed
 
 - Status → Kept originals no longer lists files that aren't originals, such as the `SYNOINDEX_MEDIA_INFO` index data a Synology NAS puts into `@eaDir` folders: only video files are listed, and `@eaDir` is skipped. Deleting a kept original now also removes the NAS's index data of that file and the folders left empty.
