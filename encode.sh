@@ -53,6 +53,14 @@ try:
 except OSError as e:
     sys.exit(f"{op}: {e.strerror}: {e.filename}")' "$@"
 }
+# HandBrake's own verdict from its log: "work result = 0", "Encode done!" and a non-empty
+# output file. Used when the shell reports a non-zero exit code for an encode that finished
+# (a lost or mixed-up status of the background job, seen as exit code 19).
+hb_finished() {
+  [[ -s "$1" && -r "$LOGS/handbrake-last.log" ]] || return 1
+  grep -q 'work result = 0' "$LOGS/handbrake-last.log" &&
+    grep -q 'Encode done!' "$LOGS/handbrake-last.log"
+}
 result() { print -r -- "$(date '+%Y-%m-%d %H:%M')	$1	$2" >> "$LOGS/results.tsv"; }
 
 # ── Settings from config.env (template: config.example.env) ──────────────────
@@ -273,6 +281,10 @@ print("avg%d" % int(p.get("VideoAvgBitrate") or 0) if p.get("VideoQualityType", 
     fi
     wait $hbpid
     rc=$?
+    if (( rc != 0 )) && hb_finished "$tmp"; then
+      log "  shell reported exit code $rc, but HandBrake reports success: file kept"
+      rc=0
+    fi
     if (( rc == 0 )) && [[ -s "$tmp" ]]; then
       # Move the finished file out of .inprogress. On a NAS the move can fail for a
       # moment (e.g. while its media indexer reads the new file), so retry a few times.

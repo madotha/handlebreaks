@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.4.2] - 2026-10-28
+
+### Fixed
+- The worker no longer deletes a finished encode when the shell reports a wrong non-zero exit code (seen as 19) for a HandBrakeCLI run that succeeded. It now also checks HandBrake's own log (`work result = 0`, `Encode done!`) and a non-empty output file, and keeps the file if all agree. Real failures and stops are unchanged.
+
 ## [3.4.1] - 2026-10-27
 
 ### Fixed
