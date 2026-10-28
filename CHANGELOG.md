@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.6.2] - 2026-10-28
+
+### Changed
+- Notifications on screen stay when you switch pages or reload (in the same tab): they come back where they were, timed ones with the time they had left, errors until you close them.
+
 ## [3.6.1] - 2026-10-28
 
 ### Changed

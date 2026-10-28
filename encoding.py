@@ -68,7 +68,7 @@ Examples
     python3 encoding.py version
 """
 
-__version__ = "3.6.1"
+__version__ = "3.6.2"
 
 import fcntl
 import json

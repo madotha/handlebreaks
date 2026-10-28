@@ -187,6 +187,7 @@ label.inline { display: inline-flex; align-items: center; gap: .5rem; font-size:
 /* hovering the stack holds all of them, so none moves away under the mouse */
 .toasts:hover .toast-bar, .toast:focus-within .toast-bar { animation-play-state: paused; }
 @keyframes toast-time { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+.toast.restored { animation: none; }                /* shown again on the next page: no slide-in */
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; transition: none; } }
 @media (max-width: 720px) {
   .toasts { left: 16px; right: 16px; width: auto; bottom: calc(var(--tabbar-h) + .5rem); }
