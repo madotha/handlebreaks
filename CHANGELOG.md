@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.6.1] - 2026-10-28
+
+### Changed
+- Notifications show a bar at the bottom that runs down until they hide. Hovering the notifications now holds all of them, so none disappears or moves away under the mouse.
+
 ## [3.6.0] - 2026-10-28
 
 ### Added

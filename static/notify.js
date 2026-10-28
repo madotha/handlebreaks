@@ -1,6 +1,7 @@
 // Notifications: polls /events (webui.events()) and shows new ones as popups in the corner,
 // each with a link to where it happened and a close button. They hide after NOTIFY_SECONDS
-// (hovering or focusing one holds it; errors may stay until closed). The last id seen is
+// (a bar at the bottom runs down until then; hovering the popups or focusing one holds them; errors may
+// stay until closed). The last id seen is
 // shared by all tabs in localStorage, so an event pops up once even with several pages open,
 // and moving to another page doesn't lose what came in meanwhile.
 (function () {
@@ -42,7 +43,6 @@
 
   function dismiss(t) {
     if (t.classList.contains("leaving")) return;
-    clearTimeout(t._timer);
     t.classList.add("leaving");
     setTimeout(() => t.remove(), 200);
   }
@@ -80,14 +80,12 @@
 
     const sticky = !opts.seconds || (ev.level === "error" && opts.errors_stay);
     if (sticky) return;
-    let left = opts.seconds * 1000, started = 0;
-    const run = () => { started = Date.now(); t._timer = setTimeout(() => dismiss(t), left); };
-    const hold = () => { clearTimeout(t._timer); left = Math.max(left - (Date.now() - started), 2000); };
-    t.addEventListener("mouseenter", hold);
-    t.addEventListener("mouseleave", run);
-    t.addEventListener("focusin", hold);
-    t.addEventListener("focusout", (e) => { if (!t.contains(e.relatedTarget)) run(); });
-    run();
+    // The time bar is the timer: its animation pauses while the popups are hovered or this one has focus
+    // (CSS), and the popup hides when it ends, so the bar and the hiding always match.
+    const bar = el("span", "toast-bar");
+    bar.style.animationDuration = `${opts.seconds}s`;
+    bar.addEventListener("animationend", () => dismiss(t));
+    t.append(bar);
   }
 
   let busy = false;

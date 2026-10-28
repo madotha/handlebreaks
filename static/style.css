@@ -180,6 +180,13 @@ label.inline { display: inline-flex; align-items: center; gap: .5rem; font-size:
 .toast-actions { display: flex; gap: .1rem; margin-top: -.2rem; }
 .toast.leaving { opacity: 0; transform: translateX(.75rem); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(.5rem); } }
+/* Time left until the popup hides (static/notify.js hides it when the animation ends) */
+.toast { position: relative; overflow: hidden; }
+.toast-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--tone); opacity: .7;
+  transform-origin: left; animation: toast-time linear forwards; }
+/* hovering the stack holds all of them, so none moves away under the mouse */
+.toasts:hover .toast-bar, .toast:focus-within .toast-bar { animation-play-state: paused; }
+@keyframes toast-time { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; transition: none; } }
 @media (max-width: 720px) {
   .toasts { left: 16px; right: 16px; width: auto; bottom: calc(var(--tabbar-h) + .5rem); }
