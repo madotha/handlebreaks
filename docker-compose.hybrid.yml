@@ -1,4 +1,4 @@
-# Mac hybrid: the container runs the web UI and scans, while the Mac keeps
+# Handlebreaks, Mac hybrid: the container runs the web UI and scans, while the Mac keeps
 # encoding natively with launchd and encode.sh (all CPU cores, Apple AAC).
 #
 #   docker compose -f docker-compose.yml -f docker-compose.hybrid.yml up -d --build

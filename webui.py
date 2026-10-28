@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Web UI for the encoding control
-===============================
+Handlebreaks web UI
+===================
 
 Pages
 -----
@@ -601,7 +601,8 @@ def csrf_token():
     return session["csrf"]
 
 
-app.jinja_env.globals.update(csrf_token=csrf_token, settings_sections=SETTINGS, scan_state=SCAN, now=datetime.now)
+app.jinja_env.globals.update(csrf_token=csrf_token, settings_sections=SETTINGS, scan_state=SCAN, now=datetime.now,
+                             app_version=enc.__version__)
 
 
 @app.before_request
@@ -2058,11 +2059,11 @@ def settings(section):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Web UI of the encoding control")
+    ap = argparse.ArgumentParser(description="Handlebreaks web UI")
     ap.add_argument("--host", default=os.environ.get("WEB_HOST", "127.0.0.1"))
     ap.add_argument("--port", type=int, default=int(os.environ.get("WEB_PORT", "7979")))
     args = ap.parse_args()
-    print(f"Web UI: http://{args.host}:{args.port}", file=sys.stderr)
+    print(f"Handlebreaks web UI: http://{args.host}:{args.port}", file=sys.stderr)
     threading.Thread(target=auto_scan_loop, daemon=True).start()
     threading.Thread(target=replace_sync_loop, daemon=True).start()
     threading.Thread(target=originals_purge_loop, daemon=True).start()

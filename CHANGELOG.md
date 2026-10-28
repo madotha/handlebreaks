@@ -1,11 +1,22 @@
 # Changelog
 
-All notable changes to this project are documented in this file.
+All notable changes to Handlebreaks are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [3.7.0] - 2026-10-28
+
+### Changed
+- The tool is called **Handlebreaks** everywhere: in the web UI (header, page titles, app name when added to a phone's home screen), the README, the wiki, the Obsidian notes, the configuration templates and `encoding.py version` (prints `Handlebreaks vX.Y.Z`).
+- Docker: the image and the container are named `handlebreaks` (before: `plex-encoding-automation` and `<folder>-encoding-1`). `docker compose` commands are unchanged; `CONTAINER_NAME` in `.env` sets another name, e.g. for a second instance. See [Updating to version 3.7](https://github.com/madotha/handlebreaks/wiki/Updating#updating-to-version-37) in the wiki, also for renaming an older install folder.
+- New installs clone into a folder named `handlebreaks`.
+- Requests to Plex identify themselves as Handlebreaks (`X-Plex-Product`).
+
+### Added
+- The Settings page shows the version with links to the documentation and the changelog.
 
 ## [3.6.2] - 2026-10-28
 

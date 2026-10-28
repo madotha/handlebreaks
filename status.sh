@@ -1,6 +1,6 @@
 #!/bin/zsh
 # ─────────────────────────────────────────────────────────────────────────────
-# status.sh – live view of the encoding in the terminal (like HandBrake's queue)
+# status.sh – Handlebreaks: live view of the encoding in the terminal (like HandBrake's queue)
 # Usage:  zsh ~/scripts/encoding/status.sh      Quit: Ctrl + C
 # Quitting the view does NOT stop the encoding.
 # ─────────────────────────────────────────────────────────────────────────────

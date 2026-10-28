@@ -1,6 +1,6 @@
-# Plex Encoding Automation (H.264 → H.265)
+# Handlebreaks
 
-Semi-automatic conversion of movies and TV episodes in a Plex library from H.264 (and other older codecs) to H.265/HEVC with HandBrakeCLI. You decide which files get encoded; the tool finds candidates, queues them, encodes them in the background, and only replaces an original when you say so (keeping it as a backup by default).
+**Plex encoding automation (H.264 → H.265).** Handlebreaks is a semi-automatic conversion of movies and TV episodes in a Plex library from H.264 (and other older codecs) to H.265/HEVC with HandBrakeCLI. You decide which files get encoded; the tool finds candidates, queues them, encodes them in the background, and only replaces an original when you say so (keeping it as a backup by default).
 
 ![Files page: the library as a folder tree with the optimized share per folder, codec, resolution, bitrate and status per file, and files selected for queueing](docs/screenshot-files.png)
 
@@ -33,8 +33,8 @@ The fastest way to try it. Tested on macOS with Docker Desktop; Linux with Docke
 **Steps:**
 
 ```bash
-git clone https://github.com/madotha/handlebreaks.git plex-encoding-automation
-cd plex-encoding-automation
+git clone https://github.com/madotha/handlebreaks.git
+cd handlebreaks
 cp .env.example .env
 ```
 
@@ -63,7 +63,7 @@ For more details, the native macOS setup (faster encoding) and the mixed setup, 
 
 If you use an AI coding agent that can run commands on your machine (e.g. Claude Code), you can let it do the setup. Start it in an empty folder and paste this prompt, with the repository URL filled in. It asks you for everything that depends on your environment before changing anything:
 
-> Set up "Plex Encoding Automation" from `https://github.com/madotha/handlebreaks.git` on this machine. Clone it, and clone its wiki (`https://github.com/madotha/handlebreaks.wiki.git`) next to it. Read the README.md and the wiki pages Choose-a-Setup, Mounting-the-Library, Configuration and the Setup page of the setup we choose, completely, and follow them; don't invent steps that aren't in them.
+> Set up "Handlebreaks" (Plex encoding automation) from `https://github.com/madotha/handlebreaks.git` on this machine. Clone it, and clone its wiki (`https://github.com/madotha/handlebreaks.wiki.git`) next to it. Read the README.md and the wiki pages Choose-a-Setup, Mounting-the-Library, Configuration and the Setup page of the setup we choose, completely, and follow them; don't invent steps that aren't in them.
 >
 > Before you install or configure anything, check my system (operating system, CPU, free disk space, and whether Docker, Homebrew, Python 3.9+, HandBrakeCLI and ffmpeg are installed), then ask me, one topic at a time:
 >
@@ -118,7 +118,7 @@ git pull
 .venv/bin/pip install -r requirements.txt                       # if you use the web UI
 launchctl kickstart -k gui/$(id -u)/local.plex-encoding-web     # restart the web UI
 
-# Docker (Setup B)
+# Docker (Setup B), in the folder you cloned into (e.g. handlebreaks)
 git pull
 docker compose up -d --build
 

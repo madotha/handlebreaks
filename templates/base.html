@@ -13,7 +13,9 @@
   {# Apply the chosen theme before the first paint (static/theme.js switches it) #}
   <script>try { var t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
   {% block head %}{% endblock %}
-  <title>{% block title %}{% endblock %} · Plex Encoding</title>
+  <title>{% block title %}{% endblock %} · Handlebreaks</title>
+  <meta name="application-name" content="Handlebreaks">
+  <meta name="apple-mobile-web-app-title" content="Handlebreaks">
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
@@ -21,7 +23,7 @@
   {{ sprite() }}
   <header class="top">
     <a class="brand" href="{{ url_for('files') }}">
-      <img class="brand-mark" src="{{ url_for('static', filename='favicon.svg') }}" alt="">Plex Encoding</a>
+      <img class="brand-mark" src="{{ url_for('static', filename='favicon.svg') }}" alt="">Handlebreaks</a>
     <nav class="tabs" aria-label="Pages">
       {% for endpoint, label, ico, active in nav %}
         <a href="{{ url_for(endpoint) }}" {% if request.endpoint in active %}aria-current="page"{% endif %}>{{ icon(ico) }}<span>{{ label }}</span></a>

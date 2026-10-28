@@ -1,4 +1,4 @@
-# Plex Encoding Automation: web UI, scans and encoding in one container.
+# Handlebreaks: web UI, scans and encoding in one container.
 # HandBrakeCLI from Debian 13 (1.9.x) reads the preset exported from the Mac app.
 # Apple AAC (ca_aac) doesn't exist on Linux; HandBrake uses av_aac instead.
 FROM python:3.13-slim-trixie

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Encoding control for a Plex library
-===================================
+Handlebreaks: encoding control for a Plex library
+=================================================
 
 What this script does
 ---------------------
@@ -68,7 +68,7 @@ Examples
     python3 encoding.py version
 """
 
-__version__ = "3.6.2"
+__version__ = "3.7.0"
 
 import fcntl
 import json
@@ -1481,7 +1481,7 @@ def write_note(s):
         f"> Updated: {s['scan']} | {s['videos_total']} videos, {s['already_h265']} of them already H.265",
         "",
         "## ⏳ Encoding status",
-        f"*As of the scan. For live status, use the web UI or `status.sh`.*",
+        f"*As of the scan. For live status, use the Handlebreaks web UI or `status.sh`.*",
         "",
         status_text(),
         "",
@@ -1899,7 +1899,7 @@ def main():
         return
     cmd, rest = args[0], args[1:]
     if cmd in ("version", "--version", "-V"):
-        print(f"encoding.py v{__version__}")
+        print(f"Handlebreaks v{__version__}")
         return
     if cmd == "preset-check":                   # compatibility of the editor and presets with a HandBrakeCLI
         caps = presets.worker_capabilities() if "--worker" in rest else presets.capabilities()

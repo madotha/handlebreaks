@@ -1,6 +1,6 @@
 #!/bin/zsh
 # ─────────────────────────────────────────────────────────────────────────────
-# encode.sh – works through the encoding queue with HandBrakeCLI.
+# encode.sh – the Handlebreaks worker: works through the encoding queue with HandBrakeCLI.
 #
 # Started automatically by launchd as soon as a batch appears in queue/ (agent
 # local.plex-encoding), or by the worker loop in the Docker container. Can also be
@@ -121,7 +121,7 @@ write_status() {
   fi
   local recent=$(tail -n 5 "$LOGS/results.tsv" 2>/dev/null | awk -F'\t' '{n=split($3,a,"/"); print "- " $1 " " $2 " · " a[n]}')
   print -r -- "# Encoding Status
-> As of $(date '+%Y-%m-%d %H:%M') (updated every minute while encoding)
+> As of $(date '+%Y-%m-%d %H:%M') (updated every minute by Handlebreaks while encoding)
 
 $body
 

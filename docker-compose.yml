@@ -1,4 +1,4 @@
-# Everything in one container: web UI (port 7979), scans and encoding.
+# Handlebreaks, everything in one container: web UI (port 7979), scans and encoding.
 #
 #   cp .env.example .env        # enter the folders on the Mac
 #   docker compose up -d --build
@@ -15,7 +15,8 @@
 services:
   encoding:
     build: .
-    image: plex-encoding-automation
+    image: handlebreaks
+    container_name: ${CONTAINER_NAME:-handlebreaks}   # another name only to run a second instance next to it
     init: true
     restart: unless-stopped
     environment:

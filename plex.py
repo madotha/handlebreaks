@@ -40,7 +40,8 @@ class Plex:
         errors = []
         for url in [self.url] + [u for u in self.urls if u != self.url]:
             req = urllib.request.Request(url + path, method=method,
-                                         headers={"Accept": "application/json", "X-Plex-Token": self.token})
+                                         headers={"Accept": "application/json", "X-Plex-Product": "Handlebreaks",
+                                                  "X-Plex-Token": self.token})
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout) as r:
                     body = r.read()

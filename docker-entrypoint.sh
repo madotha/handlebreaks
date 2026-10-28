@@ -1,6 +1,6 @@
 #!/bin/sh
 # ─────────────────────────────────────────────────────────────────────────────
-# docker-entrypoint.sh – startup inside the container
+# docker-entrypoint.sh – startup inside the Handlebreaks container
 #
 # 1. Creates config.env from the template on first start.
 # 2. Starts the worker loop: when a batch is in queue/ or processing/, it runs
