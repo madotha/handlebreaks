@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.5.1] - 2026-10-28
+
+### Changed
+- Status page: every entry (and the file being encoded) shows its share and folder as a small line above the file name, instead of one line with the name right after the path. Rows stay as compact as before.
+
 ## [3.5.0] - 2026-10-28
 
 ### Added

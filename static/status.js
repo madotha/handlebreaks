@@ -177,7 +177,8 @@
       if (cur) {
         setText("[data-cur-i]", cur.i);
         setText("[data-cur-n]", cur.n);
-        setText("[data-cur-name]", cur.short);
+        setText("[data-cur-where]", cur.where);
+        setText("[data-cur-name]", cur.file);
         setText("[data-cur-pct]", cur.pct || "0");
         setText("[data-cur-fps]", cur.fps || "–");
         setText("[data-cur-eta]", cur.eta || "–");

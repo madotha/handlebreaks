@@ -1108,6 +1108,16 @@ def kept_list():
     return cached("kept", (int(time.time() // 30), _KEPT_GEN[0]), enc.kept_originals)
 
 
+def entry_parts(key, kept=False):
+    """(where, file name) of a Status entry, shown on two lines: share and top folder (like
+    enc.short()), or for a kept original (a path inside .replaced/) its folder."""
+    parts = key.split("/")
+    if kept:
+        return (parts[-2] if len(parts) > 1 else ""), parts[-1]
+    share = enc.SHARE_NAMES.get(parts[0], parts[0])
+    return (f"{share} › {parts[1]}" if len(parts) > 2 else share), parts[-1]
+
+
 def kept_short(rel):
     parts = rel.split("/")
     return f"{parts[-2]} › {parts[-1]}" if len(parts) > 1 else rel
@@ -1178,8 +1188,9 @@ def queue_view(view="queue", state="", offset=0, sort=None):
         pid = item.get("preset")
         if pid and pid not in names:
             names[pid] = presets.name_of(pid)
+        where, file = entry_parts(item["key"], kept=view == "originals")
         rows.append(dict(item, short=kept_short(item["key"]) if view == "originals" else enc.short(item["key"]),
-                         preset_name=names.get(pid, "")))
+                         where=where, file=file, preset_name=names.get(pid, "")))
     if view == "review":
         replace_info(rows)
     elif view == "originals":
@@ -1202,7 +1213,8 @@ def live_status():
     states = Counter(i["state"] for i in enc.queue_items())
     stop = enc.stop_requested()
     return {
-        "current": dict(cur, short=enc.short(cur["key"])) if cur else None,
+        "current": dict(cur, short=enc.short(cur["key"]), where=entry_parts(cur["key"])[0],
+                        file=entry_parts(cur["key"])[1]) if cur else None,
         "stopping": stop[0] if stop and cur and stop[1] == cur["key"] else None,
         "paused": enc.is_paused(),
         "can_stop": enc.worker_can_stop(),
@@ -1334,7 +1346,7 @@ def status():
                            stopping=stop[0] if stop and cur and stop[1] == cur["key"] else None,
                            q=queue_view(view, state, sort=sort_state(request.args, f"queue:{view}", VIEW_SORT[view])),
                            views=VIEWS, auto_interval=scan_interval(cfg),
-                           auto_next=next_auto_scan(cfg), short=enc.short,
+                           auto_next=next_auto_scan(cfg), short=enc.short, entry_parts=entry_parts,
                            last_scan=enc.last_scan())
 
 

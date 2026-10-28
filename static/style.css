@@ -287,6 +287,10 @@ th.sel, td.sel { width: 2rem; padding-right: 0; }
 .now-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
 .now-pct { font-size: 1.9rem; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .now-file { margin: .15rem 0 .7rem; font-weight: 600; overflow-wrap: anywhere; }
+/* Status entries: folder as a small line above the file name, so the name stands alone */
+.entry .entry-where { display: block; font-size: .76rem; line-height: 1.25; color: var(--muted); font-weight: 400; }
+.entry .entry-file { display: block; line-height: 1.3; }
+@media (min-width: 721px) { .queue-table tr:has(> td.entry) > td { padding-top: .35rem; padding-bottom: .35rem; } }
 .now-stats { margin: .55rem 0 0; font-variant-numeric: tabular-nums; }
 .view-tabs { display: flex; gap: .15rem; margin: -.2rem 0 .9rem; box-shadow: inset 0 -1px 0 var(--border);
   overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }

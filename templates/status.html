@@ -41,7 +41,7 @@
       <span class="now-pct"><span data-cur-pct>{{ (cur.pct if cur else '0') or '0' }}</span> %</span>
       <span class="muted small">File <span data-cur-i>{{ cur.i if cur }}</span> of <span data-cur-n>{{ cur.n if cur }}</span></span>
     </div>
-    <p class="now-file" data-cur-name>{{ short(cur.key) if cur }}</p>
+    <p class="now-file entry">{% set cw = entry_parts(cur.key) if cur else ('', '') %}<span class="entry-where" data-cur-where>{{ cw[0] }}</span><span class="entry-file" data-cur-name>{{ cw[1] }}</span></p>
     <span class="meter big"><span data-cur-bar style="width: {{ (cur.pct if cur else 0) or 0 }}%"></span></span>
     <p class="muted small now-stats"><span data-cur-fps>{{ (cur.fps if cur else '–') or '–' }}</span> fps · <span data-cur-eta>{{ (cur.eta if cur else '–') or '–' }}</span> left</p>
   </div>
