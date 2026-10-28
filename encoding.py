@@ -68,7 +68,7 @@ Examples
     python3 encoding.py version
 """
 
-__version__ = "3.5.1"
+__version__ = "3.6.0"
 
 import fcntl
 import json
@@ -366,6 +366,9 @@ CREATE TABLE IF NOT EXISTS skipped  (key TEXT PRIMARY KEY, since TEXT);
 CREATE TABLE IF NOT EXISTS known    (key TEXT PRIMARY KEY);     -- offered before (for the "new" marker)
 CREATE TABLE IF NOT EXISTS results  (at TEXT, status TEXT, key TEXT, PRIMARY KEY (at, status, key));
 CREATE TABLE IF NOT EXISTS dismissed (key TEXT PRIMARY KEY, at TEXT);  -- hidden on the Status page up to this time
+CREATE TABLE IF NOT EXISTS events (                             -- notifications of the web UI (webui.event_loop)
+    id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, kind TEXT, key TEXT, detail TEXT, level TEXT
+);
 CREATE TABLE IF NOT EXISTS files (                              -- inventory from the last scan
     key TEXT PRIMARY KEY, size INTEGER, mtime REAL,
     video_codec TEXT, width INTEGER, height INTEGER, duration REAL, bitrate INTEGER,
@@ -607,27 +610,32 @@ def pending_keys():
     return {i["key"] for i in queue_items() if i["state"] in ("waiting", "encoding")}
 
 
+def import_results(con):
+    """Import the lines encode.sh added to logs/results.tsv since the last import."""
+    if RESULTS_FILE.exists():               # only lines added since the last import
+        size = RESULTS_FILE.stat().st_size
+        row = con.execute("SELECT value FROM meta WHERE key = 'results_offset'").fetchone()
+        offset = int(row[0]) if row and row[0] else 0
+        if size < offset:                   # the file was cleared or replaced: read it again
+            offset = 0
+        if size > offset:
+            with open(RESULTS_FILE, "rb") as f:
+                f.seek(offset)
+                chunk = f.read()
+            chunk = chunk[:chunk.rfind(b"\n") + 1]   # complete lines only (encode.sh may be writing)
+            pmap = stored_prefix_map(con)
+            rows = [(p[0], p[1], legacy_key(p[2], pmap)) for p in (l.split("\t") for l in
+                    chunk.decode("utf-8", "replace").splitlines()) if len(p) >= 3]
+            with con:
+                con.executemany("INSERT OR IGNORE INTO results (at, status, key) VALUES (?, ?, ?)", rows)
+                con.execute("INSERT OR REPLACE INTO meta VALUES ('results_offset', ?)", (str(offset + len(chunk)),))
+
+
 def load_results():
     """Latest result per file: OK, FAIL, MISSING, EXISTS or STOPPED.
     New lines from logs/results.tsv (written by encode.sh) are imported into the database first."""
     with closing(connect()) as con:
-        if RESULTS_FILE.exists():             # only lines added since the last import
-            size = RESULTS_FILE.stat().st_size
-            row = con.execute("SELECT value FROM meta WHERE key = 'results_offset'").fetchone()
-            offset = int(row[0]) if row and row[0] else 0
-            if size < offset:                   # the file was cleared or replaced: read it again
-                offset = 0
-            if size > offset:
-                with open(RESULTS_FILE, "rb") as f:
-                    f.seek(offset)
-                    chunk = f.read()
-                chunk = chunk[:chunk.rfind(b"\n") + 1]   # complete lines only (encode.sh may be writing)
-                pmap = stored_prefix_map(con)
-                rows = [(p[0], p[1], legacy_key(p[2], pmap)) for p in (l.split("\t") for l in
-                        chunk.decode("utf-8", "replace").splitlines()) if len(p) >= 3]
-                with con:
-                    con.executemany("INSERT OR IGNORE INTO results (at, status, key) VALUES (?, ?, ?)", rows)
-                    con.execute("INSERT OR REPLACE INTO meta VALUES ('results_offset', ?)", (str(offset + len(chunk)),))
+        import_results(con)
         res = {}
         for at, status, key in con.execute("SELECT at, status, key FROM results ORDER BY at, rowid"):
             res[key] = (status, at)
@@ -653,6 +661,58 @@ def clear_results():
         if f not in unsynced:
             f.unlink(missing_ok=True)
     return n
+
+
+# ─── Notifications (shown by the web UI) ─────────────────────────────────────
+
+EVENTS_KEEP_DAYS = 7                    # older notifications are deleted
+EVENTS_KEEP_ROWS = 500                  # and never more than this many are kept
+EVENT_FIELDS = ("id", "at", "kind", "key", "detail", "level")
+
+
+def add_events(rows):
+    """Store notifications: [(kind, key or None, detail or None, level or None)]. The web
+    UI's event_loop() writes them, /events hands them to the pages."""
+    if not rows:
+        return
+    at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with closing(connect()) as con, con:
+        con.executemany("INSERT INTO events (at, kind, key, detail, level) VALUES (?, ?, ?, ?, ?)",
+                        [(at, *r) for r in rows])
+
+
+def events_after(after, since):
+    """(id of the newest notification, [notifications with an id above after and stored at or
+    after since ("YYYY-MM-DD HH:MM:SS"), oldest first]). after None = only the newest id."""
+    with closing(connect()) as con:
+        last = con.execute("SELECT COALESCE(MAX(id), 0) FROM events").fetchone()[0]
+        rows = [] if after is None else con.execute(
+            "SELECT id, at, kind, key, detail, level FROM events WHERE id > ? AND at >= ? ORDER BY id LIMIT 500",
+            (after, since)).fetchall()
+    return last, [dict(zip(EVENT_FIELDS, r)) for r in rows]
+
+
+def prune_events():
+    cutoff = (datetime.now() - timedelta(days=EVENTS_KEEP_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+    with closing(connect()) as con, con:
+        con.execute("DELETE FROM events WHERE at < ?", (cutoff,))
+        con.execute("DELETE FROM events WHERE id <= (SELECT id FROM events ORDER BY id DESC LIMIT 1 OFFSET ?)",
+                    (EVENTS_KEEP_ROWS,))
+
+
+def new_results():
+    """Results that came in since the last call: [(time, status, key)], oldest first. The
+    first call (no cursor stored yet) only remembers where the results end."""
+    with closing(connect()) as con:
+        import_results(con)
+        top = con.execute("SELECT COALESCE(MAX(rowid), 0) FROM results").fetchone()[0]
+        row = con.execute("SELECT value FROM meta WHERE key = 'events_results_rowid'").fetchone()
+        cursor = int(row[0]) if row and row[0].isdigit() else None
+        rows = [] if cursor is None or cursor > top else con.execute(   # above top: results were cleared
+            "SELECT at, status, key FROM results WHERE rowid > ? ORDER BY rowid", (cursor,)).fetchall()
+        with con:
+            con.execute("INSERT OR REPLACE INTO meta VALUES ('events_results_rowid', ?)", (str(top),))
+    return rows
 
 
 def recent_results(n=20):

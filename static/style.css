@@ -159,6 +159,36 @@ label.inline { display: inline-flex; align-items: center; gap: .5rem; font-size:
 .flash.warn { background: var(--warn-bg); color: var(--warn); }
 .flash.info { background: var(--info-bg); color: var(--text); }
 .flash a { color: inherit; font-weight: 600; }
+
+/* Notifications (static/notify.js): popups in the bottom right corner, above the tab bar on phones */
+.toasts { position: fixed; z-index: 90; right: 1rem; bottom: 1rem; width: min(22rem, calc(100vw - 2rem));
+  display: flex; flex-direction: column; gap: .5rem; pointer-events: none; }
+.toast { --tone: var(--info); pointer-events: auto; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: .6rem;
+  align-items: start; padding: .65rem .5rem .7rem .75rem; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-left: 4px solid var(--tone); border-radius: var(--radius);
+  box-shadow: var(--shadow-pop); font-size: .86rem; line-height: 1.4; animation: toast-in .18s ease-out;
+  transition: opacity .2s, transform .2s; }
+.toast-success { --tone: var(--ok); }
+.toast-warn { --tone: var(--warn); }
+.toast-error { --tone: var(--err); }
+.toast-icon { color: var(--tone); font-size: 1.15rem; line-height: 1; padding-top: .05rem; }
+.toast-body { display: flex; flex-direction: column; min-width: 0; }
+.toast-title { font-weight: 650; }
+.toast-where, .toast-time { font-size: .76rem; color: var(--muted); }
+.toast-file { overflow-wrap: anywhere; }
+.toast-text { color: var(--muted); overflow-wrap: anywhere; }
+.toast-actions { display: flex; gap: .1rem; margin-top: -.2rem; }
+.toast.leaving { opacity: 0; transform: translateX(.75rem); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(.5rem); } }
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; transition: none; } }
+@media (max-width: 720px) {
+  .toasts { left: 16px; right: 16px; width: auto; bottom: calc(var(--tabbar-h) + .5rem); }
+}
+
+/* Groups of checkboxes in the settings (e.g. NOTIFY_EVENTS) */
+.check-list { display: flex; flex-direction: column; gap: .45rem; margin: 0; }
+.check-list legend { font-size: .92rem; }
+.check-list legend code { font-weight: 400; margin-left: .3rem; color: var(--muted); }
 .empty { padding: 3rem 1.5rem; text-align: center; color: var(--muted); background: var(--surface); border: 1px dashed var(--border-strong); border-radius: var(--radius); }
 .scan-msg { flex-basis: 100%; font-size: .86rem; padding: .45rem .75rem; border-radius: var(--radius-sm); margin: 0; }
 .scan-msg.ok { background: var(--ok-bg); color: var(--ok); }
@@ -333,6 +363,7 @@ th.sel, td.sel { width: 2rem; padding-right: 0; }
 .field label { display: block; font-weight: 600; font-size: .92rem; margin-bottom: .35rem; }
 .field label code { font-weight: 400; margin-left: .3rem; color: var(--muted); }
 .field label.check { font-weight: 500; display: flex; gap: .55rem; align-items: center; }
+.field label.check input { flex: none; }
 .field input:not([type=checkbox]), .field select { width: 100%; }
 .field input.short { width: 8rem; }
 .checks { list-style: none; padding: 0; margin: .4rem 0 0; font-size: .84rem; }

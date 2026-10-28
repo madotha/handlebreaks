@@ -69,6 +69,16 @@ app.secret_key = secret_key()
 
 # ─── Settings ─────────────────────────────────────────────────────────────────
 
+# Notification groups (NOTIFY_EVENTS): value -> label in the settings
+EVENT_GROUPS = {
+    "encodes": "Encodes finished or failed",
+    "runs": "Worker runs finished or interrupted (runs of two or more files)",
+    "replaces": "Replaces done or failed",
+    "scans": "Scans finished or failed (automatic scans only when they find new files)",
+    "shares": "Shares or the output folder going offline and coming back",
+    "cleanup": "Kept originals deleted automatically",
+}
+
 # section -> (title, [(key, label, type, hint)])
 SETTINGS = {
     "library": ("Library", []),                 # fields built from config.env (library_fields)
@@ -83,6 +93,15 @@ SETTINGS = {
     "display": ("Display", [
         ("DATE_FORMAT", "Date format", "date_format",
          "How dates are shown everywhere in the web UI, always followed by the time (24 h). Default YYYY-MM-DD."),
+    ]),
+    "notifications": ("Notifications", [
+        ("NOTIFY_SECONDS", "Hide notifications after (seconds)", "number",
+         "Notifications pop up in the corner of every page of the web UI that is open. "
+         "Hovering one keeps it open. 0 = keep them until you close them. Default 8."),
+        ("NOTIFY_ERRORS_STAY", "Keep errors until closed", "bool",
+         "Failed encodes, replaces and scans stay until you close them, whatever the time above. On by default."),
+        ("NOTIFY_EVENTS", "Notify about", "event_groups",
+         "Your own actions (queueing, removing, deleting) aren't notified: the page confirms them right away."),
     ]),
     "status": ("Status", [
         ("HISTORY_KEEP_DAYS", "Keep history entries visible (days)", "number",
@@ -144,7 +163,8 @@ def date_format():
 
 
 SETTING_DEFAULTS = {"DATE_FORMAT": DEFAULT_DATE_FORMAT, "HISTORY_KEEP_DAYS": "30", "RENAME_QUALITY": "1", "KEEP_ORIGINALS": "1",
-                    "KEEP_ORIGINALS_DAYS": "0"}
+                    "KEEP_ORIGINALS_DAYS": "0", "NOTIFY_SECONDS": "8", "NOTIFY_ERRORS_STAY": "1",
+                    "NOTIFY_EVENTS": " ".join(EVENT_GROUPS)}
 
 # Settings overridden by an environment variable of the same name (docker-entrypoint.sh)
 ENV_OVERRIDES = {"WORKER_ENABLED"}
@@ -260,13 +280,14 @@ SCAN = {"running": False, "started": None, "finished": None, "error": None, "sum
 SCAN_GUARD = threading.Lock()
 
 
-def start_background_scan(label, only=None, force=False, path=None):
+def start_background_scan(label, only=None, force=False, path=None, auto=False):
     """Start a scan in a background thread. Returns the thread, or None if a scan is
-    already running."""
+    already running. auto: started by auto_scan_loop (notifies only about new files)."""
     with SCAN_GUARD:
         if SCAN["running"]:
             return None
-        SCAN.update(running=True, started=enc.now_str(), finished=None, error=None, summary=None, label=label)
+        SCAN.update(running=True, started=enc.now_str(), finished=None, error=None, summary=None, label=label,
+                    auto=auto)
         thread = threading.Thread(target=run_scan, args=(only, force, path), daemon=True)
         thread.start()
         return thread
@@ -298,7 +319,7 @@ def auto_scan_tick():
     enc.apply_config(cfg)
     due = next_auto_scan(cfg)
     if due and datetime.now() >= due and not offline_now():   # waits until every share is back
-        start_background_scan(f"Automatic scan of all shares (every {scan_interval(cfg)} min)")
+        start_background_scan(f"Automatic scan of all shares (every {scan_interval(cfg)} min)", auto=True)
 
 
 def auto_scan_loop():
@@ -322,6 +343,8 @@ def originals_purge_loop():
             count, freed = enc.purge_kept()
             if count:
                 _KEPT_GEN[0] += 1
+                notify("purge", None, f"{count:,} kept original{'s' if count != 1 else ''} older than "
+                                      f"{enc.keep_originals_days()} days, {fmt_size(freed)} freed.")
                 print(f"{enc.now_str()} {count} kept original(s) older than {enc.keep_originals_days()} days "
                       f"deleted, {fmt_size(freed)} freed.", file=sys.stderr)
         except SystemExit as e:                 # e.g. config.env incomplete: try again later
@@ -365,6 +388,9 @@ def sync_replaces():
                                      if added.get(j["key"]) and added[j["key"]][0] and j.get("new_key")])
             for f, job in items:
                 enc.mark_replace_synced(f, job)
+            enc.add_events([("replace_done", job.get("new_key") or job["key"], None, None)
+                            if job.get("state") == "done" else
+                            ("replace_failed", job["key"], job.get("message"), None) for _, job in items])
         return True
 
 
@@ -376,6 +402,156 @@ def replace_sync_loop():
             sync_replaces()
         except Exception as e:                  # keep the loop alive
             print(f"Replace sync failed: {type(e).__name__}: {e}", file=sys.stderr)
+
+
+# ─── Notifications ────────────────────────────────────────────────────────────
+# event_loop() and the places where things happen store events (enc.add_events); every page
+# polls /events (static/notify.js) and shows the new ones as popups.
+
+# kind -> (group in NOTIFY_EVENTS, level, title, link)
+EVENT_KINDS = {
+    "encode_ok": ("encodes", "success", "Encode finished", "review"),
+    "encode_fail": ("encodes", "error", "Encode failed", "history"),
+    "run_done": ("runs", "success", "Run finished", "review"),
+    "run_interrupted": ("runs", "warn", "Run interrupted", "queue"),
+    "replace_done": ("replaces", "success", "Replaced", "history"),
+    "replace_failed": ("replaces", "error", "Replace failed", "review"),
+    "scan_new": ("scans", "success", "New files found", "files_new"),
+    "scan_done": ("scans", "success", "Scan finished", "files"),
+    "scan_failed": ("scans", "error", "Scan failed", "library"),
+    "offline": ("shares", "warn", "Not reachable", "library"),
+    "online": ("shares", "success", "Reachable again", "library"),
+    "purge": ("cleanup", "info", "Old originals deleted", "originals"),
+}
+# Several events of these kinds in one poll become one notification
+EVENT_PLURALS = {"encode_ok": "{n} encodes finished", "encode_fail": "{n} encodes failed",
+                 "replace_done": "{n} files replaced", "replace_failed": "{n} replaces failed"}
+LEVEL_ORDER = ("info", "success", "warn", "error")
+EVENTS_SHOWN_HOURS = 24                         # a page opened later doesn't show older ones
+
+
+def notify(kind, key=None, detail=None, level=None):
+    enc.add_events([(kind, key, detail, level)])
+
+
+def notify_groups():
+    """The groups of NOTIFY_EVENTS (all if it's missing, none for "none")."""
+    value = enc.CONFIG.get("NOTIFY_EVENTS")
+    return set(EVENT_GROUPS) if value is None else set(value.split()) & set(EVENT_GROUPS)
+
+
+def notify_seconds():
+    try:
+        return min(max(int(enc.CONFIG.get("NOTIFY_SECONDS") or 8), 0), 3600)
+    except ValueError:
+        return 8
+
+
+_WATCH = {"ready": False, "run": None, "run_start": None, "offline": set()}
+
+
+def run_events():
+    """Events for a worker run that ended: run.txt disappeared or was rewritten by the next run."""
+    try:
+        stamp = enc.RUN_FILE.stat().st_mtime_ns
+    except OSError:
+        stamp = None
+    prev, start = _WATCH["run"], _WATCH["run_start"]
+    if stamp != prev:
+        _WATCH.update(run=stamp, run_start=enc.run_started() if stamp else None)
+    if prev is None or stamp == prev or not start:
+        return []
+    if enc.is_paused():                         # "Stop all" on the Status page: the user knows
+        return []
+    with closing(db()) as con:
+        counts = Counter(dict(con.execute("SELECT status, COUNT(*) FROM results WHERE at >= ? GROUP BY status",
+                                          (start,))))
+    parts = [f"{counts[s]:,} {label}" for s, label in (("OK", "encoded"), ("FAIL", "failed"),
+             ("STOPPED", "stopped"), ("MISSING", "missing"), ("EXISTS", "already encoded")) if counts[s]]
+    stamp_start = datetime.strptime(start, "%Y-%m-%d %H:%M").timestamp()
+    requeued = sum(len(enc.read_batch(f)) for f in enc.QUEUE_DIR.glob("batch-0-resumed-*.txt")
+                   if f.stat().st_mtime >= stamp_start) if enc.QUEUE_DIR.exists() else 0
+    if requeued:                                # encode.sh went_offline(): the rest is back in the queue
+        return [("run_interrupted", None, f"A share or the output folder went offline. {requeued:,} "
+                 f"file{'s' if requeued != 1 else ''} back in the queue; encoding goes on once it's back."
+                 + (f" Done before: {', '.join(parts)}." if parts else ""), None)]
+    if sum(counts.values()) < 2:                # a single file has its own notification
+        return []
+    return [("run_done", None, ", ".join(parts) + ".", "warn" if counts["FAIL"] else None)]
+
+
+def event_tick():
+    """One round of event_loop()."""
+    rows = [("encode_ok" if status == "OK" else "encode_fail", key, None, None)
+            for _, status, key in enc.new_results() if status in ("OK", "FAIL")]
+    rows += run_events()
+    offline = set(offline_now())
+    if _WATCH["ready"]:                         # the first round only learns the current state
+        rows += [("offline", None, n, None) for n in sorted(offline - _WATCH["offline"])]
+        rows += [("online", None, n, None) for n in sorted(_WATCH["offline"] - offline)]
+    _WATCH.update(offline=offline, ready=True)
+    enc.add_events(rows)
+
+
+def event_loop():
+    """Every 5 s: turn what the worker did (results.tsv, run.txt) and changes in which shares
+    are reachable into notifications; once an hour, delete old ones."""
+    pruned = 0.0
+    while True:
+        try:
+            enc.apply_config(enc.load_config())
+            event_tick()
+            if time.monotonic() - pruned > 3600:
+                enc.prune_events()
+                pruned = time.monotonic()
+        except SystemExit as e:                 # e.g. config.env incomplete: try again later
+            print(f"Notifications skipped: {e}", file=sys.stderr)
+        except Exception as e:                  # keep the loop alive
+            print(f"Notifications failed: {type(e).__name__}: {e}", file=sys.stderr)
+        time.sleep(5)
+
+
+def event_url(link):
+    if link == "files_new":
+        return url_for("files", added="24h")
+    if link == "files":
+        return url_for("files")
+    if link == "library":
+        return url_for("settings", section="library")
+    return url_for("status", view=link)
+
+
+@app.route("/events")
+def events():
+    """New notifications for static/notify.js: after = the last id the page has seen (none =
+    only the newest id, so a fresh page starts now). Several encodes or replaces of one poll
+    are merged, groups switched off in NOTIFY_EVENTS are left out."""
+    after = request.args.get("after", "")
+    since = (datetime.now() - timedelta(hours=EVENTS_SHOWN_HOURS)).strftime("%Y-%m-%d %H:%M:%S")
+    last, rows = enc.events_after(int(after) if after.isdigit() else None, since)
+    groups = notify_groups()
+    by_kind = {}
+    for ev in rows:
+        spec = EVENT_KINDS.get(ev["kind"])
+        if spec and spec[0] in groups:
+            by_kind.setdefault((ev["kind"], ev["id"] if ev["kind"] not in EVENT_PLURALS else 0), []).append(ev)
+    items = []
+    for (kind, _), evs in by_kind.items():
+        _, level, title, link = EVENT_KINDS[kind]
+        level = max((e["level"] or level for e in evs), key=LEVEL_ORDER.index)
+        at = datetime.strptime(evs[-1]["at"], "%Y-%m-%d %H:%M:%S").astimezone().isoformat(timespec="seconds")
+        item = {"id": evs[-1]["id"], "kind": kind, "level": level, "title": title, "url": event_url(link),
+                "at": at, "where": "", "file": "", "text": evs[0]["detail"] or ""}
+        if len(evs) > 1:
+            names = [entry_parts(e["key"])[1] for e in evs if e["key"]]
+            item["title"] = EVENT_PLURALS[kind].format(n=len(evs))
+            item["text"] = ", ".join(names[:2]) + (f" and {len(names) - 2:,} more" if len(names) > 2 else "")
+        elif evs[0]["key"]:
+            item["where"], item["file"] = entry_parts(evs[0]["key"])
+        items.append(item)
+    items.sort(key=lambda i: i["id"])
+    return {"last": last, "seconds": notify_seconds(),
+            "errors_stay": (enc.CONFIG.get("NOTIFY_ERRORS_STAY") or "1").strip() != "0", "events": items}
 
 
 def path_summary(path):
@@ -400,11 +576,20 @@ def run_scan(only=None, force=False, path=None):
         else:
             SCAN.update(error=None, summary=f"{SCAN['label']}: {s['videos_total']:,} videos in the library, "
                                             f"{s['already_h265']:,} already optimized, {len(s['offer']):,} offered")
+            new = sum(1 for o in s["offer"] if o["hint"] == "🆕")
+            if new:
+                notify("scan_new", None, f"{new:,} new file{'s' if new != 1 else ''} offered for encoding.")
+            elif not SCAN.get("auto"):
+                offered = len(s["offer"])
+                notify("scan_done", None, f"{offered:,} file{'s' if offered != 1 else ''} offered, none of them new."
+                       if offered else "Nothing new to encode.")
     except SystemExit as e:
         SCAN.update(error=str(e), summary=None)
     except Exception as e:                      # show errors in the UI instead of swallowing them
         SCAN.update(error=f"{type(e).__name__}: {e}", summary=None)
     finally:
+        if SCAN["error"] and not path:
+            notify("scan_failed", None, SCAN["error"])
         SCAN.update(running=False, finished=enc.now_str())
 
 # ─── Requests ─────────────────────────────────────────────────────────────────
@@ -1829,6 +2014,10 @@ def settings(section):
             if typ == "bool":
                 updates[key] = "1" if request.form.get(key) else "0"
                 continue
+            if typ == "event_groups":
+                picked = set(request.form.getlist(key))
+                updates[key] = " ".join(g for g in EVENT_GROUPS if g in picked) or "none"
+                continue
             val = request.form.get(key, "").strip()
             if FORBIDDEN_RE.search(val):
                 errors[key] = 'Not allowed: " ` \\ line breaks and $ (except $HOME).'
@@ -1860,7 +2049,7 @@ def settings(section):
         "settings.html", section=section, title=title, fields=fields, cfg=cfg, errors=errors,
         checks={k: path_checks(cfg.get(k) or "") for k, _, t, _ in fields if t in ("paths", "path")},
         preset_list=preset_choices(), default_preset=presets.name_of(cfg.get("DEFAULT_PRESET", "")),
-        date_formats=DATE_FORMATS, share_info=share_info() if section == "library" else {},
+        date_formats=DATE_FORMATS, event_groups=EVENT_GROUPS, share_info=share_info() if section == "library" else {},
         shares=share_list(cfg) if section == "library" else [], open_share=request.args.get("open", ""),
         next_share=enc.next_share_number() if section == "library" else None,
         plex_status=plex_status(cfg) if section == "plex" else None,
@@ -1877,6 +2066,7 @@ def main():
     threading.Thread(target=auto_scan_loop, daemon=True).start()
     threading.Thread(target=replace_sync_loop, daemon=True).start()
     threading.Thread(target=originals_purge_loop, daemon=True).start()
+    threading.Thread(target=event_loop, daemon=True).start()
     try:
         from waitress import serve
     except ImportError:

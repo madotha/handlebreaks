@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-10-28
+
+### Added
+- Notifications in the web UI: popups in the bottom right corner of every open page (above the tab bar on phones) when an encode finished or failed, a worker run finished or was interrupted by an offline share, a replace was done or failed, a scan finished or failed, a share went offline or came back, or kept originals were deleted automatically. Each links to where it happened and has a close button; several encodes or replaces at once become one notification.
+- Settings → Notifications: `NOTIFY_SECONDS` (how long a notification stays, default 8 seconds, 0 = until closed), `NOTIFY_ERRORS_STAY` (errors stay until closed, on by default) and `NOTIFY_EVENTS` (which kinds to show, all by default).
+
 ## [3.5.1] - 2026-10-28
 
 ### Changed

@@ -46,6 +46,7 @@
     {% endfor %}
     {% block content %}{% endblock %}
   </main>
+  <section class="toasts" data-toasts data-events-url="{{ url_for('events') }}" aria-live="polite" aria-label="Notifications"></section>
   <nav class="tabbar" aria-label="Pages">
     {% for endpoint, label, ico, active in nav %}
       <a href="{{ url_for(endpoint) }}" {% if request.endpoint in active %}aria-current="page"{% endif %}>{{ icon(ico) }}{{ label }}</a>
@@ -55,5 +56,6 @@
   <script src="{{ url_for('static', filename='tooltip.js') }}"></script>
   <script src="{{ url_for('static', filename='time.js') }}"></script>
   <script src="{{ url_for('static', filename='tablesort.js') }}"></script>
+  <script src="{{ url_for('static', filename='notify.js') }}"></script>
 </body>
 </html>

@@ -126,6 +126,14 @@
           <input id="{{ key }}" name="{{ key }}" type="number" min="0" step="1" value="{{ cfg.get(key) or '0' }}" class="short">
         {% elif typ == 'bool' %}
           <label class="check"><input type="checkbox" name="{{ key }}" value="1" {% if cfg.get(key) == '1' %}checked{% endif %}> {{ label }}</label>
+        {% elif typ == 'event_groups' %}
+          {% set picked = cfg.get(key, '').split() %}
+          <fieldset class="check-list">
+            <legend>{{ label }} <code>{{ key }}</code></legend>
+            {% for group, glabel in event_groups.items() %}
+              <label class="check"><input type="checkbox" name="{{ key }}" value="{{ group }}" {% if group in picked %}checked{% endif %}> {{ glabel }}</label>
+            {% endfor %}
+          </fieldset>
         {% else %}
           <label for="{{ key }}">{{ label }} <code>{{ key }}</code></label>
           <input id="{{ key }}" name="{{ key }}" value="{{ cfg.get(key, '') }}" {% if typ == 'preset' %}list="presets"{% endif %} spellcheck="false" autocomplete="off">
