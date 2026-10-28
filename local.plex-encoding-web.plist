@@ -3,7 +3,7 @@
 <!--
   Runs the web UI (webui.py, port 7979) natively on the Mac and keeps it running.
   Template: YOUR_USER/scripts/encoding is replaced with the actual folder
-  during installation, see README.md. Expects the virtual environment .venv.
+  during installation, see the wiki page "Setup A: native on macOS". Expects the virtual environment .venv.
 -->
 <plist version="1.0">
 <dict>

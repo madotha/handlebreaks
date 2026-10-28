@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Keep the repo generic
 
-The repo is published on GitHub (`git@github.com:madotha/handlebreaks.git`, MIT license) and meant to be installed on any machine. Commits use the pseudonym set in the repo's local git config; never commit real names, personal email addresses or other personal data. It must stay free of anything specific to one host or person.
+The repo is published on GitHub (`git@github.com:madotha/handlebreaks.git`, MIT license) and meant to be installed on any machine. Commits use the pseudonym set in the repo's local git config; never commit real names, personal email addresses or other personal data. It must stay free of anything specific to one host or person. The same applies to the GitHub wiki (`git@github.com:madotha/handlebreaks.wiki.git`, public): clone it next to this repo (`../handlebreaks.wiki`, never inside it) and set the same pseudonym in its local git config (`user.name`, `user.email`) before committing, since the global git config may hold a real name.
 
 - Don't commit host-specific facts, setup notes or TODOs about a particular machine. This covers usernames, home paths, mounted shares, installed versions and the state of a local install. Mention them in chat or put them in the local `TODO.md`.
 - Secrets (tokens, passwords, keys, `.env`) and local config or overrides go in files that `.gitignore` covers. When adding a new file or directory of that kind, or one not needed to install the tool elsewhere (runtime output, caches, editor files), add it to `.gitignore` in the same change.
@@ -25,7 +25,7 @@ The repo is published on GitHub (`git@github.com:madotha/handlebreaks.git`, MIT 
 - To release:
   1. Bump `__version__`.
   2. Rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD` and add a fresh empty `[Unreleased]` section.
-  3. Check the README against the release: setup steps, requirements and settings must work for the new version, and every release with manual steps (MAJOR releases, changed plists, `.env` keys or mounts) needs an `Updating from version X` section in the README describing them.
+  3. Check the README and the wiki against the release: setup steps, requirements and settings must work for the new version, and every release with manual steps (MAJOR releases, changed plists, `.env` keys or mounts) needs an `Updating from version X` section on the wiki's **Updating** page describing them (and a pointer in the changelog entry). Push the wiki together with the release.
   4. Commit as `Release vX.Y.Z`.
   5. Tag that commit with an annotated tag `vX.Y.Z` (`git tag -a vX.Y.Z -m "vX.Y.Z"`).
 
@@ -44,7 +44,12 @@ The preset editor must cover every setting of the newest HandBrake. Whenever a n
 
 Semi-automatic H.264 → H.265 (x265) re-encoding of a Plex library with HandBrakeCLI. It runs natively on macOS (launchd) or in Docker. Python 3.9+ plus zsh scripts. `encoding.py` and `encode.sh` use only the standard library and system tools. Only the web UI needs packages (`requirements.txt`: Flask, waitress). ffprobe (ffmpeg) is optional but needed for codec data. There is no build system, linter or test suite; test changes manually in an isolated data folder (`ENCODING_DATA_DIR=<scratch dir>`), and for Docker, with a separate compose project (`docker compose -p <name>`).
 
-**Everything is in English**: code, comments, CLI and log output, the web UI, the Obsidian notes, configs, README and other docs. Don't add German anywhere. The only exceptions are `LEGACY_PREFIXES` and `LEGACY_NOTE_HEADING` in `encoding.py`, which must match data written by version 1.x. The README is the full from-scratch setup guide for all three setups (native, Docker, Docker + native encoding); update it whenever setup steps, requirements, settings or commands change. New users and updaters rely on the README alone: whenever a change affects how the tool is set up, configured, updated or migrated (new requirements, settings, mounts, files to reinstall, data migrations), update the README in the same change, including its **Updating** section. The README starts with a screenshot of the Files page (`docs/screenshot-files.png`): whenever the Files page changes visually (layout, columns, colors, controls), retake it in the same change. Never use a real library for it: run a demo instance with the made-up data from `docs/demo_data.py` (instructions in its docstring) in an isolated data folder, open Shows → Northwind Station (2018) → Season 02, tick three offered files, and capture at 1280 px width, dark mode. Its **Quick start (Docker)** and the **AI coding agent prompt** are the entry points for new users: keep both in sync with any change to setup, requirements or settings.
+**Everything is in English**: code, comments, CLI and log output, the web UI, the Obsidian notes, configs, README, wiki and other docs. Don't add German anywhere. The only exceptions are `LEGACY_PREFIXES` and `LEGACY_NOTE_HEADING` in `encoding.py`, which must match data written by version 1.x. Documentation is split between the README and the GitHub wiki (see "Keep the repo generic" for where to clone it):
+- The **README** is the entry point: overview, screenshot, Quick start (Docker), the AI coding agent prompt, the setup comparison with links, the list of wiki pages, the general update commands, a security summary. Keep it short; it is versioned with each release, so it must always contain working quick-start and update steps for its version.
+- The **wiki** is the full documentation of the latest release, one page per topic: Home, Choose-a-Setup, Setup-A-Native-macOS, Setup-B-Docker, Setup-C-Docker-and-Native-Encoding, Mounting-the-Library, Web-UI, Command-Line, Scanning, Replacing-Originals, Restarts-and-Offline-Shares, Configuration, Shares, Presets, Files-and-Data, Updating, Security, Troubleshooting, Uninstalling, plus `_Sidebar.md` (navigation; add new pages there and on Home) and `_Footer.md`. Links between pages are `[Text](Page-Name#anchor)`; from the README they are absolute (`https://github.com/madotha/handlebreaks/wiki/Page-Name`).
+- Whenever a change affects how the tool is set up, configured, used, updated or migrated (new requirements, settings, commands, mounts, files to reinstall, data migrations, web UI features), update the matching wiki pages in the same change, and the README too if it touches the quick start, the agent prompt, the requirements, the setup comparison or the update commands. Commit the wiki with a message describing the change and push it together with the code; check that every internal wiki link still points to an existing page and heading.
+
+The README starts with a screenshot of the Files page (`docs/screenshot-files.png`): whenever the Files page changes visually (layout, columns, colors, controls), retake it in the same change. Never use a real library for it: run a demo instance with the made-up data from `docs/demo_data.py` (instructions in its docstring) in an isolated data folder, open Shows → Northwind Station (2018) → Season 02, tick three offered files, and capture at 1280 px width, dark mode. Its **Quick start (Docker)** and the **AI coding agent prompt** are the entry points for new users: keep both in sync with any change to setup, requirements or settings.
 
 ## Commands
 
@@ -116,7 +121,7 @@ Machine-specific settings live in **`config.env`** next to the scripts. It is gi
 - **Format:** shell `KEY="value"` lines. `encode.sh` `source`s the file; `encoding.py` parses it with `load_config()` (`shlex`, then `$VAR` expansion) and `apply_config()` turns it into `ROOT_CANDIDATES`, `ENCODED_CANDIDATES` and `NOTE_DIR_CANDIDATES`.
 - **Path lists:** folder keys may list several paths separated by `:`. Both scripts use the first path that exists (`first_existing`, implemented on each side). This lets one `config.env` work natively and in the Docker container (`/media/...`).
 - **Missing config:** both scripts stop with an error if `config.env` is missing or incomplete. `version` works without it.
-- **New settings:** add the key to `config.example.env`, to the README's Configuration table and to `SETTINGS` in `webui.py` if it should be editable there, and read it in both scripts if both need it.
+- **New settings:** add the key to `config.example.env`, to the wiki's Configuration page and to `SETTINGS` in `webui.py` if it should be editable there, and read it in both scripts if both need it.
 - **Path lists in the template:** folder defaults list the macOS path first and then the container path (`/media/<folder>`, `/encoded`, `/notes`), so one file works natively and in Docker.
 
 | Setting | Where |
@@ -142,7 +147,7 @@ Machine-specific settings live in **`config.env`** next to the scripts. It is gi
 
 Only user choices change at runtime: skipped files and the legacy baseline, stored in `encoding.db`.
 
-Both plists (`local.plex-encoding.plist` worker, `local.plex-encoding-web.plist` web UI) are templates: their `/Users/YOUR_USER/scripts/encoding` paths are replaced with the install folder by the `sed` command in the README when they are copied to `~/Library/LaunchAgents`.
+Both plists (`local.plex-encoding.plist` worker, `local.plex-encoding-web.plist` web UI) are templates: their `/Users/YOUR_USER/scripts/encoding` paths are replaced with the install folder by the `sed` command in the wiki's Setup A page when they are copied to `~/Library/LaunchAgents`.
 
 The bundled preset is named `1080p x265 (Ger/Eng) RF20`, although its actual `VideoQualitySlider` is 22.
 

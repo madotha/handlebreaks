@@ -3,7 +3,7 @@
 <!--
   Starts encode.sh automatically as soon as a batch appears in queue/.
   Template: YOUR_USER/scripts/encoding is replaced with the actual folder
-  during installation, see README.md.
+  during installation, see the wiki page "Setup A: native on macOS".
 -->
 <plist version="1.0">
 <dict>
