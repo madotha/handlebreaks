@@ -28,6 +28,7 @@ The repo is published on GitHub (`git@github.com:madotha/handlebreaks.git`, MIT 
   3. Check the README and the wiki against the release: setup steps, requirements and settings must work for the new version, and every release with manual steps (MAJOR releases, changed plists, `.env` keys or mounts) needs an `Updating from version X` section on the wiki's **Updating** page describing them (and a pointer in the changelog entry). Push the wiki together with the release.
   4. Commit as `Release vX.Y.Z`.
   5. Tag that commit with an annotated tag `vX.Y.Z` (`git tag -a vX.Y.Z -m "vX.Y.Z"`).
+  6. After pushing the commit and tag, publish a GitHub release for the tag: title `vX.Y.Z`, notes = that version's changelog section (empty subsections dropped, internal links kept) plus `**Full changelog:** https://github.com/madotha/handlebreaks/compare/vPREV...vX.Y.Z` (`gh release create vX.Y.Z --title vX.Y.Z --notes-file <file> --verify-tag`). A tag without a release shows on GitHub with no description.
 
   Every release commit must carry its tag. Never bump the version without tagging, and never tag a commit that isn't a release.
 
