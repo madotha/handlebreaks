@@ -274,7 +274,7 @@ def auto_scan_tick():
     cfg = enc.load_config()
     enc.apply_config(cfg)
     due = next_auto_scan(cfg)
-    if due and datetime.now() >= due:
+    if due and datetime.now() >= due and not offline_now():   # waits until every share is back
         start_background_scan(f"Automatic scan of all shares (every {scan_interval(cfg)} min)")
 
 
@@ -425,9 +425,22 @@ def compress(resp):
     return resp
 
 
+_OFFLINE = [0.0, []]                            # [checked at, names] for offline_now()
+
+
+def offline_now():
+    """Shares and output folder that aren't reachable (enc.offline_shares()), checked at most
+    every 30 s so pages don't touch every share on each request."""
+    if time.monotonic() - _OFFLINE[0] > 30:
+        _OFFLINE[:] = [time.monotonic(), enc.offline_shares()]
+    return _OFFLINE[1]
+
+
 @app.context_processor
 def inject():
-    return {"config_error": g.get("config_error")}
+    offline = [] if g.get("config_error") else offline_now()
+    return {"config_error": g.get("config_error"), "offline": offline,
+            "in_docker": Path("/.dockerenv").exists()}
 
 
 # Display names for ffprobe codec names; anything else is shown in upper case

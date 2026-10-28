@@ -147,6 +147,20 @@ The HandBrake *app* alone isn't enough; the command-line version is a separate i
 
 Connect to the share in Finder (Go → Connect to Server, e.g. `smb://nas/Media`). It then appears under `/Volumes`, e.g. `/Volumes/Media` with folders like `Movies` and `Shows` inside. NFS shares mounted elsewhere (e.g. under your home folder) work the same way. To reconnect it after a restart, add the share to System Settings → General → Login Items.
 
+Login items connect the share only after you log in, so the worker and Docker may start before it's there. For NFS, macOS's automounter (autofs) is more reliable: it mounts the share as soon as anything accesses its path, also right after a restart. For example, for the NFS export `nas:/volume1/Media` at `/Users/you/nfs/Media`:
+
+```bash
+# 1. Add a direct map to /etc/auto_master (once)
+echo '/-  auto_nfs  -nosuid' | sudo tee -a /etc/auto_master
+# 2. The mount itself (paths in the user folder need the /System/Volumes/Data prefix)
+echo '/System/Volumes/Data/Users/you/nfs/Media  -fstype=nfs,resvport,rw  nas:/volume1/Media' | sudo tee /etc/auto_nfs
+sudo chmod 644 /etc/auto_nfs
+# 3. Unmount a share you mounted by hand, then reload the automounter
+sudo automount -cv
+```
+
+macOS updates may reset `/etc/auto_master`; check it after an update if the share doesn't come back.
+
 ### 3. Get the code
 
 ```bash
@@ -320,6 +334,13 @@ zsh status.sh                               # live view, Ctrl+C ends only the vi
 ```
 
 In Docker, prefix each command with `docker compose exec encoding`. The numbers always refer to the list from the latest scan.
+
+### Restarts and offline shares
+
+- Queued files survive a restart or a crash: batches are plain files in `queue/` and `processing/`. A run that was interrupted starts again from its batches when the worker starts: files it already encoded are skipped ("Output already exists"), and the file that was being encoded starts over.
+- If a share or the output folder becomes unreachable during a run (e.g. the NAS is unmounted before a restart), the worker puts the current file and the rest of the run back into the queue, without marking them as failed or missing, and retries every 5 minutes until the share is back.
+- A share whose folder is missing or empty counts as offline, since an unmounted share usually leaves an empty mount point behind. Scans refuse to run then (so the inventory isn't emptied), automatic scans wait, and the web UI shows a "Not reachable" banner.
+- Docker: if a share was mounted on the host after the container started, the container may keep seeing the empty folder. Restart it (`docker compose restart`, with both compose files in [Setup C](#setup-c-docker--native-encoding-on-a-mac)), or mount the share with autofs (see [Setup A, step 2](#2-mount-the-library)) so it's there before Docker starts.
 
 ## Web UI
 
@@ -524,6 +545,7 @@ Two things to do by hand: run `encoding.py` once (or open the web UI) before the
 |---|---|
 | `config.env is missing` | Create it: `cp config.example.env config.env` |
 | `Movies, Shows not reachable. Is the NAS mounted?` (share names) | Is the share mounted? Do the paths in `config.env` (or `.env` for Docker) match? |
+| Banner "Not reachable" in the web UI, or the worker logs `Library or output folder went offline` | Mount the share again; the worker continues on its own. In Docker, restart the container if the banner stays, see [Restarts and offline shares](#restarts-and-offline-shares) |
 | Worker logs `Library not reachable` although the share is mounted | macOS privacy permissions for launchd jobs, see [Setup A, step 8](#8-allow-access) |
 | `HandBrakeCLI not found` | Install HandBrakeCLI (not just the app) to `/opt/homebrew/bin` or `/usr/local/bin` |
 | Codec and bitrate stay empty | Install ffmpeg (`brew install ffmpeg`), then scan again |

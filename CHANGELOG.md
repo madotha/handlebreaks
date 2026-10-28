@@ -7,6 +7,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.4.3] - 2026-10-28
+
+### Added
+- The web UI shows a "Not reachable" banner while a share or the output folder is offline (in Docker with a hint to restart the container if the share was mounted after it started). Automatic scans wait until every share is back.
+- README: mounting NFS shares with autofs so they're back right after a restart, and a section on restarts and offline shares.
+
+### Fixed
+- When a share or the output folder goes offline during a run (e.g. unmounted before a restart), the worker no longer marks the rest of the run as missing or the current encode as failed. It puts the current file and the rest of the run back into the queue and retries until the share is reachable again.
+- A share whose folder is empty now counts as unreachable for the worker and for scans, because an unmounted share usually leaves an empty mount point behind. Before, a scan could have treated it as an empty share.
+
 ## [3.4.2] - 2026-10-28
 
 ### Fixed

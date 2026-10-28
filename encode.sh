@@ -61,6 +61,9 @@ hb_finished() {
   grep -q 'work result = 0' "$LOGS/handbrake-last.log" &&
     grep -q 'Encode done!' "$LOGS/handbrake-last.log"
 }
+# True if the share of this entry or the output folder is gone (e.g. unmounted while
+# encoding). Then a missing source or a failed encode isn't the file's fault.
+offline() { ! reachable "${ROOTS[$1]}" || [[ ! -d "$OUT" ]]; }
 result() { print -r -- "$(date '+%Y-%m-%d %H:%M')	$1	$2" >> "$LOGS/results.tsv"; }
 
 # ── Settings from config.env (template: config.example.env) ──────────────────
@@ -143,9 +146,13 @@ trap 'rm -rf "$LOCK"; rm -f "$LOGS/current.txt" "$LOGS/run.txt"' EXIT INT TERM
 # ── Keep the Mac awake while encoding (macOS only) ───────────────────────────
 if command -v caffeinate >/dev/null; then caffeinate -is -w $$ & caf=$!; fi
 
+# A share counts as reachable only if its folder has something in it: an unmounted share
+# usually leaves an empty mount point (or no folder at all) behind.
+reachable() { [[ -n "$1" && -d "$1" ]] && [[ -n $(print -r -- "$1"/*(DNY1)) ]]; }
+
 # ── Library reachable? Otherwise wait 5 minutes (launchd restarts afterwards) ─
 for prefix root in ${(kv)ROOTS}; do
-  if [[ ! -d "$root" ]]; then
+  if ! reachable "$root"; then
     log "Library not reachable ($prefix: $root), retrying in 5 minutes"
     sleep 300
     exit 1
@@ -191,6 +198,16 @@ stop_request() {
   print -r -- "$mode"
 }
 
+# The library or output folder went offline during the run: put the current entry and
+# everything after it back into the queue (no result, no pause), end the run and let
+# launchd (or the Docker loop) retry until it's reachable again.
+went_offline() {
+  local n
+  n=$(python3 "$BASE/encoding.py" stop-rest $(( i - 1 )) --no-pause 2>> "$LOGS/encode.log")
+  log "Library or output folder went offline: ${n:-0} file(s) back in the queue, retrying when it's reachable"
+  stopped_all=1
+}
+
 # ── Take over new batches ────────────────────────────────────────────────────
 for f in "$QUEUE"/*.txt(N); do mv "$f" "$PROC/"; done
 
@@ -222,6 +239,7 @@ for b in $batches; do
     src="${ROOTS[$prefix]}/${key#*/}"
 
     if [[ ! -f "$src" ]]; then
+      if offline "$prefix"; then went_offline; break 2; fi
       log "Missing in library: $key"; result MISSING "$key"; continue
     fi
 
@@ -301,6 +319,10 @@ print("avg%d" % int(p.get("VideoAvgBitrate") or 0) if p.get("VideoQualityType", 
       else
         log "  FAILED: encoded, but the file couldn't be moved; it stays in $tmp: $key"; result FAIL "$key"
       fi
+    elif offline "$prefix"; then             # failed because the share or output folder went away
+      fs rm "$tmp" 2>/dev/null
+      log "  interrupted (exit code $rc): $key"
+      went_offline; break 2
     else
       fs rm "$tmp"
       cp "$LOGS/handbrake-last.log" "$LOGS/fail-$(date +%Y%m%d-%H%M%S).log" 2>/dev/null

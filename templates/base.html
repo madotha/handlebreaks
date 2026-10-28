@@ -38,6 +38,9 @@
     {% if config_error and request.endpoint != 'settings' %}
       <p class="flash error">{{ config_error }} <a href="{{ url_for('settings_index') }}">Open settings</a></p>
     {% endif %}
+    {% if offline %}
+      <p class="flash warn">Not reachable: {{ offline | join(", ") }}. Scans and encoding wait until it's back{% if in_docker %}. If the share was mounted after this container started, restart the container so it sees the share{% endif %}.</p>
+    {% endif %}
     {% for cat, msg in get_flashed_messages(with_categories=true) %}
       <p class="flash {{ cat }}">{{ msg }}</p>
     {% endfor %}

@@ -64,11 +64,11 @@ Examples
     python3 encoding.py purge-originals [N]   # delete kept originals older than N days (default KEEP_ORIGINALS_DAYS)
     python3 encoding.py handbrake-caps        # publish this machine's HandBrakeCLI capabilities (encode.sh)
     python3 encoding.py preset-check [--worker]   # editor/preset compatibility with this (or the worker's) HandBrakeCLI
-    python3 encoding.py stop-rest <n>         # after "Stop all": requeue the run after entry n, pause (encode.sh)
+    python3 encoding.py stop-rest <n> [--no-pause]   # requeue the run after entry n and pause, or not (encode.sh)
     python3 encoding.py version
 """
 
-__version__ = "3.4.2"
+__version__ = "3.4.3"
 
 import fcntl
 import json
@@ -331,6 +331,25 @@ def first_existing(candidates):
         if Path(c).exists():
             return Path(c)
     return None
+
+
+def reachable(path):
+    """True if `path` is a folder with something in it. An unmounted share usually leaves an
+    empty mount point behind (or no folder at all), which must not look like an empty share."""
+    try:
+        with os.scandir(path) as it:
+            return next(it, None) is not None
+    except OSError:
+        return False
+
+
+def offline_shares():
+    """Display names of the shares and the output folder that aren't reachable right now."""
+    names = [SHARE_NAMES.get(p, p) for p, cands in ROOT_CANDIDATES.items()
+             if not any(reachable(c) for c in cands)]
+    if ENCODED_CANDIDATES and not any(Path(c).is_dir() for c in ENCODED_CANDIDATES):
+        names.append("Output folder")
+    return names
 
 
 def now_str():
@@ -1150,7 +1169,7 @@ def walk_library(prefixes=None, path=None):
         if prefixes and label not in prefixes:
             continue
         root = first_existing(cands)
-        if root is None:
+        if root is None or not reachable(root):   # an empty root is most likely unmounted
             missing.append(label)
             continue
         start = root
@@ -1634,16 +1653,18 @@ def stop_requested():
     return mode, key
 
 
-def requeue_rest(done):
-    """After "Stop all" (called by encode.sh, no database): put the entries of the
-    current run after the first `done` back into the queue, ahead of other batches,
-    finish the run's batches and pause the queue. Returns how many were requeued."""
+def requeue_rest(done, pause=True):
+    """After "Stop all", or when the library went offline (called by encode.sh, no
+    database): put the entries of the current run after the first `done` back into the
+    queue, ahead of other batches, finish the run's batches and, with `pause`, pause the
+    queue. Returns how many were requeued."""
     cancelled = cancelled_entries()
     entries = run_entries()                     # the whole run, also batches already in done/
     if entries is None:
         entries = [e for e in batch_entries() if e[0].parent == PROC_DIR]
     rest = [(k, p) for f, k, p in entries[done:] if (f.name, k) not in cancelled]
-    PAUSE_FILE.touch()                          # first, so the new batch doesn't start a worker
+    if pause:
+        PAUSE_FILE.touch()                      # first, so the new batch doesn't start a worker
     if rest:
         QUEUE_DIR.mkdir(parents=True, exist_ok=True)
         name = f"batch-0-resumed-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.txt"   # sorts first
@@ -1839,7 +1860,7 @@ def main():
         print(f"{n} kept original(s) deleted, {freed / 2**30:.2f} GiB freed.")
         return
     if cmd == "stop-rest":                      # encode.sh after "Stop all"; no database either
-        print(requeue_rest(int(rest[0])))
+        print(requeue_rest(int(rest[0]), pause="--no-pause" not in rest))
         return
     for d in (QUEUE_DIR, PROC_DIR, LOG_DIR):
         d.mkdir(parents=True, exist_ok=True)

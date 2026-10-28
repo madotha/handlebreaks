@@ -156,6 +156,7 @@ label.inline { display: inline-flex; align-items: center; gap: .5rem; font-size:
 .flash { padding: .65rem .9rem; border-radius: var(--radius-sm); margin: 0 0 1rem; font-size: .92rem; border: 1px solid transparent; }
 .flash.ok { background: var(--ok-bg); color: var(--ok); }
 .flash.error { background: var(--err-bg); color: var(--err); }
+.flash.warn { background: var(--warn-bg); color: var(--warn); }
 .flash.info { background: var(--info-bg); color: var(--text); }
 .flash a { color: inherit; font-weight: 600; }
 .empty { padding: 3rem 1.5rem; text-align: center; color: var(--muted); background: var(--surface); border: 1px dashed var(--border-strong); border-radius: var(--radius); }
