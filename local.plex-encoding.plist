@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Starts encode.sh automatically as soon as a batch appears in queue/.
+  Starts encode.sh automatically as soon as a batch appears in queue/ or a replace job in
+  replace/, at login (RunAtLoad), and again while a batch is left in processing/ (e.g. after
+  a crash or restart). launchd keeps starting it while one of these folders isn't empty, so
+  they must be empty when there's nothing to do.
   Template: YOUR_USER/scripts/encoding is replaced with the actual folder
   during installation, see the wiki page "Setup A: native on macOS".
 -->
@@ -17,8 +20,11 @@
   <key>QueueDirectories</key>
   <array>
     <string>/Users/YOUR_USER/scripts/encoding/queue</string>
+    <string>/Users/YOUR_USER/scripts/encoding/processing</string>
     <string>/Users/YOUR_USER/scripts/encoding/replace</string>
   </array>
+  <key>RunAtLoad</key>
+  <true/>
   <key>ThrottleInterval</key>
   <integer>30</integer>
   <key>StandardOutPath</key>

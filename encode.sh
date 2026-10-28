@@ -130,6 +130,11 @@ ${recent:-*nothing yet*}
 " > "$STATUS_NOTE.tmp" 2>/dev/null && mv "$STATUS_NOTE.tmp" "$STATUS_NOTE" 2>/dev/null
 }
 
+# ── Nothing to do? (e.g. started by launchd at login) Then don't touch the library ─
+if [[ -z "$(print -r -- "$QUEUE"/*.txt(N) "$PROC"/*.txt(N) "$DATA"/replace/*.json(N))" ]]; then
+  rm -f "$LOGS/worker-wait.txt"; exit 0
+fi
+
 # ── Only one instance at a time ──────────────────────────────────────────────
 LOCK="$DATA/.lock"
 if ! mkdir "$LOCK" 2>/dev/null; then

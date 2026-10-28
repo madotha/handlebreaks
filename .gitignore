@@ -18,6 +18,7 @@ stop.txt
 paused
 .queue-edit/
 replace/
+replace-done/
 done/
 logs/
 .lock

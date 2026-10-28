@@ -7,6 +7,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.9.0] - 2026-10-28
+
+### Changed
+- The worker's plist (Setup A and C) starts the worker at login and whenever a batch was left in `processing/`, e.g. after a crash or restart. Install it again to get this, see [Updating to version 3.9](https://github.com/madotha/handlebreaks/wiki/Updating#updating-to-version-39); without it everything works as before.
+- The results of replace jobs are kept in `replace-done/` instead of `replace/done/` (moved automatically at the first start).
+- The worker exits right away when there's nothing to do, without checking the library.
+
+### Fixed
+- launchd no longer starts the worker every 30 seconds while nothing is queued: the permanent `replace/done/` folder kept `replace/` from ever being empty. Leftover batches in `processing/` were only picked up because of that.
+
 ## [3.8.0] - 2026-10-28
 
 ### Added

@@ -68,7 +68,7 @@ Examples
     python3 encoding.py version
 """
 
-__version__ = "3.8.0"
+__version__ = "3.9.0"
 
 import fcntl
 import json
@@ -123,7 +123,9 @@ STOP_FILE    = DATA_DIR / "stop.txt"      # "skip|all<TAB>key": stop the running
 PAUSE_FILE   = DATA_DIR / "paused"        # queue paused by "Stop all": encode.sh starts nothing until it's gone
 WORKER_LOCK  = DATA_DIR / ".lock"         # encode.sh's lock; holds "stoppable" if the worker reads STOP_FILE
 REPLACE_DIR  = DATA_DIR / "replace"       # replace jobs from the web UI (run by encode.sh)
-REPLACE_DONE = REPLACE_DIR / "done"       # their results
+REPLACE_DONE = DATA_DIR / "replace-done"  # their results (outside replace/, which must be empty when
+                                          # idle: launchd starts the worker while it has anything in it)
+OLD_REPLACE_DONE = REPLACE_DIR / "done"   # where they were up to version 3.8
 LOG_DIR      = DATA_DIR / "logs"
 RESULTS_FILE = LOG_DIR / "results.tsv"
 CURRENT_FILE = LOG_DIR / "current.txt"
@@ -194,6 +196,8 @@ def load_config():
         raise SystemExit(f"ERROR: {CONFIG_FILE} is missing. Copy the template: "
                          f"cp config.example.env config.env, then adjust it.")
     cfg = parse_config(CONFIG_FILE)
+    if OLD_REPLACE_DONE.is_dir():
+        migrate_replace_done()
     if needs_v2_migration(cfg) or not cfg.get("DEFAULT_PRESET") or not presets.all_presets():
         with file_lock(MIGRATE_LOCK):
             cfg = parse_config(CONFIG_FILE)
@@ -281,6 +285,28 @@ def apply_config(cfg):
 
 def needs_v2_migration(cfg):
     return any(k in cfg for k in V2_SECTIONS.values()) and not any(re.fullmatch(r"SHARE_\d+", k) for k in cfg)
+
+
+def migrate_replace_done():
+    """Move the replace job results of version 3.8 and earlier from replace/done/ to
+    replace-done/. While replace/ had the done/ folder in it, launchd's QueueDirectories
+    started the worker every 30 seconds even with nothing to do."""
+    with file_lock(MIGRATE_LOCK):
+        if not OLD_REPLACE_DONE.is_dir():
+            return
+        REPLACE_DONE.mkdir(parents=True, exist_ok=True)
+        for f in OLD_REPLACE_DONE.iterdir():
+            try:
+                if (REPLACE_DONE / f.name).exists():
+                    f.unlink()                  # already moved (e.g. by a worker on another machine)
+                else:
+                    os.replace(f, REPLACE_DONE / f.name)
+            except FileNotFoundError:
+                continue
+        try:
+            OLD_REPLACE_DONE.rmdir()
+        except OSError:
+            pass
 
 
 def migrate_v2(cfg):
@@ -839,7 +865,7 @@ def encoded_stems(enc_dir):
 # ─── Replacing originals with finished encodes ────────────────────────────────
 # The web UI can't write to the library (read-only in Docker), so it only writes a job
 # into replace/; encode.sh, which runs where the library is writable, carries it out
-# (run_replace_jobs) and writes the result into replace/done/. Only files are touched
+# (run_replace_jobs) and writes the result into replace-done/. Only files are touched
 # here, no database, so this also works in a native worker next to a Docker web UI.
 
 def encoded_files(enc_dir):
@@ -1008,11 +1034,11 @@ def mark_replace_synced(path, job):
     write_text_atomic(path, json.dumps(dict(job, synced=True), ensure_ascii=False))
 
 
-_REPLACED_LOG = [None, []]                      # [replace/done/ mtime, [(finished, key)]]
+_REPLACED_LOG = [None, []]                      # [replace-done/ mtime, [(finished, key)]]
 
 
 def replaced_log():
-    """[(finished time, key)] of finished replace jobs, read again only when replace/done/ changes."""
+    """[(finished time, key)] of finished replace jobs, read again only when replace-done/ changes."""
     try:
         stamp = REPLACE_DONE.stat().st_mtime_ns
     except OSError:
@@ -1040,7 +1066,7 @@ _REPLACE_RECORDS = [None, {}]
 
 def replace_records():
     """{original key: (finished time, new key)} of the finished replace jobs, the latest per
-    key; read again only when replace/done/ changes."""
+    key; read again only when replace-done/ changes."""
     try:
         stamp = REPLACE_DONE.stat().st_mtime_ns
     except OSError:
