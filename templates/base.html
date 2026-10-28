@@ -43,6 +43,19 @@
     {% if offline %}
       <p class="flash warn">Not reachable: {{ offline | join(", ") }}. Scans and encoding wait until it's back{% if in_docker %}. If the share was mounted after this container started, restart the container so it sees the share{% endif %}.</p>
     {% endif %}
+    {% if worker_wait %}
+      <p class="flash warn">
+      {%- if worker_wait.kind == "denied" -%}
+        The worker can't read {{ worker_wait.name }} ({{ worker_wait.error }}), so encoding waits.
+        {% if "not permitted" in worker_wait.error %}On macOS, open System Settings → Privacy &amp; Security → Full Disk Access and add <code>/bin/zsh</code> (or allow network volumes for zsh under Files &amp; Folders).{% else %}Check that the user the worker runs as may read <code>{{ worker_wait.path }}</code>.{% endif %}
+        It retries every 5 minutes.
+      {%- elif worker_wait.kind == "handbrake" -%}
+        The worker can't find HandBrakeCLI, so encoding waits. Install it on the machine that encodes; the worker retries every 5 minutes.
+      {%- else -%}
+        The worker can't reach {{ worker_wait.name }}{% if worker_wait.path %} (<code>{{ worker_wait.path }}</code>){% endif %}, so encoding waits. Check that the share is mounted on the machine that encodes; the worker retries every 5 minutes.
+      {%- endif -%}
+      </p>
+    {% endif %}
     {% for cat, msg in get_flashed_messages(with_categories=true) %}
       <p class="flash {{ cat }}">{{ msg }}</p>
     {% endfor %}

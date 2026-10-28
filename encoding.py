@@ -68,7 +68,7 @@ Examples
     python3 encoding.py version
 """
 
-__version__ = "3.7.0"
+__version__ = "3.8.0"
 
 import fcntl
 import json
@@ -350,6 +350,24 @@ def offline_shares():
     if ENCODED_CANDIDATES and not any(Path(c).is_dir() for c in ENCODED_CANDIDATES):
         names.append("Output folder")
     return names
+
+
+WORKER_WAIT_FRESH = 15 * 60    # encode.sh rewrites worker-wait.txt every ~5.5 min while it waits
+
+
+def worker_wait():
+    """Why the worker is waiting instead of encoding, from logs/worker-wait.txt (written by
+    encode.sh, deleted once it gets going): {"kind": offline|denied|handbrake, "prefix",
+    "name", "path", "error"}, or None. An old file (worker stopped meanwhile) counts as none."""
+    f = LOG_DIR / "worker-wait.txt"
+    try:
+        if time.time() - f.stat().st_mtime > WORKER_WAIT_FRESH:
+            return None
+        kind, prefix, path, error = (f.read_text(encoding="utf-8").rstrip("\n").split("\t") + [""] * 4)[:4]
+    except OSError:
+        return None
+    return {"kind": kind, "prefix": prefix, "name": SHARE_NAMES.get(prefix, prefix),
+            "path": path, "error": error}
 
 
 def now_str():
@@ -1306,8 +1324,8 @@ def save_checkpoint(infos):
 
 def inventory(entries, probe_files, force=False, first_scan=()):
     """Size, modification time and (if wanted) ffprobe data per file.
-    ffprobe only runs for new or changed files (all files with force); the rest comes
-    from the database. "added" is when a file was first seen: kept from the database,
+    ffprobe only runs for new or changed files and files whose last probe failed (all files
+    with force); the rest comes from the database. "added" is when a file was first seen: kept from the database,
     the scan time for a new file, or its modification date on the first scan of its
     share (prefix in first_scan), when "now" would say nothing."""
     cached = load_files()
@@ -1322,7 +1340,8 @@ def inventory(entries, probe_files, force=False, first_scan=()):
         added = old["added"] if old and old["added"] else \
             min(st.st_mtime, now) if key.split("/", 1)[0] in first_scan else now
         info = {"key": key, "size": st.st_size, "mtime": st.st_mtime, "added": added}
-        if not force and old and old["size"] == st.st_size and old["mtime"] == st.st_mtime and old["probed_at"]:
+        if not force and old and old["size"] == st.st_size and old["mtime"] == st.st_mtime and old["probed_at"] \
+                and not (old["probe_error"] and probe_files and FFPROBE):   # failed probes are retried
             info.update({c: old[c] for c in ("video_codec", "width", "height", "duration",
                                               "bitrate", "probed_at", "probe_error")})
         elif probe_files and FFPROBE:
@@ -1330,7 +1349,7 @@ def inventory(entries, probe_files, force=False, first_scan=()):
         infos[key] = info
 
     if todo:
-        print(f"ffprobe: {len(todo)} new or changed file(s) …", file=sys.stderr)
+        print(f"ffprobe: {len(todo)} new, changed or previously failed file(s) …", file=sys.stderr)
         with ThreadPoolExecutor(PROBE_WORKERS) as pool:
             for start in range(0, len(todo), CHECKPOINT_EVERY):
                 chunk = todo[start:start + CHECKPOINT_EVERY]

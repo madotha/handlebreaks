@@ -151,16 +151,35 @@ if command -v caffeinate >/dev/null; then caffeinate -is -w $$ & caf=$!; fi
 reachable() { [[ -n "$1" && -d "$1" ]] && [[ -n $(print -r -- "$1"/*(DNY1)) ]]; }
 
 # ── Library reachable? Otherwise wait 5 minutes (launchd restarts afterwards) ─
+# Why the worker waits goes into worker-wait.txt for the web UI's banner, because the web
+# UI may see the share fine (e.g. in Docker, or when only launchd's processes are blocked):
+#   kind<TAB>prefix<TAB>path<TAB>error   kind: offline, denied or handbrake
+WAITFILE="$LOGS/worker-wait.txt"
 for prefix root in ${(kv)ROOTS}; do
   if ! reachable "$root"; then
-    log "Library not reachable ($prefix: $root), retrying in 5 minutes"
+    # A folder that exists but can't be listed is a permission problem, not an unmounted
+    # share. On macOS, launchd's processes get "Operation not permitted" on network
+    # volumes until zsh is allowed to access them (privacy settings).
+    err=""; [[ -d "$root" ]] && err=$(ls -A -- "$root" 2>&1 >/dev/null | head -1)
+    err="${err##*: }"
+    if [[ "$err" == (*not permitted*|*ermission denied*) ]]; then
+      print -r -- "denied	$prefix	$root	$err" > "$WAITFILE"
+      hint="Check the folder's permissions."
+      [[ "$err" == *not\ permitted* ]] && hint="On macOS, give /bin/zsh Full Disk Access (System Settings → Privacy & Security)."
+      log "Library not readable ($prefix: $root): $err. $hint Retrying in 5 minutes"
+    else
+      print -r -- "offline	$prefix	$root	" > "$WAITFILE"
+      log "Library not reachable ($prefix: $root), retrying in 5 minutes"
+    fi
     sleep 300
     exit 1
   fi
 done
 if ! command -v HandBrakeCLI >/dev/null; then
+  print -r -- "handbrake			" > "$WAITFILE"
   log "HandBrakeCLI not found"; sleep 300; exit 1
 fi
+rm -f "$WAITFILE"
 
 # ── Replace jobs (python3 encoding.py replace-jobs) ──────────────────────────
 replace_jobs() {

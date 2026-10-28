@@ -648,7 +648,11 @@ def offline_now():
 @app.context_processor
 def inject():
     offline = [] if g.get("config_error") else offline_now()
-    return {"config_error": g.get("config_error"), "offline": offline, "date_format": date_format(),
+    wait = None if g.get("config_error") else enc.worker_wait()
+    if wait and wait["kind"] == "offline" and wait["name"] in offline:
+        wait = None                             # the "Not reachable" banner already says it
+    return {"config_error": g.get("config_error"), "offline": offline, "worker_wait": wait,
+            "date_format": date_format(),
             "keep_originals": (enc.CONFIG.get("KEEP_ORIGINALS") or "1").strip() != "0",
             "in_docker": Path("/.dockerenv").exists()}
 

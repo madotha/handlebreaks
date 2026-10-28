@@ -7,6 +7,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.8.0] - 2026-10-28
+
+### Added
+- The web UI shows a banner when the worker can't start encoding, even if the web UI itself sees the library fine (e.g. in Docker while the Mac encodes): "The worker can't read …" when access is refused, with the fix for macOS (Full Disk Access for `/bin/zsh`), "The worker can't reach …" when the share isn't mounted on the machine that encodes, and "The worker can't find HandBrakeCLI". The worker writes the reason to `logs/worker-wait.txt` while it waits.
+
+### Changed
+- The worker tells a refused access apart from an unmounted share: it logs `Library not readable (…): Operation not permitted` (or `Permission denied`) with a hint instead of `Library not reachable`.
+
+### Fixed
+- Files that ffprobe couldn't read are read again on the next scan, instead of keeping the error until the file changes. Broken files are tried again on every scan (cheap, there are usually few).
+
 ## [3.7.0] - 2026-10-28
 
 ### Changed
