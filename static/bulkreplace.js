@@ -36,6 +36,7 @@
     $(".bulk-list").hidden = true;
     okBtn.disabled = true;
     showError("");
+    $("[data-b-keep]").checked = $("[data-b-keep]").defaultChecked;   // KEEP_ORIGINALS
     $("[data-b-summary]").textContent = "Looking for finished encodes …";
     body.set("csrf", dialog.dataset.csrf);
     dialog.showModal();

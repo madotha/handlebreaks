@@ -7,6 +7,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-10-28
+
+### Added
+- `DATE_FORMAT` setting (Settings → Display): show dates in the web UI as `YYYY-MM-DD` (default), `DD-MM-YYYY`, `MM-DD-YYYY`, `DD.MM.YYYY`, `DD/MM/YYYY` or `MM/DD/YYYY`.
+- `KEEP_ORIGINALS` setting (Settings → Replace): whether "Keep the original" is ticked by default in the Replace dialogs. On by default, as before.
+- Status → Awaiting review shows the size of each encode (sortable), with the original's size and the difference in its tooltip.
+
+### Changed
+- The "Added" date on the Files page follows `DATE_FORMAT` like every other date; it was always shown as `DD.MM.YYYY` before.
+
+### Fixed
+- The Replace dialog no longer names a specific output folder; it says "`.replaced/` in the output folder" like the bulk dialog.
+
 ## [3.4.3] - 2026-10-28
 
 ### Added

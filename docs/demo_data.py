@@ -3,6 +3,7 @@ Demo data for the README screenshot (docs/screenshot-files.png): a made-up libra
 (Blender open movies and invented shows), so no real titles end up in the repo.
 
     mkdir -p /tmp/demo/data /tmp/demo/lib/{Movies,Shows,Anime} /tmp/demo/out
+    touch /tmp/demo/lib/{Movies,Shows,Anime}/.keep    # empty share folders count as offline
     # /tmp/demo/data/config.env: SHARE_1..3 = /tmp/demo/lib/{Movies,Shows,Anime},
     #   names Movies, Shows, Anime; ENCODED_DIR=/tmp/demo/out; NOTE_DIR=""
     ENCODING_DATA_DIR=/tmp/demo/data python3 docs/demo_data.py

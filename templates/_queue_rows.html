@@ -29,6 +29,7 @@
   <tr>
     <td class="check"><input type="checkbox" name="key" value="{{ r.key }}" form="bulk" aria-label="Select"></td>
     <td class="name" title="{{ r.key }}">{{ r.short|wbr }}</td>
+    <td class="small nowrap num"{% if r.original_size %} data-tip="Original: {{ r.original_size|size }} ({{ '%+d'|format(((r.size - r.original_size) / r.original_size * 100)|round|int) }} %)"{% endif %}>{{ r.size|size }}</td>
     <td class="small nowrap">{{ r.at|localtime }}</td>
     <td>{% include "_replace_button.html" %}</td>
   </tr>

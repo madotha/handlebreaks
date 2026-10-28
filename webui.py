@@ -80,6 +80,10 @@ SETTINGS = {
         ("NOTE_DIR", "Notes folder", "paths", "For \"Encoding To-Do.md\" and \"Encoding Status.md\". Empty = no notes."),
         ("STATUS_NOTE_ENABLED", "Update the status note every minute while encoding", "bool", ""),
     ]),
+    "display": ("Display", [
+        ("DATE_FORMAT", "Date format", "date_format",
+         "How dates are shown everywhere in the web UI, always followed by the time (24 h). Default YYYY-MM-DD."),
+    ]),
     "status": ("Status", [
         ("HISTORY_KEEP_DAYS", "Keep history entries visible (days)", "number",
          "The Status page's History hides results and replaces older than this. Nothing is deleted. 0 = always show. Default 30."),
@@ -99,6 +103,9 @@ SETTINGS = {
          "Empty = hevc=x265 av1=AV1 vvc=VVC h264=x264."),
         ("RENAME_QUALITY", "Add the quality after the release group (e.g. x265-donm.rf20 or x265-donm.avg2000)", "bool",
          "From the preset the file was encoded with: rf<RF value> for constant quality, avg<kbit/s> for average bitrate."),
+        ("KEEP_ORIGINALS", "Keep originals when replacing", "bool",
+         "Default of the \"Keep the original\" option in the Replace dialogs (each replace can still change it). "
+         "On: the original goes to the output folder's .replaced folder. Off: it is deleted right after the move. On by default."),
         ("KEEP_ORIGINALS_DAYS", "Delete kept originals after (days)", "number",
          "\"Replace…\" keeps the original in the output folder's .replaced folder (see Status → Kept originals). "
          "With a number here they are deleted permanently once they were kept that long, "
@@ -121,7 +128,23 @@ SETTINGS = {
 
 # Defaults the code uses when a key is missing from an older config.env: shown on the form, so
 # saving a section doesn't turn them into 0 / off
-SETTING_DEFAULTS = {"HISTORY_KEEP_DAYS": "30", "RENAME_QUALITY": "1", "KEEP_ORIGINALS_DAYS": "0"}
+# DATE_FORMAT values: the label is the stored value, the strftime pattern renders the server's
+# fallback text (static/time.js builds the same order from html[data-date-format])
+DATE_FORMATS = {
+    "YYYY-MM-DD": "%Y-%m-%d", "DD-MM-YYYY": "%d-%m-%Y", "MM-DD-YYYY": "%m-%d-%Y",
+    "DD.MM.YYYY": "%d.%m.%Y", "DD/MM/YYYY": "%d/%m/%Y", "MM/DD/YYYY": "%m/%d/%Y",
+}
+DEFAULT_DATE_FORMAT = "YYYY-MM-DD"
+
+
+def date_format():
+    """The configured DATE_FORMAT, or the default if it's missing or unknown."""
+    value = (enc.CONFIG.get("DATE_FORMAT") or "").strip().upper()   # loaded for each request
+    return value if value in DATE_FORMATS else DEFAULT_DATE_FORMAT
+
+
+SETTING_DEFAULTS = {"DATE_FORMAT": DEFAULT_DATE_FORMAT, "HISTORY_KEEP_DAYS": "30", "RENAME_QUALITY": "1", "KEEP_ORIGINALS": "1",
+                    "KEEP_ORIGINALS_DAYS": "0"}
 
 # Settings overridden by an environment variable of the same name (docker-entrypoint.sh)
 ENV_OVERRIDES = {"WORKER_ENABLED"}
@@ -439,7 +462,8 @@ def offline_now():
 @app.context_processor
 def inject():
     offline = [] if g.get("config_error") else offline_now()
-    return {"config_error": g.get("config_error"), "offline": offline,
+    return {"config_error": g.get("config_error"), "offline": offline, "date_format": date_format(),
+            "keep_originals": (enc.CONFIG.get("KEEP_ORIGINALS") or "1").strip() != "0",
             "in_docker": Path("/.dockerenv").exists()}
 
 
@@ -486,18 +510,17 @@ def localtime(value):
     if dt is None:
         return value or "–"
     return Markup('<time datetime="{}">{}</time>').format(dt.isoformat(timespec="minutes"),
-                                                          dt.strftime("%Y-%m-%d %H:%M"))
+                                                          dt.strftime(DATE_FORMATS[date_format()] + " %H:%M"))
 
 
 @app.template_filter("added")
 def added_time(epoch):
-    """Date added (epoch seconds) as a <time> shown by static/time.js as dd.mm.yyyy hh:mm in
-    the viewer's time zone."""
+    """Date added (epoch seconds) as a <time>, like the localtime filter."""
     if not epoch:
         return "–"
     dt = datetime.fromtimestamp(epoch).astimezone()
-    return Markup('<time datetime="{}" data-format="dmy">{}</time>').format(
-        dt.isoformat(timespec="minutes"), dt.strftime("%d.%m.%Y %H:%M"))
+    return Markup('<time datetime="{}">{}</time>').format(
+        dt.isoformat(timespec="minutes"), dt.strftime(DATE_FORMATS[date_format()] + " %H:%M"))
 
 
 @app.template_filter("wbr")
@@ -1022,6 +1045,7 @@ VIEW_SORT = {
     },
     "review": {
         "file": ("File", lambda i: natural(enc.short(i["key"]))),
+        "size": ("Size", lambda i: i["size"]),
         "at":   ("Encoded", lambda i: i["at"]),
     },
     "originals": {
@@ -1045,8 +1069,9 @@ def status_view(src):
 
 def awaiting_review():
     """Files whose finished encode waits in the output folder, also from runs that are over,
-    as [{"key", "at" (when the encode was finished), "state": "OK"}], not dismissed. The scan
-    is cached until the database or the output folder changes."""
+    as [{"key", "at" (when the encode was finished), "size" (of the encode), "original_size"
+    (or None), "state": "OK"}], not dismissed. The scan is cached until the
+    database or the output folder changes."""
     enc_dir = enc.first_existing(enc.ENCODED_CANDIDATES)
     try:
         folder_version = enc_dir.stat().st_mtime_ns if enc_dir else 0
@@ -1058,15 +1083,16 @@ def awaiting_review():
         if not encoded:
             return []
         with closing(db()) as con:
-            keys = [k for (k,) in con.execute("SELECT key FROM files WHERE status != 'h265'")
-                    if Path(k).stem.lower() in encoded]
+            originals = {k: size for k, size in con.execute("SELECT key, size FROM files WHERE status != 'h265'")
+                         if Path(k).stem.lower() in encoded}
         out = []
-        for k in sorted(keys, key=natural):
+        for k in sorted(originals, key=natural):
             try:
-                at = datetime.fromtimestamp((enc_dir / encoded[Path(k).stem.lower()]).stat().st_mtime)
+                st = (enc_dir / encoded[Path(k).stem.lower()]).stat()
             except OSError:
                 continue
-            out.append({"key": k, "at": at.strftime("%Y-%m-%d %H:%M"), "state": "OK"})
+            out.append({"key": k, "at": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
+                        "size": st.st_size, "original_size": originals[k], "state": "OK"})
         return out
     found = cached(("awaiting", str(enc_dir)), (enc.db_version(), folder_version), compute)
     dismissed = enc.dismissed_map()
@@ -1800,6 +1826,8 @@ def settings(section):
                 errors[key] = "Choose a preset."
             elif key == "ENCODED_DIR" and not val:
                 errors[key] = "This folder is required."
+            elif typ == "date_format" and val not in DATE_FORMATS:
+                errors[key] = "Choose one of the listed formats."
             elif typ == "number" and not re.fullmatch(r"\d{1,6}", val or "0"):
                 errors[key] = "Enter a whole number (0 = off)."
             if typ == "number":
@@ -1820,7 +1848,7 @@ def settings(section):
         "settings.html", section=section, title=title, fields=fields, cfg=cfg, errors=errors,
         checks={k: path_checks(cfg.get(k) or "") for k, _, t, _ in fields if t in ("paths", "path")},
         preset_list=preset_choices(), default_preset=presets.name_of(cfg.get("DEFAULT_PRESET", "")),
-        share_info=share_info() if section == "library" else {},
+        date_formats=DATE_FORMATS, share_info=share_info() if section == "library" else {},
         shares=share_list(cfg) if section == "library" else [], open_share=request.args.get("open", ""),
         next_share=enc.next_share_number() if section == "library" else None,
         plex_status=plex_status(cfg) if section == "plex" else None,

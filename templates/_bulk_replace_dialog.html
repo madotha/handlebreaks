@@ -12,7 +12,7 @@
     </div>
     <p class="hint">Suggested from each original name, with its codec tag changed to the encode's codec
       (<a href="{{ url_for('settings', section='replace') }}">settings</a>). Plex is refreshed once per folder.</p>
-    <label class="check"><input type="checkbox" data-b-keep checked> Keep the originals in <code>.replaced/</code> in the output folder (recommended)</label>
+    <label class="check"><input type="checkbox" data-b-keep {% if keep_originals %}checked{% endif %}> Keep the originals in <code>.replaced/</code> in the output folder {% if keep_originals %}(recommended){% else %}(off by default, see <a href="{{ url_for('settings', section='replace') }}">settings</a>){% endif %}</label>
     <p class="flash error" data-b-error hidden></p>
     <div class="row-actions">
       <button value="ok" data-b-ok disabled>Replace</button>

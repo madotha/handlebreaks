@@ -11,7 +11,7 @@
         (<a href="{{ url_for('settings', section='replace') }}">settings</a>). The extension follows the encoded container.
         With the same name, Plex analyzes the item again; with a new name, it scans the folder and picks up the new file.</p>
     </div>
-    <label class="check"><input type="checkbox" data-r-keep checked> Keep the original in <code>_plexEncoding/.replaced/</code> (recommended)</label>
+    <label class="check"><input type="checkbox" data-r-keep {% if keep_originals %}checked{% endif %}> Keep the original in <code>.replaced/</code> in the output folder {% if keep_originals %}(recommended){% else %}(off by default, see <a href="{{ url_for('settings', section='replace') }}">settings</a>){% endif %}</label>
     <p class="flash error" data-r-error hidden></p>
     <div class="row-actions">
       <button value="ok" data-r-ok>Move and replace</button>

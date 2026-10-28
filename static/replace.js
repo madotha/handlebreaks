@@ -27,7 +27,7 @@
     const field = $("[data-r-name]");
     field.value = encoded.slice(0, dot);
     $("[data-r-ext]").textContent = encoded.slice(dot);
-    $("[data-r-keep]").checked = true;
+    $("[data-r-keep]").checked = $("[data-r-keep]").defaultChecked;   // KEEP_ORIGINALS
     $("[data-r-error]").hidden = true;
     dialog.showModal();
     fitName();
