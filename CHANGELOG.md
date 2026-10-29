@@ -7,6 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.13.1] - 2026-10-29
+
+### Fixed
+- Status page on phones: a **Select all shown** checkbox above the list. The table header with its select-all box is hidden on phones, so there was no way to tick all entries at once.
+- Safari: closing a Replace dialog puts the keyboard focus back on the button that opened it (other browsers already did), instead of starting over at the top of the page.
+- Safari: the HandBrake compatibility box in the preset editor no longer shows a stray ▼ marker.
+
 ## [3.13.0] - 2026-10-29
 
 ### Added

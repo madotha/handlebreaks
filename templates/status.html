@@ -112,6 +112,7 @@
     {% for f in q.fields %}<a class="sort-chip{{ ' active' if q.sort_links[f][1] }}" href="{{ q.sort_links[f][0] }}"
        aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(q.sort_links[f][1], 'none') }}">{{ q.fields[f] }}{% if q.sort_links[f][1] %} {{ q.sort_links[f][1] }}{% endif %}</a>{% endfor %}
   </nav>
+  <label class="select-all-phone"><input type="checkbox" data-select-all> Select all shown</label>{# phones: the table header with its checkbox is hidden #}
   {% if q.view == 'originals' %}
   <form id="kept-older-form" method="post" action="{{ url_for('originals_delete') }}" data-confirm="Delete all originals that were kept longer than the chosen time, permanently? This cannot be undone.">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">

@@ -39,6 +39,7 @@
     $("[data-b-keep]").checked = $("[data-b-keep]").defaultChecked;   // KEEP_ORIGINALS
     $("[data-b-summary]").textContent = "Looking for finished encodes …";
     body.set("csrf", dialog.dataset.csrf);
+    if (window.returnFocusOnClose) window.returnFocusOnClose(dialog);
     dialog.showModal();
     let res;
     try {

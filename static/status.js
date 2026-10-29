@@ -63,7 +63,7 @@
   }
 
   // Selecting entries for the buttons below the tabs
-  const selectAll = $("[data-select-all]");
+  const selectAlls = [...document.querySelectorAll("[data-select-all]")];   // table header, and a separate one on phones
   const needSelection = [...document.querySelectorAll("[data-needs-selection]")];
   needSelection.forEach((b) => { b.dataset.label = b.textContent; });
   function updateSelection() {
@@ -73,14 +73,16 @@
       b.disabled = n === 0;
       b.textContent = n ? `${b.dataset.label.replace("…", "")} (${n.toLocaleString()})${b.dataset.label.endsWith("…") ? "…" : ""}` : b.dataset.label;
     });
-    selectAll.checked = n > 0 && n === boxes.length;
-    selectAll.indeterminate = n > 0 && n < boxes.length;
+    selectAlls.forEach((s) => {
+      s.checked = n > 0 && n === boxes.length;
+      s.indeterminate = n > 0 && n < boxes.length;
+    });
   }
   rows.addEventListener("change", (e) => { if (e.target.name === "key") updateSelection(); });
-  selectAll.addEventListener("change", () => {
+  selectAlls.forEach((selectAll) => selectAll.addEventListener("change", () => {
     rows.querySelectorAll('input[name="key"]').forEach((c) => { c.checked = selectAll.checked; });
     updateSelection();
-  });
+  }));
 
   // Permanent deletes (Kept originals tab) ask first: how many files and how much space
   const gb = (n) => {                              // the same units as the size filter of the pages

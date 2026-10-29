@@ -14,6 +14,20 @@
     return fit;
   };
 
+  // Safari doesn't move the focus back to the button that opened a modal dialog when it
+  // closes (keyboard users would start over at the top of the page), so do it here.
+  let lastButton = null;
+  document.addEventListener("click", (e) => { lastButton = e.target.closest ? e.target.closest("button") : null; }, true);
+  window.returnFocusOnClose = function (dlg) {
+    const opener = lastButton;
+    dlg.addEventListener("close", () => setTimeout(() => {   // after the browser has moved the focus itself
+      const active = document.activeElement;
+      if (opener && opener.isConnected && (!active || active === document.body || dlg.contains(active))) {
+        opener.focus({ preventScroll: true });
+      }
+    }), { once: true });
+  };
+
   const dialog = document.querySelector("[data-replace-dialog]");
   let current = null;                               // {btn, opts} of the open dialog
   const $ = (sel) => dialog.querySelector(sel);
@@ -29,6 +43,7 @@
     $("[data-r-ext]").textContent = encoded.slice(dot);
     $("[data-r-keep]").checked = $("[data-r-keep]").defaultChecked;   // KEEP_ORIGINALS
     $("[data-r-error]").hidden = true;
+    window.returnFocusOnClose(dialog);
     dialog.showModal();
     fitName();
     suggest(btn, field);
