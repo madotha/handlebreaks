@@ -68,7 +68,7 @@ Examples
     python3 encoding.py version
 """
 
-__version__ = "3.9.0"
+__version__ = "3.10.0"
 
 import fcntl
 import json
@@ -79,6 +79,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing, contextmanager
@@ -791,7 +792,7 @@ def dismissed_map():
 
 def history_entries(result="", older_than=None):
     """The Status page's History, newest first: encode results plus finished replaces
-    (status REPLACED) as [{"at", "status", "key", "can_retry"}]. Left out: entries older
+    (status REPLACED) as [{"at", "status", "key", "plex", "can_retry"}] (plex: the Plex state of a replace). Left out: entries older
     than HISTORY_KEEP_DAYS and dismissed ones. can_retry marks a file's latest result when
     it is FAIL or STOPPED and the file isn't waiting or encoding again. older_than (days) returns the entries older than that instead
     (to dismiss them), without the age limit. result filters by status."""
@@ -803,10 +804,10 @@ def history_entries(result="", older_than=None):
     dismissed = dismissed_map()
     pending = pending_keys()
     with closing(connect()) as con:
-        rows = con.execute("SELECT at, status, key FROM results ORDER BY at DESC, rowid DESC").fetchall()
-    rows += [(at, "REPLACED", key) for at, key in sorted(replaced_log(), reverse=True)]
+        rows = [(*r, None) for r in con.execute("SELECT at, status, key FROM results ORDER BY at DESC, rowid DESC")]
+    rows += [(at, "REPLACED", key, plex_state) for at, key, plex_state in sorted(replaced_log(), reverse=True)]
     out = []
-    for at, status, key in rows:
+    for at, status, key, plex_state in rows:
         if result and status != result:
             continue
         if older_than is not None:
@@ -814,7 +815,7 @@ def history_entries(result="", older_than=None):
                 continue
         elif (cutoff and at < cutoff) or dismissed.get(key, "") >= at:
             continue
-        out.append({"at": at, "status": status, "key": key,
+        out.append({"at": at, "status": status, "key": key, "plex": plex_state,
                     "can_retry": status in ("FAIL", "STOPPED") and latest.get(key) == (status, at)
                     and key not in pending})
     out.sort(key=lambda r: r["at"], reverse=True)
@@ -992,13 +993,20 @@ def request_replace(key, encoded_name, new_name, keep_original=True):
     return job_id
 
 
+PLEX_UNCONFIRMED = ("pending", "scanning", "failed")
+
+
 def replace_status(job_id):
-    """Result of a replace job: {"state": "pending" | "done" | "failed", "message", …}."""
+    """Result of a replace job: {"state": "pending" | "done" | "failed", "message", …}; the
+    message ends with the Plex state."""
     if not re.fullmatch(r"[\d-]+", job_id or ""):
         return {"state": "failed", "message": "Unknown job."}
     done = REPLACE_DONE / f"{job_id}.json"
     if done.exists():
-        return json.loads(done.read_text(encoding="utf-8"))
+        job = json.loads(done.read_text(encoding="utf-8"))
+        if job.get("plex"):
+            job["message"] = f"{job['message']} {plex.note(job['plex'])}"
+        return job
     if (REPLACE_DIR / f"{job_id}.json").exists():
         return {"state": "pending", "message": "Waiting for the worker …"}
     return {"state": "failed", "message": "Unknown job."}
@@ -1031,14 +1039,15 @@ def unsynced_replaces():
 
 
 def mark_replace_synced(path, job):
-    write_text_atomic(path, json.dumps(dict(job, synced=True), ensure_ascii=False))
+    update_replace_result(path, synced=True)
 
 
-_REPLACED_LOG = [None, []]                      # [replace-done/ mtime, [(finished, key)]]
+_REPLACED_LOG = [None, []]                      # [replace-done/ mtime, [(finished, key, plex state)]]
 
 
 def replaced_log():
-    """[(finished time, key)] of finished replace jobs, read again only when replace-done/ changes."""
+    """[(finished time, key, Plex state or None)] of finished replace jobs, read again only
+    when replace-done/ changes."""
     try:
         stamp = REPLACE_DONE.stat().st_mtime_ns
     except OSError:
@@ -1051,21 +1060,21 @@ def replaced_log():
             except (ValueError, OSError):
                 continue
             if job.get("state") == "done":
-                log.append((job.get("finished") or "", job["key"]))
+                log.append((job.get("finished") or "", job["key"], (job.get("plex") or {}).get("state")))
         _REPLACED_LOG[:] = [stamp, log]
     return _REPLACED_LOG[1]
 
 
 def replaced_keys():
     """Keys whose original was replaced by a finished replace job."""
-    return {key for _, key in replaced_log()}
+    return {key for _, key, _ in replaced_log()}
 
 
 _REPLACE_RECORDS = [None, {}]
 
 
 def replace_records():
-    """{original key: (finished time, new key)} of the finished replace jobs, the latest per
+    """{original key: (finished time, new key, Plex state)} of the finished replace jobs, the latest per
     key; read again only when replace-done/ changes."""
     try:
         stamp = REPLACE_DONE.stat().st_mtime_ns
@@ -1081,7 +1090,7 @@ def replace_records():
             if job.get("state") == "done" and job.get("keep_original") is not False:
                 when = job.get("finished") or ""
                 if job["key"] not in records or when >= records[job["key"]][0]:
-                    records[job["key"]] = (when, job.get("new_key") or "")
+                    records[job["key"]] = (when, job.get("new_key") or "", (job.get("plex") or {}).get("state"))
         _REPLACE_RECORDS[:] = [stamp, records]
     return _REPLACE_RECORDS[1]
 
@@ -1095,17 +1104,17 @@ def kept_dir():
 def kept_originals():
     """The originals Replace… kept, newest first: [{"key": path inside .replaced/ (the same
     as the original's path in its share), "size", "kept" (when it was kept, "YYYY-MM-DD
-    HH:MM"), "orig_key", "new_key" (of the replacing file; "" if there is no record of the
+    HH:MM"), "orig_key", "plex" (Plex state of the replace), "new_key" (of the replacing file; "" if there is no record of the
     replace)}]. The share isn't part of the path, so with the same path in two shares the
     latest replace job is taken."""
     base = kept_dir()
     if base is None or not base.is_dir():
         return []
     by_path = {}
-    for key, (when, new_key) in replace_records().items():
+    for key, (when, new_key, plex_state) in replace_records().items():
         rel = key.split("/", 1)[-1]
         if rel not in by_path or when >= by_path[rel][0]:
-            by_path[rel] = (when, key, new_key)
+            by_path[rel] = (when, key, new_key, plex_state)
     out = []
     for folder, dirs, names in os.walk(base):
         dirs[:] = [d for d in dirs if d != "@eaDir"]        # Synology's index data, not originals
@@ -1120,8 +1129,8 @@ def kept_originals():
             except OSError:
                 continue
             rel = path.relative_to(base).as_posix()
-            when, orig_key, new_key = by_path.get(rel, (None, "", ""))
-            out.append({"key": rel, "size": st.st_size, "orig_key": orig_key, "new_key": new_key,
+            when, orig_key, new_key, plex_state = by_path.get(rel, (None, "", "", None))
+            out.append({"key": rel, "size": st.st_size, "orig_key": orig_key, "new_key": new_key, "plex": plex_state,
                         "kept": when or datetime.fromtimestamp(st.st_ctime).strftime("%Y-%m-%d %H:%M")})
     return sorted(out, key=lambda o: (o["kept"], o["key"]), reverse=True)
 
@@ -1175,7 +1184,9 @@ def purge_kept(days=None):
     if days <= 0:
         return 0, 0
     cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M")
-    return delete_kept([o["key"] for o in kept_originals() if o["kept"] < cutoff])
+    # an original whose replacement Plex hasn't confirmed (yet) stays until it's deleted by hand
+    return delete_kept([o["key"] for o in kept_originals()
+                        if o["kept"] < cutoff and o["plex"] not in PLEX_UNCONFIRMED])
 
 
 def move_file(src, dst, attempts=6, wait=10):
@@ -1209,53 +1220,103 @@ def replace_one(job):
         raise RuntimeError(f"No permission to write to the folder {original.parent}. Check its owner and "
                            "permissions on the share (e.g. a folder created by another user or program); "
                            "in Docker, the library is also mounted read-only unless you change that.")
-    backup = None
-    if original.exists():
-        if job["keep_original"]:
-            backup = enc_dir / ".replaced" / rel
-            backup.parent.mkdir(parents=True, exist_ok=True)
-            move_file(original, backup)
-        else:
-            original.unlink()
-    try:
+    backup = enc_dir / ".replaced" / rel if job["keep_original"] and original.exists() else None
+    if backup:
+        backup.parent.mkdir(parents=True, exist_ok=True)
+    if target != original:
+        # A new name: put the new file in first and take the original out afterwards, so
+        # Plex (or anything else scanning the folder) never sees the item without a file.
         move_file(encoded, target)
-    except Exception:
-        if backup and backup.exists():          # put the original back
-            move_file(backup, original)
-        raise
+        if original.exists():
+            try:
+                if backup:
+                    move_file(original, backup)
+                else:
+                    original.unlink()
+            except Exception:
+                move_file(target, encoded)      # undo: the original stays where it was
+                raise
+    else:
+        # The same name: bring the new file into the folder under a hidden temporary name,
+        # then swap it in with one rename. The original is kept by a second (hard) link, so
+        # the file is never missing; across file systems it is moved, with a short gap.
+        tmp = target.with_name(f".{target.name}.handlebreaks-tmp")
+        move_file(encoded, tmp)
+        linked = False
+        try:
+            if backup:
+                try:
+                    os.link(original, backup)
+                    linked = True
+                except OSError:
+                    move_file(original, backup)
+            os.replace(tmp, target)
+        except Exception:
+            if linked:
+                backup.unlink(missing_ok=True)
+            elif backup and backup.exists() and not original.exists():
+                move_file(backup, original)     # put the original back
+            if tmp.exists():
+                move_file(tmp, encoded)
+            raise
     kept = f" The original is kept in {backup}." if backup else " The original was deleted."
     return (f"Replaced {original.name} with {target.name}.{kept}",
             f"{job['key'].split('/', 1)[0]}/" + str(target.relative_to(root)), original, target)
 
 
 def run_replace_jobs():
-    """Carry out all pending replace jobs: move all files first, then tell Plex, with one
-    folder scan per folder for jobs that ran together (e.g. a bulk replace). Returns how
-    many ran."""
+    """Carry out all pending replace jobs (file moves only). Plex is told by the web UI,
+    which scans each folder once for the replaces that came together and checks the result
+    (plex.advance()); the result holds what it needs (plex.job_info()). Returns how many ran."""
     jobs = sorted(REPLACE_DIR.glob("*.json")) if REPLACE_DIR.exists() else []
     if jobs:
         REPLACE_DONE.mkdir(parents=True, exist_ok=True)
-    moved = []
     for path in jobs:
         job = json.loads(path.read_text(encoding="utf-8"))
         try:
             message, new_key, original, target = replace_one(job)
             result = dict(job, state="done", message=message, new_key=new_key, finished=now_str())
-            moved.append((REPLACE_DONE / path.name, result, original, target))
+            try:
+                size = target.stat().st_size
+            except OSError:
+                size = None
+            info = plex.job_info(CONFIG, original, target, size)
+            if info:
+                result["plex"] = info
         except Exception as e:
             result = dict(job, state="failed", message=f"Not replaced: {e}", finished=now_str())
-            print(f"{now_str()} replace {job['key']}: {result['message']}")
+        print(f"{now_str()} replace {job['key']}: {result['message']}")
         # the result is written right away, so a job never runs twice
         write_text_atomic(REPLACE_DONE / path.name, json.dumps(result, ensure_ascii=False))
         path.unlink(missing_ok=True)
-    notes = plex.notify_replaced_many(CONFIG, [(o, t) for _, _, o, t in moved])   # "" if Plex isn't configured
-    for (done, result, _, _), note in zip(moved, notes):
-        result["message"] += note
-        print(f"{now_str()} replace {result['key']}: {result['message']}")
-        if note:                                # keep "synced" if the web UI marked it meanwhile
-            saved = json.loads(done.read_text(encoding="utf-8"))
-            write_text_atomic(done, json.dumps(dict(saved, message=result["message"]), ensure_ascii=False))
     return len(jobs)
+
+
+_RESULT_LOCK = threading.Lock()
+
+
+def update_replace_result(path, **fields):
+    """Change fields of a finished job's result, re-reading it first so a change made
+    meanwhile (the web UI's threads set synced and plex) isn't lost."""
+    with _RESULT_LOCK:
+        try:
+            saved = json.loads(path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            return
+        write_text_atomic(path, json.dumps(dict(saved, **fields), ensure_ascii=False))
+
+
+def plex_open_jobs():
+    """[(result file, job)] of finished replaces whose Plex update isn't settled yet."""
+    jobs = []
+    for f in sorted(REPLACE_DONE.glob("*.json")) if REPLACE_DONE.exists() else []:
+        try:
+            job = json.loads(f.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            continue
+        if (job.get("plex") or {}).get("state") in ("pending", "scanning"):
+            jobs.append((f, job))
+    return jobs
 
 
 # ─── Scan ─────────────────────────────────────────────────────────────────────

@@ -73,7 +73,7 @@ app.secret_key = secret_key()
 EVENT_GROUPS = {
     "encodes": "Encodes finished or failed",
     "runs": "Worker runs finished or interrupted (runs of two or more files)",
-    "replaces": "Replaces done or failed",
+    "replaces": "Replaces done or failed, and replaces Plex didn't pick up",
     "scans": "Scans finished or failed (automatic scans only when they find new files)",
     "shares": "Shares or the output folder going offline and coming back",
     "cleanup": "Kept originals deleted automatically",
@@ -135,8 +135,13 @@ SETTINGS = {
     ]),
     "plex": ("Plex", [
         ("PLEX_URL", "Plex server URL", "text",
-         "E.g. http://127.0.0.1:32400. Used after \"Replace…\" to make Plex analyze the item or scan its "
-         "folder. The token (PLEX_TOKEN) is set in config.env only, never shown here. Empty = off."),
+         "E.g. http://127.0.0.1:32400. Used after \"Replace…\": Plex scans the file's folder (once for all "
+         "replaces in it), analyzes files replaced under the same name, and the web UI checks that Plex "
+         "lists the new file. The token (PLEX_TOKEN) is set in config.env only, never shown here. Empty = off."),
+        ("PLEX_PATH_MAP", "Path mapping to Plex", "text",
+         "Only if Plex sees your library under other paths than the worker, e.g. Plex on the NAS: "
+         "\"/Users/me/nfs/PlexMedia=/volume1/PlexMedia\" (worker path=Plex path; several separated by ;). "
+         "Empty = the same paths."),
     ]),
     "worker": ("Worker", [
         ("WORKER_ENABLED", "Encode inside the Docker container", "bool",
@@ -263,7 +268,8 @@ def plex_status(cfg):
         sections = plex.Plex(full["PLEX_URL"], full["PLEX_TOKEN"], timeout=5).sections()
     except plex.PlexError as e:
         return False, str(e)
-    shared = [t for _, t, locs in sections if any(any(str(p).startswith(l + "/") or str(p) == l
+    mapping = plex.path_map(full)
+    shared = [t for _, t, locs in sections if any(any(plex.to_plex(p, mapping).startswith(l + "/") or plex.to_plex(p, mapping) == l
               for p in paths for l in locs) for paths in enc.ROOT_CANDIDATES.values())]
     return True, (f"Connected; token accepted. {len(sections)} libraries"
                   + (f", matching your shares: {', '.join(shared)}." if shared else "; none matches a share path."))
@@ -394,14 +400,36 @@ def sync_replaces():
         return True
 
 
+PLEX_SYNC = threading.Lock()
+
+
+def plex_sync():
+    """Bring finished replaces into Plex (plex.advance(): one partial scan per folder once its
+    replaces have settled, analyze for same-name files, check that Plex lists the new file,
+    retry once) and store each job's new Plex state. One that fails becomes a notification."""
+    with PLEX_SYNC:
+        jobs = enc.plex_open_jobs()
+        if not jobs:
+            return
+        changed = plex.advance(enc.load_config(), [job["plex"] for _, job in jobs])
+        events = []
+        for i, info in changed.items():
+            f, job = jobs[i]
+            enc.update_replace_result(f, plex=info)
+            if info["state"] in ("failed", "skipped"):
+                events.append(("plex_failed", job.get("new_key") or job["key"], plex.note(info), None))
+        enc.add_events(events)
+
+
 def replace_sync_loop():
-    """Every 10 s: put the results of finished replace jobs into the database."""
+    """Every 10 s: put the results of finished replace jobs into the database, then into Plex."""
     while True:
         time.sleep(10)
-        try:
-            sync_replaces()
-        except Exception as e:                  # keep the loop alive
-            print(f"Replace sync failed: {type(e).__name__}: {e}", file=sys.stderr)
+        for step in (sync_replaces, plex_sync):
+            try:
+                step()
+            except Exception as e:              # keep the loop alive
+                print(f"{step.__name__} failed: {type(e).__name__}: {e}", file=sys.stderr)
 
 
 # ─── Notifications ────────────────────────────────────────────────────────────
@@ -416,6 +444,7 @@ EVENT_KINDS = {
     "run_interrupted": ("runs", "warn", "Run interrupted", "queue"),
     "replace_done": ("replaces", "success", "Replaced", "history"),
     "replace_failed": ("replaces", "error", "Replace failed", "review"),
+    "plex_failed": ("replaces", "warn", "Plex not updated", "history"),
     "scan_new": ("scans", "success", "New files found", "files_new"),
     "scan_done": ("scans", "success", "Scan finished", "files"),
     "scan_failed": ("scans", "error", "Scan failed", "library"),
@@ -1330,6 +1359,9 @@ def kept_info(rows):
             r["new_size"] = (root / rel).stat().st_size
         except OSError:
             r["warn"] = "missing"
+            continue
+        if r.get("plex") == "failed":
+            r["warn"] = "plex"
 
 
 def queue_rows(view, state):

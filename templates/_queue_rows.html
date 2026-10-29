@@ -21,6 +21,7 @@
     <td class="small">
       {% if r.warn == 'missing' %}<span class="badge badge-warn" data-tip="The file that replaced this original is no longer in the library (it may have been renamed, moved or deleted). Check before deleting the original.">replacement missing</span>
       {% elif r.warn == 'offline' %}<span class="muted" data-tip="The share of the replacing file can't be reached right now.">library not reachable</span>
+      {% elif r.warn == 'plex' %}<span class="badge badge-warn" data-tip="Plex didn't pick up the file that replaced this original (see Status → History). It isn't deleted automatically; check Plex before deleting it.">Plex not updated</span>
       {% elif r.warn == 'unknown' %}<span class="muted" data-tip="There is no replace job on record for this file (e.g. the history data was deleted).">no record</span>
       {% elif r.new_size is not none %}{% if r.size > r.new_size %}saved {{ (r.size - r.new_size)|size }}{% else %}no space saved{% endif %}{% endif %}
     </td>
@@ -37,7 +38,10 @@
   <tr>
     <td class="check"><input type="checkbox" name="key" value="{{ r.key }}" form="bulk" aria-label="Select"></td>
     <td class="small nowrap">{{ r.at|localtime }}</td>
-    <td><span class="result result-{{ r.status|lower }}">{{ 'Replaced' if r.status == 'REPLACED' else states.get(r.status, r.status) }}</span></td>
+    <td><span class="result result-{{ r.status|lower }}">{{ 'Replaced' if r.status == 'REPLACED' else states.get(r.status, r.status) }}</span>
+      {%- if r.plex == 'ok' %} <span class="badge badge-ok" data-tip="Plex lists the new file">Plex ✓</span>
+      {%- elif r.plex in ('pending', 'scanning') %} <span class="badge" data-tip="Plex is told about the new file and checked in a moment">Plex …</span>
+      {%- elif r.plex in ('failed', 'skipped') %} <span class="badge badge-warn" data-tip="Plex didn't pick up the new file; see the notification, or scan the folder in Plex">Plex ✗</span>{% endif %}</td>
     <td class="name entry" title="{{ r.key }}">{% if r.where %}<span class="entry-where">{{ r.where|wbr }}</span>{% endif %}<span class="entry-file">{{ r.file|wbr }}</span></td>
     <td>{% if r.can_retry %}<form class="inline-form" method="post" action="{{ url_for('queue_again') }}">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="key" value="{{ r.key }}">

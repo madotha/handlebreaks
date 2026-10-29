@@ -7,6 +7,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.10.0] - 2026-10-29
+
+### Added
+- After a replace, the web UI checks that Plex picked up the new file (same path and size, and no longer the old file) and scans the folder once more if not. Status → History shows the result next to each replace (Plex ✓, … or ✗), and a replace Plex didn't pick up becomes a "Plex not updated" notification.
+- `PLEX_PATH_MAP` (Settings → Plex): for Plex servers that see the library under other paths than the worker, e.g. Plex on the NAS (`worker path=Plex path`, like Sonarr's and Radarr's path mapping). Before, Plex could only be notified with identical paths.
+
+### Changed
+- Replaces in the same folder share one Plex scan even when they finish in different worker rounds: a folder is scanned once no new replace came for 15 seconds (at most 60 seconds after the first). Plex is now told by the web UI, not by the worker; in Setup C update the native installation and the container together.
+- A file replaced under the same name is analyzed and its folder scanned, since a scan alone may miss it.
+- Replacing puts the new file into the folder before the original leaves it (under a new name), or swaps it in with one rename (under the same name, keeping the original by a hard link where possible), so Plex never sees the item without a file.
+- Kept originals whose replacement Plex didn't confirm are not deleted automatically (`KEEP_ORIGINALS_DAYS`), and Status → Kept originals marks them "Plex not updated".
+
 ## [3.9.0] - 2026-10-28
 
 ### Changed
