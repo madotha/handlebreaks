@@ -64,13 +64,13 @@
     dialog.close();
     btn.disabled = true;
     btn.dataset.tip = "Replacing… (the job runs even if the page is left or reloaded)";
-    opts.say(`Replacing ${btn.dataset.original} … waiting for the worker. You can leave or reload the page; the replace continues.`, "busy");
+    if (window.ReplaceProgress) window.ReplaceProgress.kick();   // the progress bar shows how it goes
     for (let i = 0; i < 600; i++) {                 // up to ~20 minutes (e.g. a copy across disks)
       await new Promise((ok) => setTimeout(ok, 2000));
       const st = await (await fetch(res.status_url)).json();
       if (st.state === "pending") continue;
-      opts.say(st.message, st.state === "done" ? "ok" : "error");
-      if (st.state === "done") await opts.done(btn); else { btn.disabled = false; btn.dataset.tip = "Replace the original with the finished encode…"; }
+      if (st.state === "done") await opts.done(btn);
+      else { opts.say(st.message, "error"); btn.disabled = false; btn.dataset.tip = "Replace the original with the finished encode…"; }
       return;
     }
     opts.say("The worker hasn't picked up the replace job yet. Is it running? See the Status page.", "error");

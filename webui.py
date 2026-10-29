@@ -400,6 +400,117 @@ def sync_replaces():
         return True
 
 
+# ─── Replace progress (the bar at the top of the Status and Files pages) ─────────
+# The bar covers a "wave": the replaces still ongoing plus the finished ones that settled
+# after the oldest of the wave was requested (job ids start with the request time, a result's
+# last change is when it settled), so it needs no memory and survives reloads and restarts;
+# new ones join it. Once all have settled, the bar shows a summary for RP_SUMMARY seconds.
+
+RP_SUMMARY = 12
+_RP = {"ids": set(), "ended": None, "stamp": None, "last": None}
+_RP_LOCK = threading.Lock()
+_RP_JOBS = {}           # file -> (mtime_ns, job): job files are only read again when they change
+
+
+def _rp_requested(job_id):
+    """Epoch of the request, from the job id (YYYYmmdd-HHMMSS-ffffff[-n])."""
+    try:
+        return datetime.strptime(job_id[:22], "%Y%m%d-%H%M%S-%f").timestamp()
+    except ValueError:
+        return 0.0
+
+
+def _rp_jobs(folder):
+    """{job id: (job, time of the file's last change)}"""
+    jobs = {}
+    for f in folder.glob("*.json") if folder.exists() else []:
+        try:
+            mtime = f.stat().st_mtime_ns
+        except OSError:
+            continue
+        cached = _RP_JOBS.get(f)
+        if not cached or cached[0] != mtime:
+            try:
+                cached = (mtime, json.loads(f.read_text(encoding="utf-8")))
+            except (ValueError, OSError):
+                continue
+            _RP_JOBS[f] = cached
+        jobs[f.stem] = (cached[1], mtime / 1e9)
+    return jobs
+
+
+def _rp_stage(job, waiting):
+    """waiting (worker hasn't moved it), checking (moved; list or Plex not updated yet), done, failed."""
+    if waiting:
+        return "waiting"
+    if job.get("state") == "failed":
+        return "failed"
+    if not job.get("synced") or (job.get("plex") or {}).get("state") in ("pending", "scanning"):
+        return "checking"
+    return "done"
+
+
+def _rp_label(job, stage):
+    plex_state = (job.get("plex") or {}).get("state")
+    if stage == "waiting":
+        return "waiting for the worker"
+    if stage == "failed":
+        return job.get("message", "failed").removeprefix("Not replaced: ")
+    if not job.get("synced"):
+        return "moved, updating the list"
+    return {"pending": "Plex: scan in a moment", "scanning": "Plex: checking", "ok": "Plex ✓",
+            "failed": "Plex ✗ " + (job["plex"].get("reason") or ""), "skipped": "Plex ✗ not in a library"}.get(plex_state, "done")
+
+
+def replace_progress():
+    """All replaces of the current session for the progress bar: counts per stage, Plex
+    counts and one line per file. Cheap while nothing happens: the answer is reused as long
+    as replace/ and replace-done/ are unchanged and nothing is ongoing."""
+    now = time.time()
+    with _RP_LOCK:
+        stamp = tuple(d.stat().st_mtime_ns if d.exists() else 0 for d in (enc.REPLACE_DIR, enc.REPLACE_DONE))
+        if _RP["ended"] and now - _RP["ended"] > RP_SUMMARY:
+            _RP.update(ids=set(), ended=None, last=None)   # the summary was shown long enough
+        if not _RP["ids"] and _RP["stamp"] == stamp and _RP["last"] is not None:
+            return _RP["last"]
+        waiting = _rp_jobs(enc.REPLACE_DIR)
+        finished = _rp_jobs(enc.REPLACE_DONE)
+        changed = {i: t for i, (_, t) in finished.items()}
+        jobs = {i: j for i, (j, _) in {**finished, **waiting}.items()}
+        open_ids = {i for i, j in jobs.items() if _rp_stage(j, i in waiting) in ("waiting", "checking")}
+        if open_ids:
+            wave = set(open_ids)
+            while True:                         # add what settled after the wave's first request
+                start = min(_rp_requested(i) for i in wave)
+                more = {i for i, t in changed.items() if i not in wave and t >= start}
+                if not more:
+                    break
+                wave |= more
+            _RP.update(ids=wave, ended=None)
+        elif _RP["ids"] and not _RP["ended"]:
+            _RP["ended"] = now                  # all settled: summary of the same ids
+        counts = {"waiting": 0, "checking": 0, "done": 0, "failed": 0}
+        plex_counts = {"ok": 0, "open": 0, "failed": 0}
+        has_plex = False
+        items = []
+        for i in sorted(_RP["ids"]):
+            job = jobs.get(i)
+            if job is None:                     # result deleted ("Delete history data…")
+                continue
+            stage = _rp_stage(job, i in waiting)
+            counts[stage] += 1
+            plex_state = (job.get("plex") or {}).get("state")
+            if plex_state:
+                has_plex = True
+                plex_counts["ok" if plex_state == "ok" else "open" if plex_state in ("pending", "scanning") else "failed"] += 1
+            items.append({"name": job.get("new_name") or job["key"].rsplit("/", 1)[-1], "stage": stage,
+                          "label": _rp_label(job, stage)})
+        result = {"active": bool(open_ids), "finished": bool(items) and not open_ids,
+                  "total": len(items), **counts, "plex": plex_counts if has_plex else None, "items": items}
+        _RP.update(stamp=stamp, last=result)
+        return result
+
+
 PLEX_SYNC = threading.Lock()
 
 
@@ -1544,6 +1655,11 @@ def replace():
         return {"error": problem}, 400
     job_id = enc.request_replace(key, encoded, new_name, keep_original=bool(request.form.get("keep_original")))
     return {"id": job_id, "status_url": url_for("replace_state", job_id=job_id)}
+
+
+@app.route("/replace/progress")
+def replace_progress_json():
+    return replace_progress()
 
 
 @app.route("/replace/<job_id>")

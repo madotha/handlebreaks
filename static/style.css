@@ -648,3 +648,37 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
 
 /* Dragging over rows to select them (static/rangeselect.js) */
 .range-dragging { user-select: none; -webkit-user-select: none; cursor: default; }
+
+/* Replace progress bar (templates/_replace_progress.html, static/replaceprogress.js) */
+.rp { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); margin: 0 0 1rem; font-size: .84rem; }
+.rp-line { display: flex; align-items: center; gap: .65rem; padding: .3rem .4rem .3rem .65rem; min-height: 2rem; }
+.rp-icon { display: inline-flex; color: var(--info); }
+.rp-icon svg { width: 1rem; height: 1rem; animation: spin 1.4s linear infinite; }
+.rp.is-finished .rp-icon { color: var(--ok); }
+.rp.is-finished .rp-icon svg { animation: none; }
+.rp.is-finished.has-failed .rp-icon { color: var(--err); }
+.rp-label { white-space: nowrap; font-weight: 600; }
+.rp-bar { flex: 1; min-width: 4rem; height: .45rem; border-radius: 99px; background: var(--surface-3); display: flex; overflow: hidden; }
+.rp-seg { height: 100%; transition: width .4s ease; }
+.rp-done { background: var(--ok); }
+.rp-checking { background: var(--ok); opacity: .45; }
+.rp-failed { background: var(--err); }
+.rp-plex { white-space: nowrap; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rp-toggle { background: none; border: 0; padding: .15rem .4rem; min-height: 0; height: auto; color: var(--link); font-size: .8rem; cursor: pointer; }
+.rp-toggle:hover:not(:disabled) { background: var(--surface-2); color: var(--link); }
+.rp-toggle::after { content: " ▾"; }
+.rp-toggle[aria-expanded="true"]::after { content: " ▴"; }
+.rp-list { list-style: none; margin: 0; padding: .25rem .65rem .4rem; border-top: 1px solid var(--border); max-height: 9.5rem; overflow-y: auto; }
+.rp-item { display: flex; gap: .75rem; justify-content: space-between; padding: .12rem 0; }
+.rp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.rp-state { white-space: nowrap; color: var(--muted); }
+.rp-item-done .rp-state { color: var(--ok); }
+.rp-item-failed { flex-wrap: wrap; row-gap: 0; }
+.rp-item-failed .rp-state { color: var(--err); white-space: normal; flex-basis: 100%; font-size: .8rem; }
+.rp-meter { flex: 1; display: flex; align-items: center; gap: .65rem; min-width: 0; }
+@media (max-width: 720px) {
+  .rp-line { flex-wrap: wrap; row-gap: .2rem; }
+  .rp-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .rp-meter { order: 5; flex-basis: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .rp-icon svg { animation: none; } .rp-seg { transition: none; } }

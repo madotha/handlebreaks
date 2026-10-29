@@ -2,6 +2,7 @@
 {% from "_icons.html" import icon %}
 {% block title %}Status{% endblock %}
 {% block content %}
+{% include "_replace_progress.html" %}
 <p class="scan-msg" data-replace-msg role="status" hidden></p>
 <div class="page-head">
   <h1>Status</h1>
@@ -159,6 +160,7 @@
 
 {% include "_replace_dialog.html" %}
 {% include "_bulk_replace_dialog.html" %}
+<script src="{{ url_for('static', filename='replaceprogress.js') }}"></script>
 <script src="{{ url_for('static', filename='replace.js') }}"></script>
 <script src="{{ url_for('static', filename='bulkreplace.js') }}"></script>
 <script src="{{ url_for('static', filename='rangeselect.js') }}"></script>

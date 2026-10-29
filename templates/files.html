@@ -3,6 +3,7 @@
 {% block title %}Files{% endblock %}
 
 {% block content %}
+{% include "_replace_progress.html" %}
 <div class="page-head">
   <h1>Files</h1>
   <form method="post" action="{{ url_for('start_scan') }}">
@@ -95,6 +96,7 @@
   </form>
   {% include "_replace_dialog.html" %}
   {% include "_bulk_replace_dialog.html" %}
+  <script src="{{ url_for('static', filename='replaceprogress.js') }}"></script>
   <script src="{{ url_for('static', filename='replace.js') }}"></script>
   <script src="{{ url_for('static', filename='bulkreplace.js') }}"></script>
   <script src="{{ url_for('static', filename='rangeselect.js') }}"></script>

@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.11.0] - 2026-10-29
+
+### Added
+- A compact progress bar at the top of the Status and Files pages while replaces are ongoing: one line with "Replacing 4 of 8", a bar in parts (done, moved and being checked in Plex, failed, waiting for the worker) and the Plex count, plus **Details** for a short list of the files. It includes every ongoing replace, also ones started on another page or tab, grows when more are started, survives reloads, and shows a summary for a few seconds when all are done.
+
+### Changed
+- The Replace dialogs no longer show the blue "Replacing … waiting for the worker" text; the progress bar shows it. Errors are still shown below the toolbar.
+
 ## [3.10.0] - 2026-10-29
 
 ### Added

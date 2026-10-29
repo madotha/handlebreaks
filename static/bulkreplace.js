@@ -92,9 +92,7 @@
     const left = new Map(jobs.map((j) => [j.status_url, j]));
     let ok = 0;
     const failed = [];
-    const progress = () => opts.say(`Replacing ${jobs.length} files … ${ok + failed.length} done. ` +
-      "You can leave or reload the page; the replace continues.", "busy");
-    progress();
+    if (window.ReplaceProgress) window.ReplaceProgress.kick();   // the progress bar shows how it goes
     for (let i = 0; i < 900 && left.size; i++) {    // up to ~30 minutes
       await new Promise((r) => setTimeout(r, 2000));
       for (const url of [...left.keys()]) {
@@ -103,14 +101,12 @@
         left.delete(url);
         if (st.state === "done") ok++; else failed.push(st.message);
       }
-      progress();
     }
     if (left.size) {
       opts.say(`${ok} replaced; ${left.size} still waiting for the worker. Is it running? See the Status page.`, "error");
       return;
     }
-    opts.say(`${ok} file${ok === 1 ? "" : "s"} replaced.` + (failed.length ? ` ${failed.length} failed: ${failed.join(" ")}` : ""),
-      failed.length ? "error" : "ok");
+    if (failed.length) opts.say(`${failed.length} of ${jobs.length} replaces failed: ${failed.join(" ")}`, "error");
     if (ok) setTimeout(() => opts.done(), 2500);
   }
 
