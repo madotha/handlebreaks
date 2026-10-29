@@ -348,11 +348,13 @@ def originals_purge_loop():
     while True:
         try:
             enc.apply_config(enc.load_config())
-            count, freed = enc.purge_kept()
+            count, freed, held = enc.purge_kept()    # held back ones show their warning on the Status page
             if count:
                 _KEPT_GEN[0] += 1
                 notify("purge", None, f"{count:,} kept original{'s' if count != 1 else ''} older than "
-                                      f"{enc.keep_originals_days()} days, {fmt_size(freed)} freed.")
+                                      f"{enc.keep_originals_days()} days, {fmt_size(freed)} freed."
+                                      + (f" {held:,} kept: the file that replaced {'it' if held == 1 else 'them'} is missing "
+                                         "or can't be checked." if held else ""))
                 print(f"{enc.now_str()} {count} kept original(s) older than {enc.keep_originals_days()} days "
                       f"deleted, {fmt_size(freed)} freed.", file=sys.stderr)
         except SystemExit as e:                 # e.g. config.env incomplete: try again later
@@ -589,18 +591,24 @@ def notify_seconds():
         return 8
 
 
-_WATCH = {"ready": False, "run": None, "run_start": None, "offline": set()}
+_WATCH = {"ready": False, "run": None, "run_start": None, "offline": set(), "loaded": False}
 
 
 def run_events():
-    """Events for a worker run that ended: run.txt disappeared or was rewritten by the next run."""
+    """Events for a worker run that ended: run.txt disappeared or was rewritten by the next run.
+    The watched run is kept in meta (events_run), so a run that ends while the web UI is down
+    still gets its summary when it's back."""
     try:
         stamp = enc.RUN_FILE.stat().st_mtime_ns
     except OSError:
         stamp = None
+    if not _WATCH["loaded"]:
+        saved = json.loads(enc.get_meta("events_run") or "{}")
+        _WATCH.update(run=saved.get("run"), run_start=saved.get("start"), loaded=True)
     prev, start = _WATCH["run"], _WATCH["run_start"]
     if stamp != prev:
         _WATCH.update(run=stamp, run_start=enc.run_started() if stamp else None)
+        enc.set_meta("events_run", json.dumps({"run": stamp, "start": _WATCH["run_start"]}))
     if prev is None or stamp == prev or not start:
         return []
     if enc.is_paused():                         # "Stop all" on the Status page: the user knows
@@ -1456,26 +1464,21 @@ def kept_short(rel):
     return f"{parts[-2]} › {parts[-1]}" if len(parts) > 1 else rel
 
 
+def kept_saved(items):
+    """(bytes saved, of how many originals) by the replaces of the kept originals, as far as
+    recorded (replaces since 3.13 store both sizes); None if none is recorded."""
+    known = [o["saved"] for o in items if o.get("saved") is not None]
+    return (sum(known), len(known)) if known else None
+
+
 def kept_info(rows):
     """For the rows of one page: how big the replacing file is now, and whether it is still in
-    the library (a warning, not a block: it may just have been renamed)."""
+    the library (missing or offline ones aren't deleted without "Also when the replacement is
+    missing", see originals_delete(); it may just have been renamed)."""
+    roots = {}
     for r in rows:
-        r["new_size"], r["warn"] = None, ""
-        if not r["new_key"]:
-            r["warn"] = "unknown"               # no replace job on record (older install, or the log was cleared)
-            continue
-        prefix, _, rel = r["new_key"].partition("/")
-        root = enc.first_existing(enc.ROOT_CANDIDATES.get(prefix, []))
-        if root is None:
-            r["warn"] = "offline"
-            continue
-        try:
-            r["new_size"] = (root / rel).stat().st_size
-        except OSError:
-            r["warn"] = "missing"
-            continue
-        if r.get("plex") == "failed":
-            r["warn"] = "plex"
+        state, r["new_size"] = enc.replacement_state(r["new_key"], roots)
+        r["warn"] = "plex" if state == "ok" and r.get("plex") == "failed" else "" if state == "ok" else state
 
 
 def review_summary(rows):
@@ -1555,8 +1558,10 @@ def queue_view(view="queue", state="", offset=0, sort=None):
             "fields": {f: v[0] for f, v in fields.items()},
             "keep_days": enc.history_keep_days(), "history_results": HISTORY_RESULTS,
             "kept_total": sum(i["size"] for i in shown) if view == "originals" else 0,
+            "kept_saved": kept_saved(shown) if view == "originals" else None,
             "review_summary": review_summary(shown) if view == "review" else "",
-            "kept_auto_days": enc.keep_originals_days()}
+            "kept_auto_days": enc.keep_originals_days(),
+            "kept_blocked": view == "originals" and any(r["warn"] in enc.KEPT_BLOCKED for r in rows)}
 
 
 def live_status():
@@ -1795,21 +1800,31 @@ def status_dismiss():
 @app.route("/originals/delete", methods=["POST"])
 def originals_delete():
     """Permanently delete kept originals: the selected ones (paths inside .replaced/), or
-    with older_than=N all that were kept for more than N days."""
+    with older_than=N all that were kept for more than N days. An original whose replacement
+    is missing or can't be checked is kept unless force=1 (selected ones only)."""
     older = request.form.get("older_than", "")
     if older:
         if not older.isdigit() or int(older) < 1:
             abort(400, "Invalid number of days.")
-        count, freed = enc.purge_kept(int(older))
+        count, freed, held = enc.purge_kept(int(older))
     else:
-        keys = request.form.getlist("key")
+        keys = set(request.form.getlist("key"))
         if not keys:
             flash("No entries selected.", "error")
             return safe_next(url_for("status", view="originals"))
-        count, freed = enc.delete_kept(keys)
+        ok, held = enc.split_kept([o for o in enc.kept_originals() if o["key"] in keys],
+                                  force=request.form.get("force") == "1")
+        count, freed = enc.delete_kept([o["key"] for o in ok])
+        held = len(held)
     _KEPT_GEN[0] += 1
-    flash(f"{count:,} original{'' if count == 1 else 's'} deleted, {fmt_size(freed)} freed." if count
-          else "Nothing deleted: no matching originals found.", "ok" if count else "error")
+    msg = f"{count:,} original{'' if count == 1 else 's'} deleted, {fmt_size(freed)} freed." if count else "Nothing deleted."
+    if held:
+        msg += (f" {held:,} kept because the file that replaced {'it' if held == 1 else 'them'} is no longer in the "
+                "library or its share can't be reached. To delete them anyway, tick them and \"Also when the replacement "
+                "is missing\".")
+    elif not count:
+        msg = "Nothing deleted: no matching originals found."
+    flash(msg, "ok" if count and not held else "warn" if count or held else "error")
     return safe_next(url_for("status", view="originals"))
 
 

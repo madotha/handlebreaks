@@ -68,7 +68,7 @@ Examples
     python3 encoding.py version
 """
 
-__version__ = "3.13.1"
+__version__ = "3.14.0"
 
 import fcntl
 import json
@@ -760,6 +760,17 @@ def new_results():
     return rows
 
 
+def get_meta(key):
+    with closing(connect()) as con:
+        row = con.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return row[0] if row else None
+
+
+def set_meta(key, value):
+    with closing(connect()) as con, con:
+        con.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (key, value))
+
+
 def recent_results(n=20):
     """The last n results as (time, status, key), newest first."""
     load_results()
@@ -1074,8 +1085,8 @@ _REPLACE_RECORDS = [None, {}]
 
 
 def replace_records():
-    """{original key: (finished time, new key, Plex state)} of the finished replace jobs, the latest per
-    key; read again only when replace-done/ changes."""
+    """{original key: (finished time, new key, Plex state, [original, replacement] bytes or None)} of
+    the finished replace jobs, the latest per key; read again only when replace-done/ changes."""
     try:
         stamp = REPLACE_DONE.stat().st_mtime_ns
     except OSError:
@@ -1090,7 +1101,8 @@ def replace_records():
             if job.get("state") == "done" and job.get("keep_original") is not False:
                 when = job.get("finished") or ""
                 if job["key"] not in records or when >= records[job["key"]][0]:
-                    records[job["key"]] = (when, job.get("new_key") or "", (job.get("plex") or {}).get("state"))
+                    records[job["key"]] = (when, job.get("new_key") or "", (job.get("plex") or {}).get("state"),
+                                           job.get("sizes"))
         _REPLACE_RECORDS[:] = [stamp, records]
     return _REPLACE_RECORDS[1]
 
@@ -1105,16 +1117,16 @@ def kept_originals():
     """The originals Replace… kept, newest first: [{"key": path inside .replaced/ (the same
     as the original's path in its share), "size", "kept" (when it was kept, "YYYY-MM-DD
     HH:MM"), "orig_key", "plex" (Plex state of the replace), "new_key" (of the replacing file; "" if there is no record of the
-    replace)}]. The share isn't part of the path, so with the same path in two shares the
+    replace), "saved" (bytes the replace saved, None if it wasn't recorded: replaces before 3.13)}]. The share isn't part of the path, so with the same path in two shares the
     latest replace job is taken."""
     base = kept_dir()
     if base is None or not base.is_dir():
         return []
     by_path = {}
-    for key, (when, new_key, plex_state) in replace_records().items():
+    for key, (when, new_key, plex_state, sizes) in replace_records().items():
         rel = key.split("/", 1)[-1]
         if rel not in by_path or when >= by_path[rel][0]:
-            by_path[rel] = (when, key, new_key, plex_state)
+            by_path[rel] = (when, key, new_key, plex_state, sizes)
     out = []
     for folder, dirs, names in os.walk(base):
         dirs[:] = [d for d in dirs if d != "@eaDir"]        # Synology's index data, not originals
@@ -1129,8 +1141,9 @@ def kept_originals():
             except OSError:
                 continue
             rel = path.relative_to(base).as_posix()
-            when, orig_key, new_key, plex_state = by_path.get(rel, (None, "", "", None))
+            when, orig_key, new_key, plex_state, sizes = by_path.get(rel, (None, "", "", None, None))
             out.append({"key": rel, "size": st.st_size, "orig_key": orig_key, "new_key": new_key, "plex": plex_state,
+                        "saved": sizes[0] - sizes[1] if sizes and len(sizes) == 2 else None,
                         "kept": when or datetime.fromtimestamp(st.st_ctime).strftime("%Y-%m-%d %H:%M")})
     return sorted(out, key=lambda o: (o["kept"], o["key"]), reverse=True)
 
@@ -1177,16 +1190,50 @@ def keep_originals_days():
     return int(value) if value.isdigit() else 0
 
 
+KEPT_BLOCKED = ("missing", "offline")    # replacement states that keep an original from being deleted
+
+
+def replacement_state(new_key, roots=None):
+    """(state, size) of the file that replaced a kept original: "ok" with its size, "missing"
+    (no longer in the library: renamed, moved or deleted), "offline" (its share can't be
+    reached, so it can't be checked) or "unknown" (no record of the replace, e.g. the history
+    was deleted). roots caches the reachable root per share across calls."""
+    if not new_key:
+        return "unknown", None
+    prefix, _, rel = new_key.partition("/")
+    roots = {} if roots is None else roots
+    if prefix not in roots:
+        roots[prefix] = next((Path(c) for c in ROOT_CANDIDATES.get(prefix, []) if reachable(c)), None)
+    if roots[prefix] is None:
+        return "offline", None
+    try:
+        return "ok", (roots[prefix] / rel).stat().st_size
+    except OSError:
+        return "missing", None
+
+
+def split_kept(items, force=False):
+    """(deletable, held back) kept originals (dicts of kept_originals()): one whose replacement
+    is missing or can't be checked is held back unless force."""
+    if force:
+        return list(items), []
+    roots, ok, held = {}, [], []
+    for o in items:
+        (held if replacement_state(o["new_key"], roots)[0] in KEPT_BLOCKED else ok).append(o)
+    return ok, held
+
+
 def purge_kept(days=None):
     """Delete the kept originals that were kept for more than `days` days (default:
-    KEEP_ORIGINALS_DAYS; 0 = nothing). Returns (files deleted, bytes freed)."""
+    KEEP_ORIGINALS_DAYS; 0 = nothing). Returns (files deleted, bytes freed, held back): an
+    original whose replacement Plex hasn't confirmed, or whose replacement is missing or
+    can't be checked, stays until it's deleted by hand."""
     days = keep_originals_days() if days is None else days
     if days <= 0:
-        return 0, 0
+        return 0, 0, 0
     cutoff = (datetime.now() - timedelta(days=days)).strftime("%Y-%m-%d %H:%M")
-    # an original whose replacement Plex hasn't confirmed (yet) stays until it's deleted by hand
-    return delete_kept([o["key"] for o in kept_originals()
-                        if o["kept"] < cutoff and o["plex"] not in PLEX_UNCONFIRMED])
+    ok, held = split_kept(o for o in kept_originals() if o["kept"] < cutoff and o["plex"] not in PLEX_UNCONFIRMED)
+    return (*delete_kept([o["key"] for o in ok]), len(held))
 
 
 def move_file(src, dst, attempts=6, wait=10):
@@ -2030,8 +2077,9 @@ def main():
         run_replace_jobs()
         return
     if cmd == "purge-originals":                # delete kept originals older than N days (default KEEP_ORIGINALS_DAYS)
-        n, freed = purge_kept(int(rest[0]) if rest and rest[0].isdigit() else None)
-        print(f"{n} kept original(s) deleted, {freed / 2**30:.2f} GiB freed.")
+        n, freed, held = purge_kept(int(rest[0]) if rest and rest[0].isdigit() else None)
+        print(f"{n} kept original(s) deleted, {freed / 2**30:.2f} GiB freed."
+              + (f" {held} kept because the file that replaced them is missing or its share can't be reached." if held else ""))
         return
     if cmd == "stop-rest":                      # encode.sh after "Stop all"; no database either
         print(requeue_rest(int(rest[0]), pause="--no-pause" not in rest))

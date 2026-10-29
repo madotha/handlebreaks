@@ -7,6 +7,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.14.0] - 2026-10-29
+
+### Added
+- Status → Kept originals: the line above the list shows how much space replacing them saved (recorded for replaces since 3.13; older ones are counted as "recorded for N of them").
+- Status → Kept originals: **Also when the replacement is missing**, to delete originals that are otherwise kept (see below).
+
+### Changed
+- Kept originals whose replacing file is no longer in the library, or whose share can't be reached to check it, are no longer deleted: not by **Delete selected…**, not by **Delete…** older than N days, and not automatically (`KEEP_ORIGINALS_DAYS`, `purge-originals`). Before, they were only marked with a warning. Tick them and **Also when the replacement is missing** to delete them anyway.
+- An unmounted share (an empty mount point) now shows as "library not reachable" in Kept originals instead of "replacement missing".
+
+### Fixed
+- A worker run that ends while the web UI isn't running (e.g. during an update or container rebuild) still gets its "Run finished" notification once the web UI is back.
+
 ## [3.13.1] - 2026-10-29
 
 ### Fixed

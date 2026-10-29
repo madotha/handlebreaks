@@ -19,8 +19,8 @@
     <td class="small nowrap num">{{ r.size|size }}</td>
     <td class="small nowrap">{{ r.kept|localtime }}</td>
     <td class="small">
-      {% if r.warn == 'missing' %}<span class="badge badge-warn" data-tip="The file that replaced this original is no longer in the library (it may have been renamed, moved or deleted). Check before deleting the original.">replacement missing</span>
-      {% elif r.warn == 'offline' %}<span class="muted" data-tip="The share of the replacing file can't be reached right now.">library not reachable</span>
+      {% if r.warn == 'missing' %}<span class="badge badge-warn" data-tip="The file that replaced this original is no longer in the library (it may have been renamed, moved or deleted). It is only deleted with &quot;Also when the replacement is missing&quot;.">replacement missing</span>
+      {% elif r.warn == 'offline' %}<span class="muted" data-tip="The share of the replacing file can't be reached right now, so it isn't deleted (only with &quot;Also when the replacement is missing&quot;).">library not reachable</span>
       {% elif r.warn == 'plex' %}<span class="badge badge-warn" data-tip="Plex didn't pick up the file that replaced this original (see Status → History). It isn't deleted automatically; check Plex before deleting it.">Plex not updated</span>
       {% elif r.warn == 'unknown' %}<span class="muted" data-tip="There is no replace job on record for this file (e.g. the history data was deleted).">no record</span>
       {% elif r.new_size is not none %}{% if r.size > r.new_size %}saved {{ (r.size - r.new_size)|size }}{% else %}no space saved{% endif %}{% endif %}
