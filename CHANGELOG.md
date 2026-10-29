@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.13.0] - 2026-10-29
+
+### Added
+- A fun fact about your library at the top of the Stats page, a different one on every visit: how long it would take to watch everything, how many DVDs or floppy disks it would fill (and how high that stack would be), how much encoding the rest could free, the biggest, most frugal and highest-bitrate files, the oldest title, what you added in the last 30 days, and more. Facts without data (e.g. an unprobed library) are skipped; runtimes over 6 hours and bitrates over 150 Mbit/s count as probe glitches.
+- Replace results record the size of the original and the replacement, so the space Handlebreaks freed can be counted (from this version on).
+
 ## [3.12.0] - 2026-10-29
 
 ### Added

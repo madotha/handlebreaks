@@ -31,6 +31,7 @@ import hashlib
 import json
 import math
 import os
+import random
 import re
 import secrets
 import sys
@@ -47,6 +48,7 @@ from flask import Flask, Response, abort, flash, g, redirect, render_template, r
 from markupsafe import Markup, escape
 
 import encoding as enc
+import funfacts
 import plex
 import presets
 
@@ -1950,6 +1952,36 @@ RES_CASE = ("CASE WHEN width IS NULL OR height IS NULL THEN 'Unknown' "
             "WHEN width >= 1200 OR height >= 700 THEN '720p' ELSE 'SD' END")
 
 
+def fun_fact():
+    """One fun fact about the library (funfacts.py), a different one on every page view. The
+    numbers are gathered once and kept until the database or the replace results change
+    (and at least once a day: some facts count from today)."""
+    def compute():
+        sizes = []
+        for f in enc.REPLACE_DONE.glob("*.json") if enc.REPLACE_DONE.exists() else []:
+            try:
+                job = json.loads(f.read_text(encoding="utf-8"))
+            except (ValueError, OSError):
+                continue
+            if job.get("state") == "done" and len(job.get("sizes") or []) == 2:
+                sizes.append(job["sizes"])
+        with closing(db()) as con:
+            encoded = con.execute("SELECT COUNT(DISTINCT key) FROM results WHERE status = 'OK'").fetchone()[0]
+            numbers = funfacts.gather(con, enc.OPTIMIZED_CODECS, enc.SHARE_NAMES, encoded, sizes)
+        return funfacts.facts(numbers, fmt_size)
+    try:
+        done_version = enc.REPLACE_DONE.stat().st_mtime_ns
+    except OSError:
+        done_version = 0
+    facts = cached("funfacts", (enc.db_version(), done_version, datetime.now().date()), compute)
+    if not facts:
+        return None
+    last = session.get("fact")
+    pick = random.choice([i for i in range(len(facts)) if i != last] or [0])
+    session["fact"] = pick
+    return facts[pick]
+
+
 @app.route("/stats")
 def stats():
     """All numbers are counted by SQLite in one grouped query (a few thousand groups instead
@@ -2027,7 +2059,7 @@ def stats():
         "good_count": good_count, "other_count": other_count, "other_size": other_size,
         "median_good": median_good, "median_other": median_other,
     }
-    return render_template("stats.html", charts=charts, tiles=tiles, last_scan=enc.last_scan())
+    return render_template("stats.html", charts=charts, tiles=tiles, last_scan=enc.last_scan(), fact=fun_fact())
 
 
 # ─── Presets ──────────────────────────────────────────────────────────────────

@@ -68,7 +68,7 @@ Examples
     python3 encoding.py version
 """
 
-__version__ = "3.12.0"
+__version__ = "3.13.0"
 
 import fcntl
 import json
@@ -1273,6 +1273,12 @@ def run_replace_jobs():
         REPLACE_DONE.mkdir(parents=True, exist_ok=True)
     for path in jobs:
         job = json.loads(path.read_text(encoding="utf-8"))
+        prefix, _, rel = job["key"].partition("/")
+        root = first_existing(ROOT_CANDIDATES.get(prefix, []))
+        try:
+            old_size = (root / rel).stat().st_size if root else None
+        except OSError:
+            old_size = None
         try:
             message, new_key, original, target = replace_one(job)
             result = dict(job, state="done", message=message, new_key=new_key, finished=now_str())
@@ -1280,6 +1286,8 @@ def run_replace_jobs():
                 size = target.stat().st_size
             except OSError:
                 size = None
+            if old_size and size:
+                result["sizes"] = [old_size, size]      # original and replacement, for the saved space
             info = plex.job_info(CONFIG, original, target, size)
             if info:
                 result["plex"] = info

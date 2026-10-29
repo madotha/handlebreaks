@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_icons.html" import icon %}
 {% block title %}Stats{% endblock %}
 
 {% macro legend(c) %}
@@ -68,6 +69,7 @@
 {% if not tiles %}
   <p class="empty">No data yet. Start a scan on the <a href="{{ url_for('files') }}">Files</a> page.</p>
 {% else %}
+  {% if fact %}<p class="fun-fact"><span class="fun-fact-icon">{{ icon('bulb') }}</span><span><span class="fun-fact-label">Fun fact</span> {{ fact }}</span></p>{% endif %}
   <section class="cards">
     <div class="card"><span class="label">Videos</span><span class="value">{{ tiles.videos|count }}</span>
       <span class="sub">{{ tiles.total_size|size }} in total</span></div>

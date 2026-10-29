@@ -210,6 +210,10 @@ label.inline { display: inline-flex; align-items: center; gap: .5rem; font-size:
 /* ─── Surfaces ─────────────────────────────────────────────────────────────── */
 .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.1rem 1.25rem;
   margin-bottom: 1.25rem; box-shadow: var(--shadow); }
+.fun-fact { display: flex; gap: .7rem; align-items: flex-start; margin: 0 0 1.1rem; padding: .7rem 1rem; background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--info); border-radius: var(--radius); box-shadow: var(--shadow); font-size: .92rem; line-height: 1.5; }
+.fun-fact-icon { flex: none; color: var(--info); margin-top: .1rem; }
+.fun-fact-label { display: block; color: var(--muted); font-size: .7rem; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; }
+.fun-fact strong { font-variant-numeric: tabular-nums; }
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: .9rem; margin-bottom: 1.5rem; }
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.15rem; box-shadow: var(--shadow); }
 .card .label { display: block; color: var(--muted); font-size: .74rem; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; }
