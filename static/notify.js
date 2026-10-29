@@ -4,7 +4,10 @@
 // stay until closed). The last id seen is shared by all tabs in localStorage, so an event pops
 // up once even with several pages open, and moving to another page doesn't lose what came in
 // meanwhile. The popups on screen are kept per tab in sessionStorage with their time left, so
-// the next page or a reload shows them again where they were.
+// the next page or a reload shows them again where they were. When more come than fit, the
+// oldest wait hidden behind a "+N more" chip (their time bar only starts once they show);
+// the chip shows them all (and then closes all), and a waiting one moves up whenever one on
+// screen goes.
 (function () {
   const box = document.querySelector("[data-toasts]");
   if (!box) return;
@@ -20,6 +23,26 @@
 
   // Popups on screen: element -> {ev, total (seconds, 0 = until closed)}
   const open = new Map();
+  const more = document.createElement("button");    // "+N more": popups waiting for room
+  more.type = "button";
+  more.className = "toast-more";
+  more.hidden = true;
+  box.prepend(more);
+  let expanded = false;                             // the chip was clicked: show all
+  more.addEventListener("click", () => {
+    if (expanded) [...open.keys()].forEach(dismiss);   // "Close all"
+    else { expanded = true; layout(); }
+  });
+  function layout() {
+    const live = [...box.querySelectorAll(".toast:not(.leaving)")];
+    if (live.length <= max()) expanded = false;
+    const waiting = expanded ? 0 : live.length - max();
+    live.forEach((t, i) => { t.hidden = i < waiting; });   // the oldest wait; a hidden one's bar doesn't run
+    box.classList.toggle("expanded", expanded);
+    more.hidden = !expanded && waiting <= 0;
+    more.textContent = expanded ? "Close all" : `+${waiting} more`;
+    more.setAttribute("aria-label", expanded ? "Close all notifications" : `Show ${waiting} more notification${waiting === 1 ? "" : "s"}`);
+  }
   function timeLeft(t, total) {                     // ms left on the popup's time bar
     const bar = t.querySelector(".toast-bar");
     const anim = bar && bar.getAnimations ? bar.getAnimations()[0] : null;
@@ -65,6 +88,7 @@
     open.delete(t);
     save();
     t.classList.add("leaving");
+    layout();                                       // a waiting popup moves up
     setTimeout(() => t.remove(), 200);
   }
 
@@ -108,8 +132,7 @@
       bar.addEventListener("animationend", () => dismiss(t));
       t.append(bar);
     }
-    const live = [...box.querySelectorAll(".toast:not(.leaving)")];
-    live.slice(0, Math.max(0, live.length - max())).forEach(dismiss);   // the oldest make room
+    layout();
     save();
   }
 
@@ -146,7 +169,7 @@
   window.addEventListener("pageshow", (e) => {      // back/forward cache: the popups may have changed meanwhile
     if (!e.persisted) return;
     open.clear();
-    box.replaceChildren();
+    box.replaceChildren(more);
     restore();
   });
   document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });

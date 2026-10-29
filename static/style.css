@@ -188,9 +188,16 @@ label.inline { display: inline-flex; align-items: center; gap: .5rem; font-size:
 .toasts:hover .toast-bar, .toast:focus-within .toast-bar { animation-play-state: paused; }
 @keyframes toast-time { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 .toast.restored { animation: none; }                /* shown again on the next page: no slide-in */
+/* "+N more": popups waiting for room; clicked, the stack shows all and scrolls */
+.toast-more { pointer-events: auto; align-self: flex-end; min-height: 0; padding: .25rem .7rem; border-radius: 99px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text); box-shadow: var(--shadow-pop);
+  font-size: .78rem; font-weight: 650; cursor: pointer; }
+.toasts .toast-more:hover { background: var(--surface-2); }
+.toasts.expanded { max-height: calc(100vh - 2rem); overflow-y: auto; pointer-events: auto; padding: .2rem; }
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; transition: none; } }
 @media (max-width: 720px) {
   .toasts { left: 16px; right: 16px; width: auto; bottom: calc(var(--tabbar-h) + .5rem); }
+  .toasts.expanded { max-height: calc(100vh - var(--tabbar-h) - 5rem); }
 }
 
 /* Groups of checkboxes in the settings (e.g. NOTIFY_EVENTS) */

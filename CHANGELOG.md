@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.15.0] - 2026-10-29
+
+### Added
+- Notifications: when more arrive than fit on screen (4, 3 on phones), the rest wait behind a **+N more** chip instead of the oldest disappearing unread. They move up as others go, and their time only starts once they show. The chip shows all of them and then turns into **Close all**.
+
+### Changed
+- Status page: the open tab's list reloads as soon as its count changes, e.g. when an encode finishes (Awaiting review, History) or entries are queued elsewhere. Before, it waited for the next file to start or for **Refresh**, so the last file of a run only showed up after a manual refresh.
+
 ## [3.14.0] - 2026-10-29
 
 ### Added

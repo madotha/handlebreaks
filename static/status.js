@@ -1,7 +1,8 @@
 // Status page: live progress and tab counts without reloading the page. Every few
 // seconds a small JSON snapshot is fetched; the list of the open tab (Queue, Awaiting
 // review or History, which can be long) is only reloaded when the file being encoded
-// changes, on "Refresh", or when the filter changes.
+// changes, when the tab's count changes (e.g. an encode finished), on "Refresh", or when
+// the filter changes.
 (function () {
   const script = document.currentScript;
   const liveUrl = script.dataset.liveUrl, queueUrl = script.dataset.queueUrl, moveUrl = script.dataset.moveUrl;
@@ -13,6 +14,8 @@
   const view = filterForm.dataset.view;
   const liveBox = $("[data-live]");
   let currentKey = panel.dataset.currentKey;
+  const tabCount = $(`.view-tabs [data-count="${view}"]`);   // count of the open tab as rendered: a change
+  let viewCount = tabCount ? Number(tabCount.textContent.replace(/\D/g, "")) : null;   // (e.g. an encode finished) reloads its list
   const currentTab = $(".view-tabs [aria-current]");        // narrow screens: the tab strip scrolls, so show the open tab
   if (currentTab) currentTab.parentElement.scrollLeft = Math.max(0, currentTab.offsetLeft + currentTab.offsetWidth - currentTab.parentElement.clientWidth);
   let running = false, again = false;          // again: a forced refresh came in while one was running
@@ -200,7 +203,10 @@
         setText("[data-scan-started]", s.scan.started ? window.formatLocalTime(s.scan.started) : "");
       }
       const key = cur ? cur.key : "";
-      if (force || key !== currentKey) {           // next file started: entry states changed
+      const count = s.counts[view] || 0;
+      const changed = viewCount !== null && count !== viewCount;
+      viewCount = count;
+      if (force || key !== currentKey || changed) {   // next file started, or an entry came or went
         currentKey = key;
         await reloadQueue(false);
       }
