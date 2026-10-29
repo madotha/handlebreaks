@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.11.1] - 2026-10-29
+
+### Fixed
+- The Status page refreshes its lists whenever a replace moves on (moved, checked by Plex, failed) and when all are done, so History shows **Plex ✓** once Plex confirmed the file, without a reload. Before, the page reloaded as soon as the file was moved (before Plex's check) and then kept showing **Plex …** until the next encode started or Refresh was clicked. Finished replaces no longer reload the whole page.
+
 ## [3.11.0] - 2026-10-29
 
 ### Added

@@ -2,13 +2,15 @@
 // (templates/_replace_progress.html). Polls /replace/progress: every 3 s while replaces are
 // ongoing, every 15 s otherwise, only while the page is visible. The replace dialogs call
 // window.ReplaceProgress.kick() when they started a job, so the bar appears at once.
+// When a replace moves on (moved, synced, checked by Plex, failed) or the wave ends, it fires a
+// "replaceprogress" event on document, so a page can refresh its lists (the Status page does).
 (() => {
   const box = document.querySelector("[data-rp]");
   if (!box) return;
   const $ = (s) => box.querySelector(s);
   const list = $("[data-rp-list]"), toggle = $("[data-rp-toggle]");
   const FAST = 3000, SLOW = 15000;
-  let timer = null, busy = false, fast = false;
+  let timer = null, busy = false, fast = false, last = null;
 
   function render(p) {
     const show = p.total > 0 && (p.active || p.finished);
@@ -55,6 +57,12 @@
         const p = await r.json();
         render(p);
         fast = p.active || p.finished;
+        const plex = p.plex || {};
+        const sig = [p.total, p.waiting, p.checking, p.done, p.failed, plex.ok, plex.open, plex.failed].join("/");
+        if (last !== null && sig !== last && p.total) {
+          document.dispatchEvent(new CustomEvent("replaceprogress", { detail: p }));
+        }
+        last = sig;
       }
     } catch (e) { /* offline for a moment: try again later */ }
     busy = false;

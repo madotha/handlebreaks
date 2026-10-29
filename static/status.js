@@ -15,7 +15,7 @@
   let currentKey = panel.dataset.currentKey;
   const currentTab = $(".view-tabs [aria-current]");        // narrow screens: the tab strip scrolls, so show the open tab
   if (currentTab) currentTab.parentElement.scrollLeft = Math.max(0, currentTab.offsetLeft + currentTab.offsetWidth - currentTab.parentElement.clientWidth);
-  let running = false;
+  let running = false, again = false;          // again: a forced refresh came in while one was running
 
   function sortParams() {                        // keep the column sort when reloading the list
     return filterForm.dataset.sort ? { sort: filterForm.dataset.sort, dir: filterForm.dataset.dir } : {};
@@ -159,7 +159,7 @@
   rows.addEventListener("dragend", () => { clearDrop(); dragKeys = null; });
 
   async function poll(force) {
-    if (running) return;
+    if (running) { if (force) again = true; return; }
     running = true;
     try {
       const r = await fetch(liveUrl);
@@ -202,20 +202,23 @@
       }
     } finally {
       running = false;
+      if (again) { again = false; poll(true); }
     }
   }
 
-  // "Replace…" on finished encodes (static/replace.js); reload the page when done
+  // "Replace…" on finished encodes (static/replace.js). The lists refresh whenever a replace
+  // moves on (event of static/replaceprogress.js), up to Plex's check, and when all are done.
   const msg = $("[data-replace-msg]");
   window.ReplaceDialog.attach(document, {
     say(text, kind) { msg.hidden = false; msg.className = "scan-msg " + kind; msg.textContent = text; },
-    done: () => setTimeout(() => location.reload(), 2500),
+    done: () => poll(true),
   });
+  document.addEventListener("replaceprogress", () => poll(true));
 
   // "Replace all finished…" and "Replace selected…" in the Awaiting review tab (static/bulkreplace.js)
   const bulk = {
     say(text, kind) { msg.hidden = false; msg.className = "scan-msg " + kind; msg.textContent = text; },
-    done: () => location.reload(),
+    done: () => poll(true),
   };
   const replaceAll = $("[data-bulk-replace-all]"), replaceSelected = $("[data-bulk-replace-selected]");
   if (replaceAll) replaceAll.addEventListener("click", () => {
