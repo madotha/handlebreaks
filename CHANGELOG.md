@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.12.0] - 2026-10-29
+
+### Added
+- Status → Awaiting review has a **Saved** column with the space replacing each original frees (and its percentage; "larger" if the encode is bigger), sortable like the other columns, and a line above the list with the total: the originals' size, the encodes' size and how much replacing them all would save. It updates with the list.
+
 ## [3.11.1] - 2026-10-29
 
 ### Fixed

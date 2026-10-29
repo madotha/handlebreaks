@@ -43,6 +43,8 @@
     shownBox.hidden = !next;
     shownBox.querySelector("[data-shown]").textContent = rows.children.length.toLocaleString();
     shownBox.querySelector("[data-total]").textContent = Number(r.headers.get("X-Shown-Total") || 0).toLocaleString();
+    const summary = $("[data-view-summary]"), summaryText = r.headers.get("X-Summary");
+    if (summary && summaryText !== null) { summary.textContent = summaryText; summary.hidden = !summaryText; }
     let btn = $("[data-queue-more]");
     if (next) {
       if (!btn) {

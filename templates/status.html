@@ -120,6 +120,9 @@
   <p class="muted small" data-kept-summary>{{ q.shown_total|count }} original{{ '' if q.shown_total == 1 else 's' }} kept, {{ q.kept_total|size }} in total ·
     {% if q.kept_auto_days %}deleted automatically after {{ q.kept_auto_days }} days{% else %}never deleted automatically{% endif %} (<a href="{{ url_for('settings', section='replace') }}">change</a>)</p>
   {% endif %}
+  {% if q.view == 'review' %}
+  <p class="muted small" data-view-summary {% if not q.review_summary %}hidden{% endif %}>{{ q.review_summary }}</p>
+  {% endif %}
   {% if q.view == 'history' %}
   <form id="older-form" method="post" action="{{ url_for('status_dismiss') }}">{# own form: its select must not travel with the other buttons #}
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -143,7 +146,7 @@
   <p class="hint">
     {% if q.view == 'queue' %}Waiting entries can be reordered (drag the handle, the arrows, or Move to top / bottom for the ticked entries; not while a column sort is on) and removed. Entries of the current run stay where they are until the worker takes them; moving an entry that is part of the running batch puts it and everything after it into a new batch, the next run, which a new worker starts once this run has finished. Removed entries of the current run show as "Removed" and are skipped by the worker. Finished files move to Awaiting review (encodes) or History (every result).
     {% elif q.view == 'originals' %}The originals that Replace… moved to the <code>.replaced</code> folder inside the output folder, with the folder structure of the share. Deleting them is permanent: the files are removed from disk, not hidden. The replacement column shows how much space the encode saved, and warns if the file that replaced an original is no longer in the library (it may only have been renamed, so check before deleting).
-    {% elif q.view == 'review' %}Finished encodes in the output folder, also from earlier runs, until their original is replaced. Dismiss only hides an entry here; the encode stays in the output folder and keeps its Replace… button on the Files page.
+    {% elif q.view == 'review' %}Finished encodes in the output folder, also from earlier runs, until their original is replaced. The Saved column and the line above the list show how much space replacing the originals frees. Dismiss only hides an entry here; the encode stays in the output folder and keeps its Replace… button on the Files page.
     {% else %}Every encode result and finished replace, newest first{% if q.keep_days %}; entries older than {{ q.keep_days }} days are hidden (<a href="{{ url_for('settings', section='status') }}">change</a>){% endif %}. Dismiss hides entries here without deleting anything; a new result of the same file shows again. A failed file keeps its Failed marker on the Files page until it is encoded successfully.
     {% endif %}
     The list shows 100 entries at a time; progress and counts update every few seconds, the list whenever the next file starts.</p>

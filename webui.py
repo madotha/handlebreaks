@@ -1375,8 +1375,9 @@ VIEW_SORT = {
     },
     "review": {
         "file": ("File", lambda i: natural(enc.short(i["key"]))),
-        "size": ("Size", lambda i: i["size"]),
-        "at":   ("Encoded", lambda i: i["at"]),
+        "size":  ("Size", lambda i: i["size"]),
+        "saved": ("Saved", lambda i: i["original_size"] - i["size"] if i["original_size"] else float("-inf")),
+        "at":    ("Encoded", lambda i: i["at"]),
     },
     "originals": {
         "file": ("File", lambda i: natural(i["key"])),
@@ -1475,6 +1476,21 @@ def kept_info(rows):
             r["warn"] = "plex"
 
 
+def review_summary(rows):
+    """One line above the Awaiting review tab: how much space replacing all its files saves."""
+    if not rows:
+        return ""
+    known = [r for r in rows if r["original_size"]]
+    before, after = sum(r["original_size"] for r in known), sum(r["size"] for r in known)
+    text = f"{len(rows):,} encode{'' if len(rows) == 1 else 's'} awaiting review"
+    if before:
+        saved = before - after
+        text += (f": {fmt_size(before)} of originals, {fmt_size(after)} encoded; replacing them saves "
+                 f"{fmt_size(saved)} ({saved / before * 100:.0f} %)" if saved > 0
+                 else f": the encodes are {fmt_size(-saved)} larger than their originals")
+    return text
+
+
 def queue_rows(view, state):
     """All rows of a tab (before sorting and paging) and the counts shown in the tabs."""
     items = enc.queue_items()
@@ -1537,6 +1553,7 @@ def queue_view(view="queue", state="", offset=0, sort=None):
             "fields": {f: v[0] for f, v in fields.items()},
             "keep_days": enc.history_keep_days(), "history_results": HISTORY_RESULTS,
             "kept_total": sum(i["size"] for i in shown) if view == "originals" else 0,
+            "review_summary": review_summary(shown) if view == "review" else "",
             "kept_auto_days": enc.keep_originals_days()}
 
 
@@ -1703,6 +1720,8 @@ def status_queue():
     resp = app.make_response(render_template("_queue_rows.html", **data))
     resp.headers["X-Next"] = data["more_url"] or ""
     resp.headers["X-Shown-Total"] = str(data["shown_total"])
+    if view == "review":
+        resp.headers["X-Summary"] = data["review_summary"]
     return resp
 
 
