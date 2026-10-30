@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.17.0] - 2026-10-30
+
+### Added
+- Status → Awaiting review and History: a sortable **Bitrate** column, to help choose a preset. It shows the original's overall bitrate from the last scan, followed by the encode's (`11.1 Mbit/s → 4.0 Mbit/s`) while the encode is still in the output folder. The encode's bitrate is estimated from its size and the original's duration. For replaced files, History shows the bitrate of the file that replaced the original.
+
 ## [3.16.0] - 2026-10-30
 
 ### Added

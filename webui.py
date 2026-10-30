@@ -1397,6 +1397,7 @@ VIEW_SORT = {
     "review": {
         "file": ("File", lambda i: natural(enc.short(i["key"]))),
         "preset": ("Preset", lambda i: (presets.name_of(i["preset"]) if i["preset"] else "").lower()),
+        "bitrate": ("Bitrate", lambda i: i["bitrate"] or -1),
         "size":  ("Size", lambda i: i["size"]),
         "saved": ("Saved", lambda i: i["original_size"] - i["size"] if i["original_size"] else float("-inf")),
         "at":    ("Encoded", lambda i: i["at"]),
@@ -1410,6 +1411,7 @@ VIEW_SORT = {
         "at":     ("Time", lambda i: i["at"]),
         "status": ("Result", lambda i: i["status"]),
         "file":   ("File", lambda i: natural(enc.short(i["key"]))),
+        "bitrate": ("Bitrate", lambda i: i["bitrate"] or -1),
     },
 }
 HISTORY_RESULTS = ("OK", "FAIL", "STOPPED", "MISSING", "EXISTS", "REPLACED")
@@ -1423,7 +1425,9 @@ def status_view(src):
 def awaiting_review():
     """Files whose finished encode waits in the output folder, also from runs that are over,
     as [{"key", "at" (when the encode was finished), "size" (of the encode), "original_size"
-    (or None), "state": "OK", "preset": id of the preset it was encoded with ("" if unknown)}],
+    (or None), "bitrate" (overall bitrate of the original, or None), "enc_bitrate" (of the encode,
+    estimated from its size and the original's duration), "state": "OK", "preset": id of the
+    preset it was encoded with ("" if unknown)}],
     not dismissed. The scan is cached until the database or the output folder changes."""
     enc_dir = enc.first_existing(enc.ENCODED_CANDIDATES)
     try:
@@ -1436,7 +1440,8 @@ def awaiting_review():
         if not encoded:
             return []
         with closing(db()) as con:
-            originals = {k: size for k, size in con.execute("SELECT key, size FROM files WHERE status != 'h265'")
+            originals = {k: (size, bitrate, duration) for k, size, bitrate, duration
+                         in con.execute("SELECT key, size, bitrate, duration FROM files WHERE status != 'h265'")
                          if Path(k).stem.lower() in encoded}
         out = []
         for k in sorted(originals, key=natural):
@@ -1444,13 +1449,53 @@ def awaiting_review():
                 st = (enc_dir / encoded[Path(k).stem.lower()]).stat()
             except OSError:
                 continue
+            size, bitrate, duration = originals[k]
             out.append({"key": k, "at": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
-                        "size": st.st_size, "original_size": originals[k], "state": "OK"})
+                        "size": st.st_size, "original_size": size, "bitrate": bitrate,
+                        "enc_bitrate": encode_bitrate(st.st_size, duration), "state": "OK"})
         return out
     found = cached(("awaiting", str(enc_dir)), (enc.db_version(), folder_version), compute)
     dismissed = enc.dismissed_map()
     used = enc.encode_presets() if found else {}
     return [dict(f, preset=used.get(f["key"], "")) for f in found if dismissed.get(f["key"], "") < f["at"]]
+
+
+def encode_bitrate(size, duration):
+    """Overall bitrate of an encode, from its size and the original's duration (the encode
+    isn't probed; its length is the original's)."""
+    return int(size * 8 / duration) if size and duration else None
+
+
+def file_bitrates(keys):
+    """{key: (bitrate, duration)} from the last scan, for the files of the History."""
+    keys, found = list(dict.fromkeys(k for k in keys if k)), {}
+    with closing(db()) as con:
+        for i in range(0, len(keys), 900):          # SQLite's limit of parameters per query
+            part = keys[i:i + 900]
+            found.update((k, (b, d)) for k, b, d in con.execute(
+                f"SELECT key, bitrate, duration FROM files WHERE key IN ({', '.join('?' * len(part))})", part))
+    return found
+
+
+def history_bitrates(rows):
+    """Bitrate per History entry: the original's for encode results, the replacing file's
+    for replaces (the original isn't in the library any more)."""
+    rates = file_bitrates([r["new_key"] or r["key"] for r in rows])
+    for r in rows:
+        r["bitrate"], r["duration"] = rates.get(r["new_key"] or r["key"], (None, None))
+    return rows
+
+
+def history_encodes(rows):
+    """For the History rows of one page: the encode's bitrate where it still waits in the output folder."""
+    enc_dir = enc.first_existing(enc.ENCODED_CANDIDATES)
+    encoded = enc.encoded_files(enc_dir)
+    for r in rows:
+        name = encoded.get(Path(r["key"]).stem.lower()) if r["status"] == "OK" else None
+        try:
+            r["enc_bitrate"] = encode_bitrate((enc_dir / name).stat().st_size, r["duration"]) if name else None
+        except OSError:
+            r["enc_bitrate"] = None
 
 
 _KEPT_GEN = [0]
@@ -1530,7 +1575,7 @@ def queue_rows(view, state):
     if view == "originals":
         return kept, counts
     if view == "history":
-        return history, counts
+        return history_bitrates(history), counts
     return [i for i in active if not state or i["state"] == state], counts
 
 
@@ -1560,6 +1605,8 @@ def queue_view(view="queue", state="", offset=0, sort=None):
                          where=where, file=file, preset_name=names.get(pid, "")))
     if view == "review":
         replace_info(rows)
+    elif view == "history":
+        history_encodes(rows)
     elif view == "originals":
         kept_info(rows)
     nxt = offset + QUEUE_PAGE

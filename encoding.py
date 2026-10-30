@@ -68,7 +68,7 @@ Examples
     python3 encoding.py version
 """
 
-__version__ = "3.16.0"
+__version__ = "3.17.0"
 
 import fcntl
 import json
@@ -805,7 +805,8 @@ def dismissed_map():
 
 def history_entries(result="", older_than=None):
     """The Status page's History, newest first: encode results plus finished replaces
-    (status REPLACED) as [{"at", "status", "key", "plex", "can_retry"}] (plex: the Plex state of a replace). Left out: entries older
+    (status REPLACED) as [{"at", "status", "key", "plex", "new_key", "can_retry"}] (plex: the Plex state of a replace,
+    new_key: the key of the file that replaced it, "" for encode results). Left out: entries older
     than HISTORY_KEEP_DAYS and dismissed ones. can_retry marks a file's latest result when
     it is FAIL or STOPPED and the file isn't waiting or encoding again. older_than (days) returns the entries older than that instead
     (to dismiss them), without the age limit. result filters by status."""
@@ -817,10 +818,10 @@ def history_entries(result="", older_than=None):
     dismissed = dismissed_map()
     pending = pending_keys()
     with closing(connect()) as con:
-        rows = [(*r, None) for r in con.execute("SELECT at, status, key FROM results ORDER BY at DESC, rowid DESC")]
-    rows += [(at, "REPLACED", key, plex_state) for at, key, plex_state in sorted(replaced_log(), reverse=True)]
+        rows = [(*r, None, "") for r in con.execute("SELECT at, status, key FROM results ORDER BY at DESC, rowid DESC")]
+    rows += [(at, "REPLACED", key, plex_state, new_key) for at, key, plex_state, new_key in sorted(replaced_log(), reverse=True)]
     out = []
-    for at, status, key, plex_state in rows:
+    for at, status, key, plex_state, new_key in rows:
         if result and status != result:
             continue
         if older_than is not None:
@@ -828,7 +829,7 @@ def history_entries(result="", older_than=None):
                 continue
         elif (cutoff and at < cutoff) or dismissed.get(key, "") >= at:
             continue
-        out.append({"at": at, "status": status, "key": key, "plex": plex_state,
+        out.append({"at": at, "status": status, "key": key, "plex": plex_state, "new_key": new_key,
                     "can_retry": status in ("FAIL", "STOPPED") and latest.get(key) == (status, at)
                     and key not in pending})
     out.sort(key=lambda r: r["at"], reverse=True)
@@ -1151,12 +1152,12 @@ def mark_replace_synced(path, job):
     update_replace_result(path, synced=True)
 
 
-_REPLACED_LOG = [None, []]                      # [replace-done/ mtime, [(finished, key, plex state)]]
+_REPLACED_LOG = [None, []]                      # [replace-done/ mtime, [(finished, key, plex state, new key)]]
 
 
 def replaced_log():
-    """[(finished time, key, Plex state or None)] of finished replace jobs, read again only
-    when replace-done/ changes."""
+    """[(finished time, key, Plex state or None, key of the replacing file)] of finished
+    replace jobs, read again only when replace-done/ changes."""
     try:
         stamp = REPLACE_DONE.stat().st_mtime_ns
     except OSError:
@@ -1169,14 +1170,15 @@ def replaced_log():
             except (ValueError, OSError):
                 continue
             if job.get("state") == "done":
-                log.append((job.get("finished") or "", job["key"], (job.get("plex") or {}).get("state")))
+                log.append((job.get("finished") or "", job["key"], (job.get("plex") or {}).get("state"),
+                            job.get("new_key") or ""))
         _REPLACED_LOG[:] = [stamp, log]
     return _REPLACED_LOG[1]
 
 
 def replaced_keys():
     """Keys whose original was replaced by a finished replace job."""
-    return {key for _, key, _ in replaced_log()}
+    return {key for _, key, _, _ in replaced_log()}
 
 
 _REPLACE_RECORDS = [None, {}]

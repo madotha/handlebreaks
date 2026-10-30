@@ -623,7 +623,7 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
   .queue-table tr.run-divider { display: block; padding: 0; }
   .queue-table tr.run-divider td { display: block !important; padding: .45rem .7rem; background: var(--info-bg) !important; }
   .queue-table td.small { order: 5; color: var(--muted); margin-left: 2.5rem; }
-  .queue-table td.c-preset:empty { display: none; }              /* no record of the preset in encodes.tsv */
+  .queue-table td.c-preset:empty, .queue-table td.c-bitrate:empty { display: none; }              /* no record of the preset in encodes.tsv */
   .queue-table td:last-child { order: 6; margin-left: auto; }
   .queue-table tr.is-current { background: var(--accent-soft); border-radius: var(--radius-sm); }
 
