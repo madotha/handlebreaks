@@ -5,6 +5,7 @@ state.json*
 encoding.db
 encoding.db-*
 .scan.lock
+.replace.lock
 .migrate.lock
 .handbrake-cache.json
 handbrake-worker.json
@@ -19,6 +20,7 @@ paused
 .queue-edit/
 replace/
 replace-done/
+replace-running/
 done/
 logs/
 .lock

@@ -91,7 +91,7 @@
 
   async function wait(jobs) {
     const left = new Map(jobs.map((j) => [j.status_url, j]));
-    let ok = 0;
+    let ok = 0, cancelled = 0;
     const failed = [];
     if (window.ReplaceProgress) window.ReplaceProgress.kick();   // the progress bar shows how it goes
     for (let i = 0; i < 900 && left.size; i++) {    // up to ~30 minutes
@@ -100,7 +100,9 @@
         const st = await (await fetch(url)).json();
         if (st.state === "pending") continue;
         left.delete(url);
-        if (st.state === "done") ok++; else failed.push(st.message);
+        if (st.state === "done") ok++;
+        else if (st.state === "cancelled") cancelled++;
+        else failed.push(st.message);
       }
     }
     if (left.size) {
@@ -108,7 +110,8 @@
       return;
     }
     if (failed.length) opts.say(`${failed.length} of ${jobs.length} replaces failed: ${failed.join(" ")}`, "error");
-    if (ok) setTimeout(() => opts.done(), 2500);
+    else if (cancelled) opts.say(`${ok} replaced, ${cancelled} cancelled.`, "ok");
+    if (ok || cancelled) setTimeout(() => opts.done(), 2500);
   }
 
   okBtn.addEventListener("click", submit);

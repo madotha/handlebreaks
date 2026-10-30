@@ -68,7 +68,7 @@ Examples
     python3 encoding.py version
 """
 
-__version__ = "3.15.0"
+__version__ = "3.16.0"
 
 import fcntl
 import json
@@ -126,6 +126,8 @@ WORKER_LOCK  = DATA_DIR / ".lock"         # encode.sh's lock; holds "stoppable" 
 REPLACE_DIR  = DATA_DIR / "replace"       # replace jobs from the web UI (run by encode.sh)
 REPLACE_DONE = DATA_DIR / "replace-done"  # their results (outside replace/, which must be empty when
                                           # idle: launchd starts the worker while it has anything in it)
+REPLACE_RUNNING = DATA_DIR / "replace-running"  # jobs the worker has claimed (moved out of replace/ before it
+                                          # touches a file, so the web UI can cancel only jobs not started yet)
 OLD_REPLACE_DONE = REPLACE_DIR / "done"   # where they were up to version 3.8
 LOG_DIR      = DATA_DIR / "logs"
 RESULTS_FILE = LOG_DIR / "results.tsv"
@@ -890,6 +892,51 @@ def encoded_files(enc_dir):
     return files
 
 
+def delete_encoded(names):
+    """Permanently delete finished encodes, given by their file name in the output folder
+    (only regular video files directly in it: never .inprogress/, .replaced/ or anything
+    reached by a link), with a Synology NAS's index data of the file (@eaDir/<name>).
+    Returns {name: bytes freed} of the files deleted."""
+    enc_dir = first_existing(ENCODED_CANDIDATES)
+    if enc_dir is None:
+        return {}
+    deleted = {}
+    for name in dict.fromkeys(names):
+        if not name or "/" in name or name.startswith(".") or Path(name).suffix.lower() not in VIDEO_EXTS:
+            continue
+        path = enc_dir / name
+        try:
+            if path.is_symlink() or not path.is_file():
+                continue
+            size = path.stat().st_size
+            path.unlink()
+        except OSError:
+            continue
+        deleted[name] = size
+        shutil.rmtree(enc_dir / "@eaDir" / name, ignore_errors=True)
+    return deleted
+
+
+def unwait(keys):
+    """After their encodes were deleted, files that showed as "awaiting review" are offered
+    again (or skipped, if they were skipped); the next scan classifies them completely."""
+    skipped = set(load_state()["skipped"])
+    with closing(connect()) as con, con:
+        con.executemany("UPDATE files SET status = ? WHERE key = ? AND status = 'waiting'",
+                        [("skipped" if k in skipped else "offer", k) for k in keys])
+
+
+def encode_presets():
+    """{key: preset id} of the latest finished encode of each file (logs/encodes.tsv)."""
+    found = {}
+    if ENCODES_FILE.exists():
+        for line in ENCODES_FILE.read_text(encoding="utf-8").splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 3 and parts[2]:
+                found[parts[1]] = parts[2]
+    return found
+
+
 # Codec tag in release names ("…WEB.h264-GROUP", "x264", "H.264", "AVC", "XviD" …), matched
 # as a separator-delimited token. suggest_name() replaces the last one with the encode's codec.
 OLD_CODEC_RE = re.compile(
@@ -1008,8 +1055,8 @@ PLEX_UNCONFIRMED = ("pending", "scanning", "failed")
 
 
 def replace_status(job_id):
-    """Result of a replace job: {"state": "pending" | "done" | "failed", "message", …}; the
-    message ends with the Plex state."""
+    """Result of a replace job: {"state": "pending" | "done" | "failed" | "cancelled", "message", …};
+    the message ends with the Plex state."""
     if not re.fullmatch(r"[\d-]+", job_id or ""):
         return {"state": "failed", "message": "Unknown job."}
     done = REPLACE_DONE / f"{job_id}.json"
@@ -1020,18 +1067,69 @@ def replace_status(job_id):
         return job
     if (REPLACE_DIR / f"{job_id}.json").exists():
         return {"state": "pending", "message": "Waiting for the worker …"}
+    if (REPLACE_RUNNING / f"{job_id}.json").exists():
+        return {"state": "pending", "started": True, "message": "The worker is moving the files …"}
     return {"state": "failed", "message": "Unknown job."}
+
+
+def open_replaces():
+    """{key: (job id, started)} of the replace jobs the worker hasn't finished: waiting in
+    replace/ (started False: can still be cancelled) or claimed in replace-running/."""
+    jobs = {}
+    for folder, started in ((REPLACE_DIR, False), (REPLACE_RUNNING, True)):
+        for f in sorted(folder.glob("*.json")) if folder.exists() else []:
+            try:
+                jobs[json.loads(f.read_text(encoding="utf-8"))["key"]] = (f.stem, started)
+            except (ValueError, KeyError, OSError):
+                continue
+    return jobs
 
 
 def pending_replaces():
     """Keys with a replace job the worker hasn't carried out yet."""
-    keys = set()
-    for f in REPLACE_DIR.glob("*.json") if REPLACE_DIR.exists() else []:
-        try:
-            keys.add(json.loads(f.read_text(encoding="utf-8"))["key"])
-        except (ValueError, KeyError, OSError):
+    return set(open_replaces())
+
+
+def cancel_replace(job_id):
+    """Cancel a replace job the worker hasn't started. The job file is moved out of replace/
+    in one rename; the worker claims a job the same way (run_replace_jobs), so exactly one of
+    them gets it. The result says "cancelled" (and counts as synced: nothing to scan).
+    Returns None, or why it couldn't be cancelled."""
+    if not re.fullmatch(r"[\d-]+", job_id or ""):
+        return "Unknown job."
+    taken = DATA_DIR / f".replace-cancel-{job_id}.tmp"
+    try:
+        os.replace(REPLACE_DIR / f"{job_id}.json", taken)
+    except FileNotFoundError:
+        if (REPLACE_RUNNING / f"{job_id}.json").exists():
+            return "The worker has already started moving the files; it can't be cancelled any more."
+        if (REPLACE_DONE / f"{job_id}.json").exists():
+            return "The replace has already finished."
+        return "Unknown job."
+    try:
+        job = json.loads(taken.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        job = {"id": job_id, "key": ""}
+    REPLACE_DONE.mkdir(parents=True, exist_ok=True)
+    write_text_atomic(REPLACE_DONE / f"{job_id}.json", json.dumps(
+        dict(job, state="cancelled", message="Cancelled before the worker started; no file was moved.",
+             finished=now_str(), synced=True), ensure_ascii=False))
+    taken.unlink(missing_ok=True)
+    return None
+
+
+def cancel_replaces(ids=None, keys=None):
+    """Cancel the waiting replace jobs with these ids or for these keys (both None: all
+    waiting ones). Returns (cancelled, number that had already started or finished)."""
+    done = late = 0
+    for key, (job_id, started) in open_replaces().items():
+        if (ids is not None or keys is not None) and job_id not in (ids or ()) and key not in (keys or ()):
             continue
-    return keys
+        if started or cancel_replace(job_id):
+            late += 1
+        else:
+            done += 1
+    return done, late
 
 
 def unsynced_replaces():
@@ -1314,11 +1412,30 @@ def replace_one(job):
 def run_replace_jobs():
     """Carry out all pending replace jobs (file moves only). Plex is told by the web UI,
     which scans each folder once for the replaces that came together and checks the result
-    (plex.advance()); the result holds what it needs (plex.job_info()). Returns how many ran."""
-    jobs = sorted(REPLACE_DIR.glob("*.json")) if REPLACE_DIR.exists() else []
+    (plex.advance()); the result holds what it needs (plex.job_info()). Returns how many ran.
+    Each job is first claimed: moved from replace/ into replace-running/ in one rename, so a
+    cancel from the web UI (cancel_replace) either wins before any file is touched or fails.
+    Jobs left in replace-running/ by a worker that died are carried out again (replace_one
+    never overwrites a file, so a half-done one fails cleanly)."""
+    with file_lock(DATA_DIR / ".replace.lock"):
+        return _run_replace_jobs()
+
+
+def _run_replace_jobs():
+    leftover = sorted(REPLACE_RUNNING.glob("*.json")) if REPLACE_RUNNING.exists() else []
+    jobs = leftover + (sorted(REPLACE_DIR.glob("*.json")) if REPLACE_DIR.exists() else [])
     if jobs:
         REPLACE_DONE.mkdir(parents=True, exist_ok=True)
+        REPLACE_RUNNING.mkdir(parents=True, exist_ok=True)
+    ran = 0
     for path in jobs:
+        if path.parent != REPLACE_RUNNING:
+            try:
+                os.replace(path, REPLACE_RUNNING / path.name)
+            except FileNotFoundError:           # cancelled in the web UI meanwhile
+                continue
+            path = REPLACE_RUNNING / path.name
+        ran += 1
         job = json.loads(path.read_text(encoding="utf-8"))
         prefix, _, rel = job["key"].partition("/")
         root = first_existing(ROOT_CANDIDATES.get(prefix, []))
@@ -1344,7 +1461,7 @@ def run_replace_jobs():
         # the result is written right away, so a job never runs twice
         write_text_atomic(REPLACE_DONE / path.name, json.dumps(result, ensure_ascii=False))
         path.unlink(missing_ok=True)
-    return len(jobs)
+    return ran
 
 
 _RESULT_LOCK = threading.Lock()

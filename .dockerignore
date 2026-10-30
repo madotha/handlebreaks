@@ -16,11 +16,13 @@ queue/
 processing/
 replace/
 replace-done/
+replace-running/
 done/
 logs/
 .lock
 .secret_key
 .scan.lock
+.replace.lock
 .migrate.lock
 .handbrake-cache.json
 handbrake-worker.json

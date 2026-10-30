@@ -385,7 +385,7 @@ th.sel, td.sel { width: 2rem; padding-right: 0; }
 .field label code { font-weight: 400; margin-left: .3rem; color: var(--muted); }
 .field label.check { font-weight: 500; display: flex; gap: .55rem; align-items: center; }
 .field label.check input { flex: none; }
-.field input:not([type=checkbox]), .field select { width: 100%; }
+.field input:not([type=checkbox]):not([type=radio]), .field select { width: 100%; }
 .field input.short { width: 8rem; }
 .checks { list-style: none; padding: 0; margin: .4rem 0 0; font-size: .84rem; }
 .checks .ok { color: var(--ok); }
@@ -623,6 +623,7 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
   .queue-table tr.run-divider { display: block; padding: 0; }
   .queue-table tr.run-divider td { display: block !important; padding: .45rem .7rem; background: var(--info-bg) !important; }
   .queue-table td.small { order: 5; color: var(--muted); margin-left: 2.5rem; }
+  .queue-table td.c-preset:empty { display: none; }              /* no record of the preset in encodes.tsv */
   .queue-table td:last-child { order: 6; margin-left: auto; }
   .queue-table tr.is-current { background: var(--accent-soft); border-radius: var(--radius-sm); }
 
@@ -682,6 +683,11 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
 .rp-toggle:hover:not(:disabled) { background: var(--surface-2); color: var(--link); }
 .rp-toggle::after { content: " ▾"; }
 .rp-toggle[aria-expanded="true"]::after { content: " ▴"; }
+.rp-cancel-all, .rp-cancel-all:hover:not(:disabled) { color: var(--err); }
+.rp-cancel-all::after { content: none; }
+.rp-cancel { background: none; border: 0; padding: 0 .3rem; min-height: 0; height: auto; color: var(--err); font-size: .78rem; cursor: pointer; }
+.rp-cancel:hover:not(:disabled) { background: var(--surface-2); color: var(--err); }
+.rp-item-waiting .rp-state { margin-left: auto; }
 .rp-list { list-style: none; margin: 0; padding: .25rem .65rem .4rem; border-top: 1px solid var(--border); max-height: 9.5rem; overflow-y: auto; }
 .rp-item { display: flex; gap: .75rem; justify-content: space-between; padding: .12rem 0; }
 .rp-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }

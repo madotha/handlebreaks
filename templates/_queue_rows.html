@@ -30,10 +30,11 @@
   <tr>
     <td class="check"><input type="checkbox" name="key" value="{{ r.key }}" form="bulk" aria-label="Select"></td>
     <td class="name entry" title="{{ r.key }}">{% if r.where %}<span class="entry-where">{{ r.where|wbr }}</span>{% endif %}<span class="entry-file">{{ r.file|wbr }}</span></td>
+    <td class="small c-preset" data-label="Preset">{{ r.preset_name }}</td>
     <td class="small nowrap num"{% if r.original_size %} data-tip="Original: {{ r.original_size|size }}"{% endif %}>{{ r.size|size }}</td>
     <td class="small nowrap num">{% if r.original_size %}{% set saved = r.original_size - r.size %}{% if saved > 0 %}<span data-tip="Replacing the original ({{ r.original_size|size }}) frees this much">saved {{ saved|size }} ({{ (saved / r.original_size * 100)|round|int }} %)</span>{% else %}<span class="muted" data-tip="The encode is larger than the original ({{ r.original_size|size }})">{{ (-saved)|size }} larger</span>{% endif %}{% else %}<span class="muted">–</span>{% endif %}</td>
     <td class="small nowrap">{{ r.at|localtime }}</td>
-    <td>{% include "_replace_button.html" %}</td>
+    <td class="nowrap">{% include "_replace_button.html" %}</td>
   </tr>
   {% else %}
   <tr>

@@ -7,6 +7,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.16.0] - 2026-10-30
+
+### Added
+- Cancel replaces that haven't started yet: **Cancel** next to each waiting file in the replace progress bar's details, **Cancel waiting** for all of them, and **×** next to "Replacing…" in Status → Awaiting review. Until the worker starts moving the files nothing is touched, so a cancelled replace leaves the original and the encode where they are. Once the worker has started, the replace can't be cancelled any more.
+- Status → Awaiting review: delete finished encodes you aren't happy with (bin icon per row, or **Delete selected…**). The dialog can also put the files back into the queue with another preset (**Delete and encode again**). Files with a replace in progress or already in the queue are left out. The original in the library is never touched.
+- Status → Awaiting review: a **Preset** column showing which preset each encode was made with.
+
+### Changed
+- The worker now claims each replace job before it moves any file: it moves the job from `replace/` into the new folder `replace-running/`. A job left there by a worker that stopped mid-way is carried out on the worker's next start. Update the worker together with the web UI (in the hybrid setup, `git pull` the native install as well as rebuilding the container); an older worker doesn't claim jobs, so with it a cancel that comes while the files are already being moved first shows as cancelled and then as replaced.
+
+### Fixed
+- The replace progress bar stopped updating (its request failed) once a replace was finished in setups without Plex.
+
 ## [3.15.0] - 2026-10-29
 
 ### Added

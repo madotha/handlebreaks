@@ -19,7 +19,8 @@
 # (paused) until "Resume".
 # It also carries out replace jobs from the web UI (replace/*.json: move a finished
 # encode into the library in place of the original), at the start and every minute
-# while encoding, so they don't wait for a long encode.
+# while encoding, so they don't wait for a long encode. A job is claimed (moved into
+# replace-running/) before any file is touched; until then the web UI can cancel it.
 # The original in the library is never modified.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -131,7 +132,7 @@ ${recent:-*nothing yet*}
 }
 
 # ── Nothing to do? (e.g. started by launchd at login) Then don't touch the library ─
-if [[ -z "$(print -r -- "$QUEUE"/*.txt(N) "$PROC"/*.txt(N) "$DATA"/replace/*.json(N))" ]]; then
+if [[ -z "$(print -r -- "$QUEUE"/*.txt(N) "$PROC"/*.txt(N) "$DATA"/replace/*.json(N) "$DATA"/replace-running/*.json(N))" ]]; then
   rm -f "$LOGS/worker-wait.txt"; exit 0
 fi
 
@@ -188,7 +189,7 @@ rm -f "$WAITFILE"
 
 # ── Replace jobs (python3 encoding.py replace-jobs) ──────────────────────────
 replace_jobs() {
-  [[ -n "$(print -r -- "$DATA"/replace/*.json(N))" ]] || return 0
+  [[ -n "$(print -r -- "$DATA"/replace/*.json(N) "$DATA"/replace-running/*.json(N))" ]] || return 0
   python3 "$BASE/encoding.py" replace-jobs >> "$LOGS/encode.log" 2>&1
 }
 replace_jobs

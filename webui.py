@@ -443,12 +443,14 @@ def _rp_jobs(folder):
     return jobs
 
 
-def _rp_stage(job, waiting):
-    """waiting (worker hasn't moved it), checking (moved; list or Plex not updated yet), done, failed."""
-    if waiting:
-        return "waiting"
-    if job.get("state") == "failed":
-        return "failed"
+def _rp_stage(job, where):
+    """waiting (worker hasn't taken it: can be cancelled), moving (the worker moves the files),
+    checking (moved; list or Plex not updated yet), done, failed, cancelled. where: the folder
+    the job is in ("waiting", "moving" or "" for finished)."""
+    if where:
+        return where
+    if job.get("state") in ("failed", "cancelled"):
+        return job["state"]
     if not job.get("synced") or (job.get("plex") or {}).get("state") in ("pending", "scanning"):
         return "checking"
     return "done"
@@ -458,12 +460,16 @@ def _rp_label(job, stage):
     plex_state = (job.get("plex") or {}).get("state")
     if stage == "waiting":
         return "waiting for the worker"
+    if stage == "moving":
+        return "moving the files"
+    if stage == "cancelled":
+        return "cancelled"
     if stage == "failed":
         return job.get("message", "failed").removeprefix("Not replaced: ")
     if not job.get("synced"):
         return "moved, updating the list"
     return {"pending": "Plex: scan in a moment", "scanning": "Plex: checking", "ok": "Plex ✓",
-            "failed": "Plex ✗ " + (job["plex"].get("reason") or ""), "skipped": "Plex ✗ not in a library"}.get(plex_state, "done")
+            "failed": "Plex ✗ " + ((job.get("plex") or {}).get("reason") or ""), "skipped": "Plex ✗ not in a library"}.get(plex_state, "done")
 
 
 def replace_progress():
@@ -472,16 +478,19 @@ def replace_progress():
     as replace/ and replace-done/ are unchanged and nothing is ongoing."""
     now = time.time()
     with _RP_LOCK:
-        stamp = tuple(d.stat().st_mtime_ns if d.exists() else 0 for d in (enc.REPLACE_DIR, enc.REPLACE_DONE))
+        stamp = tuple(d.stat().st_mtime_ns if d.exists() else 0
+                      for d in (enc.REPLACE_DIR, enc.REPLACE_RUNNING, enc.REPLACE_DONE))
         if _RP["ended"] and now - _RP["ended"] > RP_SUMMARY:
             _RP.update(ids=set(), ended=None, last=None)   # the summary was shown long enough
         if not _RP["ids"] and _RP["stamp"] == stamp and _RP["last"] is not None:
             return _RP["last"]
         waiting = _rp_jobs(enc.REPLACE_DIR)
+        moving = _rp_jobs(enc.REPLACE_RUNNING)
         finished = _rp_jobs(enc.REPLACE_DONE)
         changed = {i: t for i, (_, t) in finished.items()}
-        jobs = {i: j for i, (j, _) in {**finished, **waiting}.items()}
-        open_ids = {i for i, j in jobs.items() if _rp_stage(j, i in waiting) in ("waiting", "checking")}
+        jobs = {i: j for i, (j, _) in {**finished, **moving, **waiting}.items()}
+        where = {**{i: "moving" for i in moving}, **{i: "waiting" for i in waiting}}
+        open_ids = {i for i, j in jobs.items() if _rp_stage(j, where.get(i)) in ("waiting", "moving", "checking")}
         if open_ids:
             wave = set(open_ids)
             while True:                         # add what settled after the wave's first request
@@ -493,7 +502,7 @@ def replace_progress():
             _RP.update(ids=wave, ended=None)
         elif _RP["ids"] and not _RP["ended"]:
             _RP["ended"] = now                  # all settled: summary of the same ids
-        counts = {"waiting": 0, "checking": 0, "done": 0, "failed": 0}
+        counts = {"waiting": 0, "moving": 0, "checking": 0, "done": 0, "failed": 0, "cancelled": 0}
         plex_counts = {"ok": 0, "open": 0, "failed": 0}
         has_plex = False
         items = []
@@ -501,13 +510,13 @@ def replace_progress():
             job = jobs.get(i)
             if job is None:                     # result deleted ("Delete history data…")
                 continue
-            stage = _rp_stage(job, i in waiting)
+            stage = _rp_stage(job, where.get(i))
             counts[stage] += 1
             plex_state = (job.get("plex") or {}).get("state")
             if plex_state:
                 has_plex = True
                 plex_counts["ok" if plex_state == "ok" else "open" if plex_state in ("pending", "scanning") else "failed"] += 1
-            items.append({"name": job.get("new_name") or job["key"].rsplit("/", 1)[-1], "stage": stage,
+            items.append({"id": i, "name": job.get("new_name") or job["key"].rsplit("/", 1)[-1], "stage": stage,
                           "label": _rp_label(job, stage)})
         result = {"active": bool(open_ids), "finished": bool(items) and not open_ids,
                   "total": len(items), **counts, "plex": plex_counts if has_plex else None, "items": items}
@@ -1361,9 +1370,11 @@ def replace_info(rows):
     "replaced" (already replaced by a replace job) to rows of successfully encoded files."""
     encoded = enc.encoded_files(enc.first_existing(enc.ENCODED_CANDIDATES))
     replaced = enc.replaced_keys()
-    pending = enc.pending_replaces()
+    pending = enc.open_replaces()
     for r in rows:
         r["replacing"] = r["key"] in pending
+        job_id, started = pending.get(r["key"], (None, True))
+        r["replace_id"] = None if started else job_id       # not taken by the worker yet: can be cancelled
         if r.get("state", r.get("status")) == "OK":
             r["encoded"] = encoded.get(Path(r["key"]).stem.lower())
             r["replaced"] = not r["encoded"] and r["key"] in replaced
@@ -1385,6 +1396,7 @@ VIEW_SORT = {
     },
     "review": {
         "file": ("File", lambda i: natural(enc.short(i["key"]))),
+        "preset": ("Preset", lambda i: (presets.name_of(i["preset"]) if i["preset"] else "").lower()),
         "size":  ("Size", lambda i: i["size"]),
         "saved": ("Saved", lambda i: i["original_size"] - i["size"] if i["original_size"] else float("-inf")),
         "at":    ("Encoded", lambda i: i["at"]),
@@ -1411,8 +1423,8 @@ def status_view(src):
 def awaiting_review():
     """Files whose finished encode waits in the output folder, also from runs that are over,
     as [{"key", "at" (when the encode was finished), "size" (of the encode), "original_size"
-    (or None), "state": "OK"}], not dismissed. The scan is cached until the
-    database or the output folder changes."""
+    (or None), "state": "OK", "preset": id of the preset it was encoded with ("" if unknown)}],
+    not dismissed. The scan is cached until the database or the output folder changes."""
     enc_dir = enc.first_existing(enc.ENCODED_CANDIDATES)
     try:
         folder_version = enc_dir.stat().st_mtime_ns if enc_dir else 0
@@ -1437,7 +1449,8 @@ def awaiting_review():
         return out
     found = cached(("awaiting", str(enc_dir)), (enc.db_version(), folder_version), compute)
     dismissed = enc.dismissed_map()
-    return [dict(f, preset="") for f in found if dismissed.get(f["key"], "") < f["at"]]
+    used = enc.encode_presets() if found else {}
+    return [dict(f, preset=used.get(f["key"], "")) for f in found if dismissed.get(f["key"], "") < f["at"]]
 
 
 _KEPT_GEN = [0]
@@ -1697,6 +1710,69 @@ def replace_state(job_id):
     return st
 
 
+@app.route("/replace/cancel", methods=["POST"])
+def replace_cancel():
+    """Cancel replace jobs the worker hasn't started: the given job ids (id), or with all=1
+    every waiting one. With json=1 the answer is JSON (progress bar), otherwise the page is
+    shown again."""
+    ids = None if request.form.get("all") else request.form.getlist("id")
+    if ids == []:
+        done, late = 0, 0
+    else:
+        done, late = enc.cancel_replaces(ids=ids)
+    msg = (f"{done:,} replace{'' if done == 1 else 's'} cancelled; no file was moved." if done
+           else "Nothing cancelled.")
+    if late:
+        msg += (f" {late:,} had already been started by the worker and can't be cancelled any more.")
+    if request.form.get("json"):
+        return {"ok": bool(done), "cancelled": done, "late": late, "message": msg}, 200 if done or not late else 409
+    flash(msg, "ok" if done and not late else "warn" if done else "error")
+    return safe_next(url_for("status", view="review"))
+
+
+@app.route("/encodes/delete", methods=["POST"])
+def encodes_delete():
+    """Permanently delete the finished encodes of the selected files (key values) from the
+    output folder; with requeue=1 queue the files again, with the chosen preset (preset, ""
+    = the share's preset). Files with a pending replace or already in the queue are left out."""
+    keys = list(dict.fromkeys(request.form.getlist("key")))
+    requeue = request.form.get("requeue") == "1"
+    preset = request.form.get("preset", "").strip() or None
+    back = safe_next(url_for("status", view="review"))
+    if requeue and preset and not presets.exists(preset):
+        flash("Unknown preset.", "error")
+        return back
+    if not keys:
+        flash("No entries selected.", "error")
+        return back
+    with closing(db()) as con:
+        marks = ", ".join("?" * len(keys))
+        known = {k for (k,) in con.execute(f"SELECT key FROM files WHERE key IN ({marks})", keys)}
+    encoded = enc.encoded_files(enc.first_existing(enc.ENCODED_CANDIDATES))
+    busy = enc.pending_replaces() | enc.pending_keys()
+    names = {k: encoded.get(Path(k).stem.lower()) for k in keys if k in known and k not in busy}
+    names = {k: n for k, n in names.items() if n}
+    deleted = enc.delete_encoded(names.values())
+    gone = [k for k, n in names.items() if n in deleted]
+    left = len(keys) - len(gone)
+    if not gone:
+        flash("Nothing deleted: no finished encode found for the selected files (or they are being "
+              "replaced or are already in the queue).", "error")
+        return back
+    msg = f"{len(gone):,} encode{'' if len(gone) == 1 else 's'} deleted, {fmt_size(sum(deleted.values()))} freed."
+    if requeue:
+        queued = enc.write_batch(gone, preset)
+        msg += (f" {len(queued):,} file(s) queued again" +
+                (f' with preset "{presets.name_of(preset)}".' if preset else " with the share's preset."))
+        enc.unwait([k for k in gone if k not in queued])
+    else:
+        enc.unwait(gone)
+    if left:
+        msg += f" {left:,} left out (no encode in the output folder, a replace pending, or already queued)."
+    flash(msg, "warn" if left else "ok")
+    return back
+
+
 @app.route("/status")
 def status():
     cfg = enc.parse_config(enc.CONFIG_FILE) if enc.CONFIG_FILE.exists() else {}
@@ -1707,7 +1783,7 @@ def status():
     return render_template("status.html", cur=cur, paused=enc.is_paused(), can_stop=enc.worker_can_stop(),
                            stopping=stop[0] if stop and cur and stop[1] == cur["key"] else None,
                            q=queue_view(view, state, sort=sort_state(request.args, f"queue:{view}", VIEW_SORT[view])),
-                           views=VIEWS, auto_interval=scan_interval(cfg),
+                           views=VIEWS, auto_interval=scan_interval(cfg), preset_list=preset_choices(),
                            auto_next=next_auto_scan(cfg), short=enc.short, entry_parts=entry_parts,
                            last_scan=enc.last_scan())
 

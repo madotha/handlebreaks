@@ -1,6 +1,12 @@
-{# Replace… for a successfully encoded file r (Status page), or a "Replaced" note. #}
+{# Replace… and Delete encode… for a successfully encoded file r (Status page), or a "Replaced" note. #}
 {% from "_icons.html" import icon %}
-{% if r.replacing %}<span class="muted small" title="The worker carries out the replace job; the list updates when it's done">Replacing…</span>
+{% if r.replacing %}<span class="muted small" title="{{ 'Waiting for the worker; it can be cancelled until the worker starts moving the files' if r.replace_id else 'The worker is moving the files; the list updates when it is done' }}">Replacing…</span>
+  {%- if r.replace_id %} <form class="inline-form" method="post" action="{{ url_for('replace_cancel') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="id" value="{{ r.replace_id }}">
+    <input type="hidden" name="next" value="{{ url_for('status', view='review') }}">
+    <button class="icon-btn" aria-label="Cancel the replace" data-tip="Cancel the replace (nothing has been moved yet)">{{ icon('close') }}</button></form>{% endif %}
 {% elif r.encoded %}<button type="button" class="icon-btn replace-btn" data-replace data-key="{{ r.key }}" data-original="{{ r.original }}"
     data-encoded="{{ r.encoded }}" aria-label="Replace the original" data-tip="Replace the original with the finished encode…">{{ icon('replace') }}</button>
+  {% if r.state == 'OK' %} <button type="button" class="icon-btn" data-delete-encode data-key="{{ r.key }}" data-encoded="{{ r.encoded }}"
+    data-preset="{{ r.preset_name }}" aria-label="Delete the encode" data-tip="Delete the encode, optionally encode again with another preset…">{{ icon('trash') }}</button>{% endif %}
 {% elif r.replaced %}<span class="muted small" title="The original was replaced by this encode">Replaced</span>{% endif %}

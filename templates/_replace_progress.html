@@ -1,6 +1,6 @@
 {# Progress of all ongoing replaces (static/replaceprogress.js, /replace/progress); hidden while there are none #}
 {% from "_icons.html" import icon %}
-<div class="rp" data-rp data-url="{{ url_for('replace_progress_json') }}" role="status" aria-live="polite" hidden>
+<div class="rp" data-rp data-url="{{ url_for('replace_progress_json') }}" data-cancel-url="{{ url_for('replace_cancel') }}" data-csrf="{{ csrf_token() }}" role="status" aria-live="polite" hidden>
   <div class="rp-line">
     <span class="rp-icon" data-rp-icon aria-hidden="true">{{ icon('refresh') }}</span>
     <span class="rp-label" data-rp-label></span>
@@ -8,6 +8,7 @@
       <span class="rp-bar" aria-hidden="true"><span class="rp-seg rp-done" data-rp-seg="done"></span><span class="rp-seg rp-checking" data-rp-seg="checking"></span><span class="rp-seg rp-failed" data-rp-seg="failed"></span></span>
       <span class="rp-plex" data-rp-plex></span>
     </span>
+    <button type="button" class="rp-toggle rp-cancel-all" data-rp-cancel-all hidden title="Cancel every replace the worker hasn't started yet; nothing is moved">Cancel waiting</button>
     <button type="button" class="rp-toggle" data-rp-toggle aria-expanded="false">Details</button>
   </div>
   <ul class="rp-list" data-rp-list hidden></ul>

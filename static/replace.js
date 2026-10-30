@@ -85,6 +85,7 @@
       const st = await (await fetch(res.status_url)).json();
       if (st.state === "pending") continue;
       if (st.state === "done") await opts.done(btn);
+      else if (st.state === "cancelled") { opts.say(st.message, "ok"); btn.disabled = false; btn.dataset.tip = "Replace the original with the finished encode…"; await opts.done(btn); }
       else { opts.say(st.message, "error"); btn.disabled = false; btn.dataset.tip = "Replace the original with the finished encode…"; }
       return;
     }

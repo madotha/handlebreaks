@@ -1,0 +1,29 @@
+{# Dialog of "Delete encode…" (one row) and "Delete selected…" in Status → Awaiting review (static/deleteencode.js):
+   delete the finished encodes, optionally queueing the files again with another preset. #}
+<dialog class="replace-dialog" data-delete-dialog>
+  <form method="post" action="{{ url_for('encodes_delete') }}" data-de-form>
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="next" value="{{ url_for('status', view='review') }}">
+    <div data-de-keys></div>
+    <h2 data-de-title>Delete the encode</h2>
+    <p class="small" data-de-what></p>
+    <p class="small muted" data-de-used hidden></p>
+    <div class="field">
+      <label class="check"><input type="radio" name="requeue" value="0" checked> Delete only (offered again on the Files page)</label>
+      <label class="check"><input type="radio" name="requeue" value="1" data-de-requeue> Delete and encode again</label>
+    </div>
+    <div class="field" data-de-preset-field>
+      <label for="de-preset">Preset for the new encode</label>
+      <select id="de-preset" name="preset" data-de-preset disabled>
+        <option value="">Share's preset</option>
+        {% for pid, name in preset_list %}<option value="{{ pid }}">{{ name }}</option>{% endfor %}
+      </select>
+      <p class="hint">The files go to the end of the queue and the worker encodes them with this preset (<a href="{{ url_for('presets_page') }}">presets</a>).</p>
+    </div>
+    <p class="small">The encoded file is deleted from the output folder permanently; the original in the library is not touched.</p>
+    <div class="row-actions">
+      <button class="danger" data-de-ok>Delete</button>
+      <button type="button" class="secondary" data-de-cancel>Cancel</button>
+    </div>
+  </form>
+</dialog>
