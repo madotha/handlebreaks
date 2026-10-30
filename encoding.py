@@ -64,11 +64,11 @@ Examples
     python3 encoding.py purge-originals [N]   # delete kept originals older than N days (default KEEP_ORIGINALS_DAYS)
     python3 encoding.py handbrake-caps        # publish this machine's HandBrakeCLI capabilities (encode.sh)
     python3 encoding.py preset-check [--worker]   # editor/preset compatibility with this (or the worker's) HandBrakeCLI
-    python3 encoding.py stop-rest <n> [--no-pause]   # requeue the run after entry n and pause, or not (encode.sh)
+    python3 encoding.py stop-rest <n> [--no-pause] [--shutdown]   # requeue the run after entry n and pause, or not (encode.sh)
     python3 encoding.py version
 """
 
-__version__ = "3.19.0"
+__version__ = "3.20.0"
 
 import fcntl
 import json
@@ -76,6 +76,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -1411,6 +1412,9 @@ def replace_one(job):
             f"{job['key'].split('/', 1)[0]}/" + str(target.relative_to(root)), original, target)
 
 
+REPLACE_STOP = threading.Event()               # set by SIGTERM in `encoding.py replace-jobs`
+
+
 def run_replace_jobs():
     """Carry out all pending replace jobs (file moves only). Plex is told by the web UI,
     which scans each folder once for the replaces that came together and checks the result
@@ -1431,6 +1435,8 @@ def _run_replace_jobs():
         REPLACE_RUNNING.mkdir(parents=True, exist_ok=True)
     ran = 0
     for path in jobs:
+        if REPLACE_STOP.is_set():               # the worker is being stopped: the rest waits
+            break
         if path.parent != REPLACE_RUNNING:
             try:
                 os.replace(path, REPLACE_RUNNING / path.name)
@@ -1993,11 +1999,12 @@ def stop_requested():
     return mode, key
 
 
-def requeue_rest(done, pause=True):
-    """After "Stop all", or when the library went offline (called by encode.sh, no
-    database): put the entries of the current run after the first `done` back into the
-    queue, ahead of other batches, finish the run's batches and, with `pause`, pause the
-    queue. Returns how many were requeued."""
+def requeue_rest(done, pause=True, shutdown=False):
+    """After "Stop all", when the library went offline or when the worker was stopped from
+    outside (`shutdown`, e.g. docker stop; called by encode.sh, no database): put the entries
+    of the current run after the first `done` back into the queue, ahead of other batches,
+    finish the run's batches and, with `pause`, pause the queue. Returns how many were
+    requeued."""
     cancelled = cancelled_entries()
     entries = run_entries()                     # the whole run, also batches already in done/
     if entries is None:
@@ -2007,7 +2014,8 @@ def requeue_rest(done, pause=True):
         PAUSE_FILE.touch()                      # first, so the new batch doesn't start a worker
     if rest:
         QUEUE_DIR.mkdir(parents=True, exist_ok=True)
-        name = f"batch-0-resumed-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.txt"   # sorts first
+        kind = "resumed-shutdown" if shutdown else "resumed"     # the web UI's run notification tells them apart
+        name = f"batch-0-{kind}-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.txt"   # sorts first
         tmp = DATA_DIR / f".{name}.tmp"
         tmp.write_text("".join(f"{k}\t{p}\n" if p else f"{k}\n" for k, p in rest), encoding="utf-8")
         os.replace(tmp, QUEUE_DIR / name)
@@ -2193,6 +2201,8 @@ def main():
         return
     apply_config(load_config())
     if cmd == "replace-jobs":                   # file moves only, no database (see run_replace_jobs)
+        # encode.sh passes on a stop signal: finish the job in progress, start no new one
+        signal.signal(signal.SIGTERM, lambda *_: REPLACE_STOP.set())
         run_replace_jobs()
         return
     if cmd == "purge-originals":                # delete kept originals older than N days (default KEEP_ORIGINALS_DAYS)
@@ -2201,7 +2211,7 @@ def main():
               + (f" {held} kept because the file that replaced them is missing or its share can't be reached." if held else ""))
         return
     if cmd == "stop-rest":                      # encode.sh after "Stop all"; no database either
-        print(requeue_rest(int(rest[0]), pause="--no-pause" not in rest))
+        print(requeue_rest(int(rest[0]), pause="--no-pause" not in rest, shutdown="--shutdown" in rest))
         return
     for d in (QUEUE_DIR, PROC_DIR, LOG_DIR):
         d.mkdir(parents=True, exist_ok=True)

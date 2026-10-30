@@ -19,6 +19,14 @@ services:
     container_name: ${CONTAINER_NAME:-handlebreaks}   # another name only to run a second instance next to it
     init: true
     restart: unless-stopped
+    stop_grace_period: 2m                      # docker stop: time to requeue the encode in progress and finish a replace
+    read_only: true                            # hardening: only the volumes below and /tmp are writable
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
       TZ: ${TZ:-UTC}                           # local time for logs and stored times (the web UI shows your browser's time anyway)
     ports:

@@ -628,12 +628,18 @@ def run_events():
     parts = [f"{counts[s]:,} {label}" for s, label in (("OK", "encoded"), ("FAIL", "failed"),
              ("STOPPED", "stopped"), ("MISSING", "missing"), ("EXISTS", "already encoded")) if counts[s]]
     stamp_start = datetime.strptime(start, "%Y-%m-%d %H:%M").timestamp()
-    requeued = sum(len(enc.read_batch(f)) for f in enc.QUEUE_DIR.glob("batch-0-resumed-*.txt")
-                   if f.stat().st_mtime >= stamp_start) if enc.QUEUE_DIR.exists() else 0
-    if requeued:                                # encode.sh went_offline(): the rest is back in the queue
-        return [("run_interrupted", None, f"A share or the output folder went offline. {requeued:,} "
-                 f"file{'s' if requeued != 1 else ''} back in the queue; encoding goes on once it's back."
-                 + (f" Done before: {', '.join(parts)}." if parts else ""), None)]
+    # encode.sh went_offline() or a stopped worker (resumed-shutdown) put the rest back into
+    # the queue; the next run may already have taken that batch into processing/
+    resumed = [f for d in (enc.QUEUE_DIR, enc.PROC_DIR) if d.exists() for f in d.glob("batch-0-resumed-*.txt")
+               if f.stat().st_mtime >= stamp_start]
+    requeued = sum(len(enc.read_batch(f)) for f in resumed)
+    if requeued:
+        files = f"{requeued:,} file{'s' if requeued != 1 else ''} back in the queue"
+        if any(f.name.startswith("batch-0-resumed-shutdown-") for f in resumed):
+            text = f"The worker was stopped (e.g. a restart of the container). {files}; encoding goes on when it starts again."
+        else:
+            text = f"A share or the output folder went offline. {files}; encoding goes on once it's back."
+        return [("run_interrupted", None, text + (f" Done before: {', '.join(parts)}." if parts else ""), None)]
     if sum(counts.values()) < 2:                # a single file has its own notification
         return []
     return [("run_done", None, ", ".join(parts) + ".", "warn" if counts["FAIL"] else None)]

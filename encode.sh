@@ -65,7 +65,9 @@ hb_finished() {
 # True if the share of this entry or the output folder is gone (e.g. unmounted while
 # encoding). Then a missing source or a failed encode isn't the file's fault.
 offline() { ! reachable "${ROOTS[$1]}" || [[ ! -d "$OUT" ]]; }
-result() { print -r -- "$(date '+%Y-%m-%d %H:%M')	$1	$2" >> "$LOGS/results.tsv"; }
+result() { print -r -- "$(date '+%Y-%m-%d %H:%M')	$1	$2" >> "$LOGS/results.tsv"; done_upto=$i; }
+# A sleep that a stop signal (see shutdown) interrupts at once
+nap() { sleep "$1" & wait $!; }
 
 # ── Settings from config.env (template: config.example.env) ──────────────────
 if [[ ! -f "$DATA/config.env" ]]; then
@@ -147,7 +149,30 @@ if ! mkdir "$LOCK" 2>/dev/null; then
 fi
 print $$ > "$LOCK/pid"
 : > "$LOCK/stoppable"                            # tells the web UI that this worker reads stop.txt
-trap 'rm -rf "$LOCK"; rm -f "$LOGS/current.txt" "$LOGS/run.txt"' EXIT INT TERM
+trap 'rm -rf "$LOCK"; rm -f "$LOGS/current.txt" "$LOGS/run.txt"' EXIT
+
+# ── Stopped from outside (docker stop, launchctl, logout, Ctrl+C) ────────────
+# Instead of dying mid-file: a replace job in progress finishes (no new one starts), the
+# encode in progress is ended and its partial file deleted, and the entry plus the rest of
+# the run go back into the queue (stop-rest --shutdown: no result, no pause), so the next
+# start picks them up again.
+in_run=0; i=0; done_upto=0; hbpid=""; rjpid=""; tmp=""
+shutdown() {
+  trap '' INT TERM
+  [[ -n "$rjpid" ]] && kill -0 $rjpid 2>/dev/null && { kill -TERM $rjpid; wait $rjpid 2>/dev/null; }
+  if [[ -n "$hbpid" ]] && kill -0 $hbpid 2>/dev/null; then
+    kill $hbpid 2>/dev/null; wait $hbpid 2>/dev/null
+    fs rm "$tmp" 2>/dev/null
+  fi
+  if (( in_run )); then
+    n=$(python3 "$BASE/encoding.py" stop-rest $done_upto --no-pause --shutdown 2>> "$LOGS/encode.log")
+    log "Worker stopped: ${n:-0} file(s) back in the queue, encoding goes on at the next start"
+  else
+    log "Worker stopped"
+  fi
+  exit 143
+}
+trap shutdown INT TERM
 
 # ── Keep the Mac awake while encoding (macOS only) ───────────────────────────
 if command -v caffeinate >/dev/null; then caffeinate -is -w $$ & caf=$!; fi
@@ -177,20 +202,21 @@ for prefix root in ${(kv)ROOTS}; do
       print -r -- "offline	$prefix	$root	" > "$WAITFILE"
       log "Library not reachable ($prefix: $root), retrying in 5 minutes"
     fi
-    sleep 300
+    nap 300
     exit 1
   fi
 done
 if ! command -v HandBrakeCLI >/dev/null; then
   print -r -- "handbrake			" > "$WAITFILE"
-  log "HandBrakeCLI not found"; sleep 300; exit 1
+  log "HandBrakeCLI not found"; nap 300; exit 1
 fi
 rm -f "$WAITFILE"
 
 # ── Replace jobs (python3 encoding.py replace-jobs) ──────────────────────────
 replace_jobs() {
   [[ -n "$(print -r -- "$DATA"/replace/*.json(N) "$DATA"/replace-running/*.json(N))" ]] || return 0
-  python3 "$BASE/encoding.py" replace-jobs >> "$LOGS/encode.log" 2>&1
+  python3 "$BASE/encoding.py" replace-jobs >> "$LOGS/encode.log" 2>&1 &
+  rjpid=$!; wait $rjpid; rjpid=""             # in the background, so a stop signal is seen at once
 }
 replace_jobs
 
@@ -207,7 +233,7 @@ if [[ -f "$PAUSED" && -n "$(print -r -- "$QUEUE"/*.txt(N) "$PROC"/*.txt(N))" ]];
   for s in {1..60}; do
     [[ -f "$PAUSED" ]] || break
     (( s % 6 )) || replace_jobs
-    sleep 10
+    nap 10
   done
   [[ -f "$PAUSED" ]] && exit 0
   log "Queue resumed"
@@ -229,6 +255,7 @@ stop_request() {
 went_offline() {
   local n
   n=$(python3 "$BASE/encoding.py" stop-rest $(( i - 1 )) --no-pause 2>> "$LOGS/encode.log")
+  in_run=0
   log "Library or output folder went offline: ${n:-0} file(s) back in the queue, retrying when it's reachable"
   stopped_all=1
 }
@@ -246,6 +273,7 @@ for b in $batches; do total=$(( total + $(grep -c . "$b") )); done
 # is which (and "Stop all" which ones are left).
 print -rl -- ${batches:t} > "$LOGS/run.txt"
 log "Starting: $total file(s)"
+in_run=1
 
 i=0
 stopped_all=0
@@ -254,6 +282,7 @@ for b in $batches; do
   while IFS=$'\t' read -r key override || [[ -n "$key" ]]; do
     [[ -z "$key" ]] && continue
     i=$(( i + 1 ))
+    done_upto=$(( i - 1 ))                     # entries before this one are finished
     if [[ -f "$CANCELLED" ]] && grep -qxF -- "${b:t}	$key" "$CANCELLED"; then
       log "Removed from the queue, skipped: $key"; continue
     fi
@@ -306,7 +335,7 @@ print("avg%d" % int(p.get("VideoAvgBitrate") or 0) if p.get("VideoQualityType", 
       for s in {1..12}; do                    # every 5 s: still running, stop requested?
         kill -0 $hbpid 2>/dev/null || break
         if stop_mode=$(stop_request "$key"); then break 2; fi
-        sleep 5
+        nap 5
       done
     done
     if [[ -n "$stop_mode" ]]; then           # stopped in the web UI
@@ -316,6 +345,7 @@ print("avg%d" % int(p.get("VideoAvgBitrate") or 0) if p.get("VideoQualityType", 
       log "  STOPPED in the web UI: $key"; result STOPPED "$key"
       if [[ "$stop_mode" == all ]]; then
         n=$(python3 "$BASE/encoding.py" stop-rest "$i" 2>> "$LOGS/encode.log")
+        in_run=0
         log "Stopped all: ${n:-0} remaining file(s) back in the queue, paused until Resume"
         stopped_all=1
         break 2
@@ -357,6 +387,7 @@ print("avg%d" % int(p.get("VideoAvgBitrate") or 0) if p.get("VideoQualityType", 
   mv "$b" "$DONE/"
 done
 
+in_run=0
 (( stopped_all )) || log "Queue finished"
 rm -f "$LOGS/current.txt" "$LOGS/run.txt" "$CANCELLED" "$STOPFILE"
 write_status idle

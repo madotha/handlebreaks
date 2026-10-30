@@ -7,6 +7,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.20.0] - 2026-10-30
+
+### Changed
+- Stopping the worker no longer loses the encode in progress, and no longer waits for Docker to kill it. On `docker compose stop`/`restart`, an update with `docker compose up -d --build`, logging out of the Mac, `launchctl unload` or Ctrl+C, the worker ends HandBrakeCLI, deletes the partly encoded file and puts it and the rest of the run back into the queue (not marked as stopped or failed, not paused). A replace being carried out finishes first. The web UI shows a "Run interrupted" notification that says the worker was stopped. The container gets up to 2 minutes for this (`stop_grace_period`).
+- Docker: the container is hardened: read-only system (only the volumes and `/tmp` are writable), all Linux capabilities dropped, `no-new-privileges`.
+
+### Fixed
+- A stop signal only removed the worker's lock, and the worker kept encoding until it was killed. In Docker, stopping the container took 10 seconds and cut the encode off; a second worker could even start meanwhile.
+- Docker: a replace job left half-done by a stopped container only went on once something else was queued.
+
 ## [3.19.0] - 2026-10-30
 
 ### Added
