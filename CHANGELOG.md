@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.20.1] - 2026-10-30
+
+### Fixed
+- A worker stopped right after an encode finished could leave the finished file in the output folder's `.inprogress/` without a result, and encode it again on the next start. The stop now waits until the file is moved and its result logged.
+
 ## [3.20.0] - 2026-10-30
 
 ### Changed

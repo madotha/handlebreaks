@@ -156,7 +156,11 @@ trap 'rm -rf "$LOCK"; rm -f "$LOGS/current.txt" "$LOGS/run.txt"' EXIT
 # encode in progress is ended and its partial file deleted, and the entry plus the rest of
 # the run go back into the queue (stop-rest --shutdown: no result, no pause), so the next
 # start picks them up again.
-in_run=0; i=0; done_upto=0; hbpid=""; rjpid=""; tmp=""
+# While a finished encode is moved out of .inprogress and logged (critical=1), the signal
+# only sets deferred_stop and the stop happens right after, so the encode isn't lost.
+in_run=0; i=0; done_upto=0; hbpid=""; rjpid=""; tmp=""; critical=0; deferred_stop=0
+on_signal() { if (( critical )); then deferred_stop=1; else shutdown; fi; }
+end_critical() { critical=0; (( deferred_stop )) && shutdown; return 0; }
 shutdown() {
   trap '' INT TERM
   [[ -n "$rjpid" ]] && kill -0 $rjpid 2>/dev/null && { kill -TERM $rjpid; wait $rjpid 2>/dev/null; }
@@ -172,7 +176,7 @@ shutdown() {
   fi
   exit 143
 }
-trap shutdown INT TERM
+trap on_signal INT TERM
 
 # ── Keep the Mac awake while encoding (macOS only) ───────────────────────────
 if command -v caffeinate >/dev/null; then caffeinate -is -w $$ & caf=$!; fi
@@ -339,7 +343,7 @@ print("avg%d" % int(p.get("VideoAvgBitrate") or 0) if p.get("VideoQualityType", 
       done
     done
     if [[ -n "$stop_mode" ]]; then           # stopped in the web UI
-      kill $hbpid 2>/dev/null; wait $hbpid 2>/dev/null
+      kill $hbpid 2>/dev/null; wait $hbpid 2>/dev/null; hbpid=""
       rm -f "$STOPFILE"
       fs rm "$tmp"
       log "  STOPPED in the web UI: $key"; result STOPPED "$key"
@@ -354,6 +358,7 @@ print("avg%d" % int(p.get("VideoAvgBitrate") or 0) if p.get("VideoQualityType", 
     fi
     wait $hbpid
     rc=$?
+    hbpid=""; critical=1                     # from here on, a stop signal waits (end_critical)
     if (( rc != 0 )) && hb_finished "$tmp"; then
       log "  shell reported exit code $rc, but HandBrake reports success: file kept"
       rc=0
@@ -383,11 +388,13 @@ print("avg%d" % int(p.get("VideoAvgBitrate") or 0) if p.get("VideoQualityType", 
       cp "$LOGS/handbrake-last.log" "$LOGS/fail-$(date +%Y%m%d-%H%M%S).log" 2>/dev/null
       log "  FAILED (exit code $rc): $key"; result FAIL "$key"
     fi
+    end_critical
   done < "$b"
   mv "$b" "$DONE/"
 done
 
 in_run=0
+end_critical                                   # went_offline left the loop in the critical part
 (( stopped_all )) || log "Queue finished"
 rm -f "$LOGS/current.txt" "$LOGS/run.txt" "$CANCELLED" "$STOPFILE"
 write_status idle
