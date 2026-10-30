@@ -1,12 +1,13 @@
 {# One level of the folder tree: subfolders (content loaded when opened) and files. #}
 {% from "_icons.html" import icon %}
+{% from "_file_head.html" import file_head %}
 {% set scan_url = url_for('start_scan') %}
 {% for f in folders %}
   <details class="dir" data-path="{{ f.path }}">
     <summary>
       <input type="checkbox" class="dir-toggle" name="folder" value="{{ f.path }}" data-count="{{ f.selectable }}"
              aria-label="Select folder"{% if not f.selectable %} disabled data-locked{% endif %}>
-      <span class="dirname">{{ f.name }}</span>{% if f.note %}<span class="dirnote">{{ f.note }}</span>{% endif %}
+      <span class="dirname">{{ f.name }}</span>{% if f.note %}<span class="dirnote">{{ f.note }}</span>{% endif %}{% if f.states %}<span class="dir-counts">{% for n, label in f.states %}{{ n|count }} {{ label }}{{ ' · ' if not loop.last }}{% endfor %}</span>{% endif %}
       <button class="icon-btn" formaction="{{ scan_url }}" name="path" value="{{ f.path }}" data-scan-path data-files="{{ f.count }}" aria-label="Scan this folder again" data-tip="Scan this folder again (re-reads its files with ffprobe)">{{ icon('refresh') }}</button>
       <span class="meta">
         <span class="opt">
@@ -25,8 +26,8 @@
 {% endif %}
 {% if files %}
   <div class="table-wrap files-level">
-    <table>
-      <thead><tr><th class="sel"><span class="visually-hidden">Select</span></th><th class="sel"><span class="visually-hidden">Scan</span></th>{% for field, cls in [('name', ''), ('codec', ''), ('resolution', ''), ('bitrate', ''), ('duration', ''), ('size', 'num'), ('added', ''), ('status', '')] %}<th class="{{ cls }}" aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(sort_links[field][1], 'none') }}"><a class="sort-link{{ ' active' if sort_links[field][1] }}" href="{{ sort_links[field][0] }}" title="Sort: ascending → descending → off">{{ {'name': 'File'}.get(field, field|capitalize) }}{% if sort_links[field][1] %} {{ sort_links[field][1] }}{% endif %}</a></th>{% endfor %}</tr></thead>
+    <table data-resizable="files">
+      {{ file_head(sort_links) }}
       <tbody>{% include "_file_rows.html" %}</tbody>
     </table>
     {% if more_url %}

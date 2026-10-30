@@ -7,6 +7,25 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.19.0] - 2026-10-30
+
+### Added
+- Status page: a search box in every tab (words of the file name or folder; the page address keeps it). **Dismiss all shown** in Awaiting review and History applies to what the search shows.
+- Status page: after ticking all entries shown, **Select all N matching** selects every entry of the tab (with its filter and search), not only the 100 loaded. All buttons and dialogs (Queue again, Dismiss, Delete selected…, Replace selected…, Move, Remove) then act on all of them.
+- Status → Queue, Awaiting review and History: **Codec** and **Resolution** columns (History: hidden until shown in the Columns menu), and Bitrate in the Queue tab, to help choose a preset. Kept originals: the **Preset** and **Bitrate** of the file that replaced each original.
+- Files page: the bin (delete the encode, optionally encode again with another preset) and **×** (cancel a replace that hasn't started) next to files with a finished encode, like on the Status page. Their bitrate shows the encode's below the original's.
+- Files page: adjustable column widths and the **Columns** menu, one setting for all folders.
+- Files page: folders show how many of their files are offered, queued, waiting for review and failed (e.g. "42 offered · 1 queued · 2 to review").
+
+### Changed
+- Status and Files tables: the table header stays visible while scrolling long lists.
+- Files page: buttons have their own column instead of sharing the Status column, which now only shows the status. A file with a finished encode shows "Awaiting review".
+- Resolution shows as a class (4K, 1080p, 720p, SD …); the exact size appears on hover.
+- Column minimum widths only limit dragging; the automatic layout sizes columns by their content again.
+
+### Fixed
+- Status → History: with failed entries shown, ticking all of them didn't mark the "select all" box as fully ticked.
+
 ## [3.18.0] - 2026-10-30
 
 ### Added

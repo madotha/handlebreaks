@@ -251,6 +251,7 @@ thead th { border-bottom-color: var(--border-strong); }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover td { background: var(--surface-2); }
 td.name { white-space: normal; overflow-wrap: break-word; min-width: 16rem; }
+table[data-resizable] td.name { min-width: 0; }                 /* the header's min-width decides (columns.js) */
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 td.nowrap { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--muted); }
 a.sort-link { color: inherit; text-decoration: none; white-space: nowrap; display: block; }
@@ -353,8 +354,6 @@ th.sel, td.sel { width: 2rem; padding-right: 0; }
 .tab-count { font-size: .75rem; font-weight: 600; font-variant-numeric: tabular-nums; padding: .05rem .45rem; border-radius: 99px;
   background: var(--surface-3); color: var(--muted); }
 .view-tabs a[aria-current] .tab-count { background: var(--accent-soft); color: var(--text); }
-.queue-filter:not(:has(select)) { display: none; }
-.queue-filter { margin: 0 0 .7rem; }
 .inline-form { display: inline; margin: 0; }
 .status-sort { display: none; }
 .select-all-phone { display: none; }
@@ -371,54 +370,75 @@ th.sel, td.sel { width: 2rem; padding-right: 0; }
 .queue-table tr.drop-after > td { box-shadow: inset 0 -2px 0 var(--accent); }
 .queue-table tr.run-divider td { padding: .45rem .7rem; font-size: .8rem; font-weight: 600; white-space: normal; color: var(--info); background: var(--info-bg); border-top: 1px solid var(--border); }
 .qrun { white-space: nowrap; }
-/* Cells that may wrap do so only between groups (.nw: "saved 1.2 GB" | "(45 %)", date | time); the
-   bitrate shows one line per value (before the encode, after it) */
+/* Cells that may wrap do so only between groups (.nw spans, date | time, words); .line = one line
+   per value (bitrate before | after the encode, saved amount | percentage) */
 .queue-table td.wrap { white-space: normal; }
 .queue-table .nw { white-space: nowrap; }
-.queue-table td .line { display: block; white-space: nowrap; }
+td .line { display: block; white-space: nowrap; }
 .queue-table td.actions { text-align: right; }
 .queue-table .phone-label { display: none; }                    /* phones hide the column headers */
-/* Adjustable columns (static/colresize.js). The minimum widths keep each column readable: wide
-   enough for its longest unbreakable part (a size, a bitrate, a date, the buttons) */
-.queue-table th { position: relative; box-sizing: border-box; }
-.queue-table th[data-col="file"] { min-width: 12rem; }
-.queue-table th[data-col="preset"] { min-width: 7rem; }
-.queue-table th[data-col="bitrate"] { min-width: 7.5rem; }
-.queue-table th[data-col="size"] { min-width: 5.5rem; }
-.queue-table th[data-col="saved"] { min-width: 5.5rem; }
-.queue-table th[data-col="at"], .queue-table th[data-col="kept"] { min-width: 7rem; }
-.queue-table th[data-col="state"], .queue-table th[data-col="status"] { min-width: 6.5rem; }
-.queue-table th.col-rest { min-width: 3.5rem; }
-.queue-review th.col-rest { min-width: 6.5rem; }
-.queue-originals th.col-rest { min-width: 9rem; }
-.queue-queue th.col-rest { min-width: 4.5rem; }
+/* Columns of Status and Files tables (static/columns.js): width handles, Columns menu. --col-min is
+   how narrow a column can be dragged: wide enough for its longest unbreakable part (the automatic
+   layout sizes columns by their content) */
+table[data-resizable] th { position: relative; box-sizing: border-box; }
+th[data-col="file"] { --col-min: 12rem; min-width: 12rem; }
+.files-level th[data-col="file"] { --col-min: 13rem; }
+.files-level td.c-status, .files-level td.c-added { white-space: normal; }
+th[data-col="preset"] { --col-min: 7rem; }
+th[data-col="codec"] { --col-min: 8rem; }
+th[data-col="resolution"] { --col-min: 5.5rem; }
+th[data-col="bitrate"] { --col-min: 7.5rem; }
+th[data-col="duration"] { --col-min: 5.5rem; }
+th[data-col="size"] { --col-min: 5.5rem; }
+th[data-col="saved"] { --col-min: 5.5rem; }
+th[data-col="at"], th[data-col="kept"], th[data-col="added"] { --col-min: 7rem; }
+th[data-col="state"], th[data-col="status"] { --col-min: 6.5rem; }
+.files-level th[data-col="status"] { --col-min: 9.5rem; }
+.files-level th.actions { width: 1px; }                         /* as narrow as its buttons (fixed widths: columns.js) */
+.files-level table:not(:has(td.actions > *)) :is(th, td).actions { display: none; }   /* no file of the folder has one */
+.queue-table th.num { width: 3rem; }
+.files-level th[data-col="resolution"], .files-level th[data-col="duration"] { --col-min: 4.8rem; }
+.queue-table th.col-rest { --col-min: 3.5rem; text-align: right; }
+.queue-review th.col-rest { --col-min: 6.5rem; }
+.queue-originals th.col-rest { --col-min: 9rem; text-align: left; }
+.queue-queue th.col-rest { --col-min: 4.5rem; }
 .col-resize { position: absolute; top: 0; bottom: 0; right: -4px; width: 9px; z-index: 1; cursor: col-resize; touch-action: none; }
 .col-resize::after { content: ""; position: absolute; top: 25%; bottom: 25%; left: 4px; width: 1px; background: var(--border-strong); }
-.col-resize:hover::after, .col-resize:focus-visible::after, .resizing .col-resize:active::after { top: 0; bottom: 0; width: 2px; left: 3.5px; background: var(--accent); }
+.col-resize:hover::after, .col-resize:focus-visible::after, .col-resizing .col-resize:active::after { top: 0; bottom: 0; width: 2px; left: 3.5px; background: var(--accent); }
 .col-resize:focus-visible { outline: none; }
-/* Columns menu (static/columns.js): in the header's last cell, on phones in the sort bar */
-.queue-table th.col-rest { text-align: right; }
-.col-menu { position: relative; display: inline-block; text-transform: none; letter-spacing: 0; font-weight: 400; text-align: left; }
-.col-menu > summary { list-style: none; cursor: pointer; }
+.col-resizing, .col-resizing * { cursor: col-resize !important; user-select: none; }
+/* Sticky table header: the frame only scrolls sideways while the table is wider (.scroll-x),
+   since a scrolling frame would hold the header back */
+.table-wrap:has(> table[data-resizable]):not(.scroll-x) { overflow-x: visible; }
+@media (min-width: 721px) {
+  .queue-table thead th, .files-level thead th { position: sticky; top: var(--header-h); z-index: 3; background: var(--surface); }
+  .files-level thead th { top: calc(var(--header-h) + var(--bar-h, 0px)); }   /* below the Files page's action bar */
+  .table-wrap.scroll-x thead th { position: relative; top: auto; }  /* inside a frame that scrolls, sticky would misplace it */
+}
+/* Columns menu: in the Status toolbar and the Files page's action bar */
+.col-menu-slot { margin-left: auto; }
+.col-menu-slot.phone-only { display: none; }
+.sort-bar .col-menu-slot + .collapse-all { margin-left: 0; }
+.sort-bar .col-menu > summary { height: 1.9rem; font-size: .8rem; padding: 0 .55rem; }
+.col-menu { position: relative; display: inline-block; }
+.col-menu > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: .35rem; height: var(--control-h);
+  padding: 0 .7rem; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); font-size: .88rem; color: var(--text); background: var(--surface); }
+.col-menu > summary:hover { background: var(--surface-2); }
 .col-menu > summary::-webkit-details-marker { display: none; }
-.col-menu-label { display: none; }
-.col-menu-panel { position: absolute; right: 0; top: calc(100% + .3rem); z-index: 20; min-width: 12rem; padding: .6rem .75rem;
+.col-menu-panel { position: absolute; right: 0; top: calc(100% + .3rem); z-index: 25; min-width: 12rem; padding: .6rem .75rem;
   display: flex; flex-direction: column; gap: .4rem; background: var(--surface); border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm); box-shadow: 0 8px 24px rgba(0, 0, 0, .18); font-size: .88rem; color: var(--text); }
 .col-menu-title { margin: 0 0 .1rem; font-size: .72rem; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 .col-menu-panel label.check { display: flex; gap: .5rem; align-items: center; white-space: nowrap; cursor: pointer; }
-.col-menu-panel input:disabled + * , .col-menu-panel label:has(input:disabled) { color: var(--muted); cursor: default; }
+.col-menu-panel label:has(input:disabled) { color: var(--muted); cursor: default; }
 .col-menu-reset { margin-top: .3rem; --control-h: 2rem; font-size: .82rem; }
-.phone-table-tools { display: none; }
-.col-menu-slot { margin-left: auto; }
-.col-menu-slot .col-menu-label { display: inline; margin-left: .35rem; font-size: .85rem; }
-.col-menu-slot .col-menu > summary.icon-btn { width: auto; padding: 0 .6rem; border: 1px solid var(--border); border-radius: var(--radius-sm); }
-.queue-table.resizing, .queue-table.resizing * { cursor: col-resize !important; user-select: none; }
-@media (min-width: 721px) {
-  .queue-table.fixed-cols { table-layout: fixed; min-width: var(--cols-w, 0); }
-  .queue-table.fixed-cols td:not(:last-child):not(.check):not(.grip) { overflow: hidden; text-overflow: ellipsis; }
-  .queue-table.fixed-cols td.name { min-width: 0; overflow-wrap: anywhere; }
-}
+/* Status toolbar: result filter, search, Columns; "Select all N matching" */
+.queue-filter { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: 0 0 .7rem; }
+.queue-filter input[type=search] { flex: 0 1 18rem; min-width: 10rem; }
+.select-matching { margin: 0 0 .5rem; padding: .35rem .7rem; border-radius: var(--radius-sm); background: var(--info-bg); }
+.select-matching button { --control-h: 1.8rem; font-size: .82rem; margin-left: .4rem; }
+/* Folder counts on the Files page */
+.dir-counts { color: var(--muted); font-size: .8rem; white-space: nowrap; }
 .paused-bar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;
   background: var(--accent-soft) !important; border: 1px solid var(--accent) !important; }
 
@@ -647,6 +667,13 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
   .files-level td.c-res { order: 4; color: var(--muted); font-size: .82rem; }
   .files-level td.c-size { order: 5; color: var(--muted); font-size: .82rem; }
   .files-level td.c-status { order: 6; margin-left: auto; white-space: normal; text-align: right; }
+  .files-level td.actions { order: 6; }
+  .col-menu-slot.wide-only { display: none; }
+  .col-menu-slot.phone-only { display: inline-block; }
+  .files-level td.actions:empty { display: none; }
+  .files-level td.c-res:empty { display: none; }
+  .files-level td.c-bitrate .line { display: inline; }
+  .files-level td.c-bitrate .line + .line::before { content: " "; }
   .files-level td.c-bitrate, .files-level td.c-dur, .files-level td.c-added { display: none; order: 7; flex-basis: 100%;
     margin-left: 2.1rem; color: var(--muted); font-size: .82rem; text-align: left; }
   .files-level tr.expanded td.c-bitrate, .files-level tr.expanded td.c-dur, .files-level tr.expanded td.c-added { display: block; }
@@ -656,8 +683,6 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
   .view-tabs a { padding: .5rem .35rem; gap: .2rem; font-size: .84rem; }
   .view-tabs .tab-count { padding: .03rem .35rem; font-size: .7rem; }
   .status-sort { display: flex; margin: 0 0 .6rem; border-top: 0; padding-top: 0; }
-  .phone-table-tools { display: flex; align-items: center; gap: .5rem; margin: 0 0 .4rem; }
-  .phone-table-tools .select-all-phone { margin: 0 0 0 .3rem; }
   .select-all-phone { display: flex; align-items: center; gap: .5rem; margin: 0 0 .5rem .3rem; font-size: .88rem; }
   .brand { padding: .6rem 0; }
   details:not(.dir):not(.share-card):not(.multi) > summary { padding-block: .6rem; }
@@ -673,8 +698,11 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
   .queue-table tr.run-divider { display: block; padding: 0; }
   .queue-table tr.run-divider td { display: block !important; padding: .45rem .7rem; background: var(--info-bg) !important; }
   .queue-table td.small { order: 5; color: var(--muted); margin-left: 2.5rem; }
-  .queue-table td.c-preset:empty, .queue-table td.c-bitrate:empty { display: none; }
-  .queue-table .phone-label { display: inline; }              /* no record of the preset in encodes.tsv */
+  .queue-table td.small + td.small { margin-left: 0; }          /* the details flow on, indented once */
+  .queue-table td.small:empty { display: none; }                /* e.g. not probed, no preset on record */
+  .queue-table td .line { display: inline; }
+  .queue-table td .line + .line::before { content: " "; }
+  .queue-table .phone-label { display: inline; }
   .queue-table td:last-child { order: 6; margin-left: auto; }
   .queue-table tr.is-current { background: var(--accent-soft); border-radius: var(--radius-sm); }
 

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
+{% from "_file_head.html" import file_head %}
 {% block title %}Files{% endblock %}
 
 {% block content %}
@@ -85,10 +86,13 @@
              title="Sort by {{ label|lower }}: ascending → descending → off">{{ label }}{% if sort_links[field][1] %} {{ sort_links[field][1] }}{% endif %}</a>
         {% endfor %}
         <span class="muted small">{% if sort %}· folders follow size and status, files every column{% else %}· by name{% endif %}</span>
+        <span class="col-menu-slot wide-only" data-col-menu="files"></span>
         <button type="button" class="icon-btn collapse-all" data-collapse-all disabled aria-label="Collapse all folders" data-tip="Collapse all folders">{{ icon('collapse') }}</button>
       </nav>
+      <span class="col-menu-slot phone-only" data-col-menu="files"></span>{# phones: the sort bar scrolls sideways and would cut the menu off #}
       <span class="scan-msg" data-scan-msg role="status" hidden></span>
     </div>
+    <table class="col-def" data-resizable="files" hidden>{{ file_head(sort_links) }}</table>{# columns of the Columns menu, also before a folder with files is open #}
     <div class="tree">
       {% include "_level.html" %}
     </div>
@@ -96,10 +100,13 @@
   </form>
   {% include "_replace_dialog.html" %}
   {% include "_bulk_replace_dialog.html" %}
+  {% set delete_json = true %}{% include "_delete_encode_dialog.html" %}
   <script src="{{ url_for('static', filename='replaceprogress.js') }}"></script>
   <script src="{{ url_for('static', filename='replace.js') }}"></script>
   <script src="{{ url_for('static', filename='bulkreplace.js') }}"></script>
   <script src="{{ url_for('static', filename='rangeselect.js') }}"></script>
-  <script src="{{ url_for('static', filename='files.js') }}"></script>
+  <script src="{{ url_for('static', filename='deleteencode.js') }}"></script>
+  <script src="{{ url_for('static', filename='columns.js') }}"></script>
+  <script src="{{ url_for('static', filename='files.js') }}" data-cancel-url="{{ url_for('replace_cancel') }}"></script>
 {% endif %}
 {% endblock %}

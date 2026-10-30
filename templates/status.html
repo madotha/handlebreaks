@@ -71,13 +71,17 @@
         {% endfor %}
       </select>
     {% endif %}
+    <input type="search" name="q" value="{{ q.q }}" placeholder="Search name or folder" aria-label="Search this list" data-queue-search>
     <noscript><input type="hidden" name="view" value="{{ q.view }}"><button>Show</button></noscript>
+    <span class="col-menu-slot" data-col-menu="status:{{ q.view }}"></span>
   </form>
   <form id="bulk" class="row-actions queue-tools" method="post" action="{{ url_for('queue_remove') }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <input type="hidden" name="next" value="{{ url_for('status', view=q.view) }}" data-next>
     <input type="hidden" name="view" value="{{ q.view }}">
     <input type="hidden" name="state" value="{{ q.state }}" data-state>
+    <input type="hidden" name="q" value="{{ q.q }}" data-q>
+    <span data-matching-keys hidden></span>{# "Select all N matching": the keys not shown as rows #}
     {% if q.view == 'queue' %}
       <button class="secondary" formaction="{{ url_for('queue_move') }}" name="op" value="top" data-needs-selection disabled title="Encode the selected waiting entries first">Move to top</button>
       <button class="secondary" formaction="{{ url_for('queue_move') }}" name="op" value="bottom" data-needs-selection disabled title="Encode the selected waiting entries last">Move to bottom</button>
@@ -90,7 +94,7 @@
       <button type="button" class="danger" data-delete-encodes-selected data-needs-selection disabled title="Delete the selected encodes, optionally encode the files again with another preset">Delete selected…</button>
       <button class="secondary" formaction="{{ url_for('status_dismiss') }}" data-needs-selection disabled title="Hide the selected entries here; the encodes stay where they are">Dismiss selected</button>
       <button class="secondary" formaction="{{ url_for('status_dismiss') }}" name="all" value="1"
-              onclick="return confirm('Hide all awaiting-review entries here? The encodes stay in the output folder and on the Files page.')">Dismiss all</button>
+              onclick="return confirm('Hide all awaiting-review entries shown here (with the search, if any)? The encodes stay in the output folder and on the Files page.')">Dismiss all shown</button>
     {% elif q.view == 'originals' %}
       <button class="danger" formaction="{{ url_for('originals_delete') }}" data-needs-selection data-confirm-delete disabled title="Delete the selected originals permanently">Delete selected…</button>
       {% if q.kept_blocked %}<label class="inline-field small" data-tip="Originals whose replacement is missing or can't be checked are skipped unless this is ticked"><input type="checkbox" name="force" value="1"> Also when the replacement is missing</label>{% endif %}
@@ -114,10 +118,8 @@
     {% for f in q.fields %}<a class="sort-chip{{ ' active' if q.sort_links[f][1] }}" href="{{ q.sort_links[f][0] }}"
        aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(q.sort_links[f][1], 'none') }}">{{ q.fields[f] }}{% if q.sort_links[f][1] %} {{ q.sort_links[f][1] }}{% endif %}</a>{% endfor %}
   </nav>
-  <div class="phone-table-tools">{# phones: the table header with its checkbox and the Columns menu is hidden #}
-    <label class="select-all-phone"><input type="checkbox" data-select-all> Select all shown</label>
-    <span class="col-menu-slot" data-col-menu-slot></span>
-  </div>
+  <label class="select-all-phone"><input type="checkbox" data-select-all> Select all shown</label>{# phones: the table header with its checkbox is hidden #}
+  <p class="select-matching small" data-select-matching hidden></p>
   {% if q.view == 'originals' %}
   <form id="kept-older-form" method="post" action="{{ url_for('originals_delete') }}" data-confirm="Delete all originals that were kept longer than the chosen time, permanently? This cannot be undone.">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -141,9 +143,9 @@
     <table class="queue-table queue-{{ q.view }}" data-resizable="status:{{ q.view }}">
       <thead><tr>{% if q.view == 'queue' %}<th class="grip"></th>{% endif %}<th class="check"><input type="checkbox" data-select-all aria-label="Select all entries shown"></th>
         {% if q.view == 'queue' %}<th class="num">#</th>{% endif %}
-        {% for f in q.fields %}<th data-col="{{ f }}" data-label="{{ q.fields[f] }}" aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(q.sort_links[f][1], 'none') }}"><a class="sort-link{{ ' active' if q.sort_links[f][1] }}" href="{{ q.sort_links[f][0] }}" title="Sort: ascending → descending → off">{{ q.fields[f] }}{% if q.sort_links[f][1] %} {{ q.sort_links[f][1] }}{% endif %}</a></th>{% endfor %}
+        {% for f in q.fields %}<th data-col="{{ f }}" data-label="{{ q.fields[f] }}"{% if f in q.hidden_default %} data-hidden-default{% endif %} aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(q.sort_links[f][1], 'none') }}"><a class="sort-link{{ ' active' if q.sort_links[f][1] }}" href="{{ q.sort_links[f][0] }}" title="Sort: ascending → descending → off">{{ q.fields[f] }}{% if q.sort_links[f][1] %} {{ q.sort_links[f][1] }}{% endif %}</a></th>{% endfor %}
         <th class="col-rest">{% if q.view == 'originals' %}Replacement{% endif %}</th></tr></thead>
-      <tbody data-queue-rows>{% with rows=q.rows, states=q.states, view=q.view, can_move=q.can_move %}{% include "_queue_rows.html" %}{% endwith %}</tbody>
+      <tbody data-queue-rows data-total="{{ q.shown_total }}">{% with rows=q.rows, states=q.states, view=q.view, can_move=q.can_move %}{% include "_queue_rows.html" %}{% endwith %}</tbody>
     </table>
   </div>
   <p class="muted small" data-queue-empty {% if q.rows %}hidden{% endif %}>{{ {'queue': 'Nothing queued.', 'review': 'No finished encodes are waiting to be replaced.', 'history': 'No history yet.', 'originals': 'No originals are kept. Replace… keeps them here when "Keep the original" is ticked.'}[q.view] }}</p>
@@ -176,5 +178,5 @@
 <script src="{{ url_for('static', filename='deleteencode.js') }}"></script>
 <script src="{{ url_for('static', filename='rangeselect.js') }}"></script>
 <script src="{{ url_for('static', filename='columns.js') }}"></script>
-<script src="{{ url_for('static', filename='status.js') }}" data-live-url="{{ url_for('status_live') }}" data-queue-url="{{ url_for('status_queue') }}" data-move-url="{{ url_for('queue_move') }}"></script>
+<script src="{{ url_for('static', filename='status.js') }}" data-live-url="{{ url_for('status_live') }}" data-queue-url="{{ url_for('status_queue') }}" data-move-url="{{ url_for('queue_move') }}" data-keys-url="{{ url_for('status_keys') }}"></script>
 {% endblock %}

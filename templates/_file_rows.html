@@ -1,5 +1,6 @@
 {# File rows of one folder level; also returned on their own for "Show more". #}
 {% from "_icons.html" import icon %}
+{% from "_cells.html" import bitrate_cell, res_cell %}
 {% for f in files %}
   {% set is_queued = f.key in queued and not f.encoded and not f.encoding %}
   <tr>
@@ -8,15 +9,20 @@
           aria-label="Scan this file again" data-tip="Scan this file again (re-reads it with ffprobe)">{{ icon('refresh') }}</button></td>
     <td class="name" title="{{ f.key }}">{{ f.name|wbr }}</td>
     <td class="c-codec">{% if f.video_codec %}<span class="codec codec-{{ codec_class(f.video_codec) }}" title="{{ f.video_codec }}">{{ f.video_codec|codec_name }}</span>{% elif f.probe_error %}<span class="muted" title="{{ f.probe_error }}">Error</span>{% else %}<span class="muted">–</span>{% endif %}</td>
-    <td class="c-res">{% if f.width %}{{ f.width }}×{{ f.height }}{% else %}–{% endif %}</td>
-    <td class="c-bitrate" data-label="Bitrate">{{ f.bitrate|bitrate }}</td>
+    {{ res_cell(f, '') }}
+    {{ bitrate_cell(f, 'Original', 'num') }}
     <td class="c-dur" data-label="Duration">{{ f.duration|duration }}</td>
     <td class="num c-size">{{ f.size|size }}</td>
     <td class="nowrap c-added" data-label="Added">{{ f.added|added }}</td>
-    <td class="c-status"><span class="status status-{{ 'encoding' if f.encoding else 'queued' if is_queued else f.status }}">{{ 'Encoding' if f.encoding else status_labels['queued'] if is_queued else status_labels.get(f.status, f.status) }}</span>
-      {% if f.failed %}<span class="status status-failed" title="The last encode of this file failed (see the Status page and the log)">Failed</span>{% endif %}
-      {% if f.replacing %}<span class="muted small" title="The worker carries out the replace job; the list updates when it's done">Replacing…</span>
-      {% elif f.encoded %}<button type="button" class="icon-btn replace-btn" data-replace data-key="{{ f.key }}" data-original="{{ f.name.rsplit('/', 1)[-1] }}"
-          data-encoded="{{ f.encoded }}" aria-label="Replace the original" data-tip="Replace the original with the finished encode…">{{ icon('replace') }}</button>{% endif %}</td>
+    <td class="c-status"><span class="status status-{{ 'encoding' if f.encoding else 'queued' if is_queued else f.status }}">{{ 'Encoding' if f.encoding else status_labels['queued'] if is_queued else 'Awaiting review' if f.status == 'waiting' else status_labels.get(f.status, f.status) }}</span>
+      {% if f.failed %}<span class="status status-failed" title="The last encode of this file failed (see the Status page and the log)">Failed</span>{% endif %}</td>
+    <td class="actions">
+      {%- if f.replacing %}<span class="muted small" title="{{ 'Waiting for the worker; it can be cancelled until the worker starts moving the files' if f.replace_id else 'The worker is moving the files; the list updates when it is done' }}">Replacing…</span>
+        {%- if f.replace_id %}<button type="button" class="icon-btn" data-cancel-replace="{{ f.replace_id }}" aria-label="Cancel the replace" data-tip="Cancel the replace (nothing has been moved yet)">{{ icon('close') }}</button>{% endif %}
+      {%- elif f.encoded %}<button type="button" class="icon-btn replace-btn" data-replace data-key="{{ f.key }}" data-original="{{ f.name.rsplit('/', 1)[-1] }}"
+          data-encoded="{{ f.encoded }}" aria-label="Replace the original" data-tip="Replace the original with the finished encode…">{{ icon('replace') }}</button>
+        <button type="button" class="icon-btn" data-delete-encode data-key="{{ f.key }}" data-encoded="{{ f.encoded }}" data-preset="{{ f.preset_name }}"
+          aria-label="Delete the encode" data-tip="Delete the encode, optionally encode again with another preset…">{{ icon('trash') }}</button>
+      {%- endif %}</td>
   </tr>
 {% endfor %}

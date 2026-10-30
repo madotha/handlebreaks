@@ -1,0 +1,10 @@
+{# Header row of the file tables of the Files page (every folder level, and the column definitions
+   of the Columns menu). data-col: columns that can be resized and hidden (static/columns.js); the
+   file name takes the rest of the width. #}
+{% macro file_head(sort_links) -%}
+<thead><tr><th class="sel"><span class="visually-hidden">Select</span></th><th class="sel"><span class="visually-hidden">Scan</span></th>
+  {%- for field, label, cls in [('name', 'File', 'col-rest'), ('codec', 'Codec', ''), ('resolution', 'Resolution', ''), ('bitrate', 'Bitrate', 'num'), ('duration', 'Duration', ''), ('size', 'Size', 'num'), ('added', 'Added', ''), ('status', 'Status', '')] -%}
+  <th class="{{ cls }}" data-col="{{ 'file' if field == 'name' else field }}" data-label="{{ label }}" aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(sort_links[field][1], 'none') }}"><a class="sort-link{{ ' active' if sort_links[field][1] }}" href="{{ sort_links[field][0] }}" title="Sort: ascending → descending → off">{{ label }}{% if sort_links[field][1] %} {{ sort_links[field][1] }}{% endif %}</a></th>
+  {%- endfor -%}
+  <th class="actions"><span class="visually-hidden">Actions</span></th></tr></thead>
+{%- endmacro %}

@@ -1,0 +1,20 @@
+{# Table cells shared by the Files page and the Status tabs. #}
+
+{# Bitrate of a file (what: whose, for the tooltip) and of its encode while that is still in the
+   output folder, one line each: before the encode, then after it #}
+{% macro bitrate_cell(r, what='Original', cls='small num') -%}
+<td class="{{ cls }} c-bitrate" data-label="Bitrate">
+  {%- if r.bitrate %}<span class="line" data-tip="{{ what }}: overall bitrate (video and audio) from the last scan">{{ r.bitrate|bitrate }}</span>{% endif %}
+  {%- if r.enc_bitrate %}<span class="line" data-tip="Encode: estimated from its size and the original's duration">{% if r.bitrate %}→ {% endif %}{{ r.enc_bitrate|bitrate }}</span>{% endif -%}
+</td>
+{%- endmacro %}
+
+{# Video codec, colored like everywhere (green = optimized, orange = other) #}
+{% macro codec_cell(r, cls='small') -%}
+<td class="{{ cls }} c-codec">{% if r.video_codec %}<span class="codec codec-{{ codec_class(r.video_codec) }}" title="{{ r.video_codec }}">{{ r.video_codec|codec_name }}</span>{% endif %}</td>
+{%- endmacro %}
+
+{# Resolution class ("1080p"), the exact size on hover #}
+{% macro res_cell(r, cls='small') -%}
+<td class="{{ cls }} c-res">{% if r.width %}<span title="{{ r.width }}×{{ r.height }}">{{ r.width|res_label(r.height) }}</span>{% endif %}</td>
+{%- endmacro %}

@@ -1,11 +1,14 @@
 // "Delete encode" (bin in a row) and "Delete selected…" in Status → Awaiting review: a dialog
 // (templates/_delete_encode_dialog.html) to delete the finished encodes, optionally queueing the
-// files again with another preset. The form posts to /encodes/delete and the page shows the result.
+// files again with another preset. The form posts to /encodes/delete and the page shows the result;
+// with data-json on the dialog (Files page) it is sent in the background instead, and
+// window.onEncodeDeleted(result, button that opened the dialog) shows it (the page reloads the folder).
 (function () {
   const dialog = document.querySelector("[data-delete-dialog]");
   if (!dialog) return;
   const $ = (sel) => dialog.querySelector(sel);
   const preset = $("[data-de-preset]"), ok = $("[data-de-ok]");
+  let opener = null;
 
   function update() {
     const again = $("[data-de-requeue]").checked;
@@ -46,17 +49,36 @@
 
   dialog.querySelectorAll('input[name="requeue"]').forEach((r) => r.addEventListener("change", update));
   $("[data-de-cancel]").addEventListener("click", () => dialog.close());
-  $("[data-de-form]").addEventListener("submit", () => { ok.disabled = true; });
+  $("[data-de-form]").addEventListener("submit", async (e) => {
+    ok.disabled = true;
+    if (!("json" in dialog.dataset)) return;              // an ordinary form post (Status page)
+    e.preventDefault();
+    const body = new FormData(e.target);
+    body.append("json", "1");
+    let result;
+    try {
+      const r = await fetch(e.target.action, { method: "POST", body, headers: { Accept: "application/json" } });
+      result = await r.json();
+    } catch (err) {
+      result = { ok: false, kind: "error", message: "The encode could not be deleted. Reload the page and try again." };
+    }
+    ok.disabled = false;
+    dialog.close();
+    if (window.onEncodeDeleted) window.onEncodeDeleted(result, opener);
+  });
 
   document.addEventListener("click", (e) => {
     const btn = e.target.closest && e.target.closest("[data-delete-encode]");
     if (!btn) return;
     e.preventDefault();
+    opener = btn;
     open([btn.dataset.key], { encoded: btn.dataset.encoded, preset: btn.dataset.preset });
   });
   const selected = document.querySelector("[data-delete-encodes-selected]");
   if (selected) selected.addEventListener("click", () => {
-    const keys = [...document.querySelectorAll('[data-queue-rows] input[name="key"]:checked')].map((c) => c.value);
+    opener = selected;
+    const keys = window.selectedStatusKeys ? window.selectedStatusKeys()
+      : [...document.querySelectorAll('[data-queue-rows] input[name="key"]:checked')].map((c) => c.value);
     open(keys, null);
   });
 })();

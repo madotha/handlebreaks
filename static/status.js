@@ -6,11 +6,13 @@
 (function () {
   const script = document.currentScript;
   const liveUrl = script.dataset.liveUrl, queueUrl = script.dataset.queueUrl, moveUrl = script.dataset.moveUrl;
+  const keysUrl = script.dataset.keysUrl;
   const $ = (sel) => document.querySelector(sel);
   const panel = $("[data-current-panel]");
   const rows = $("[data-queue-rows]");
   const filterForm = $("[data-queue-filter]");
   const filter = $("[data-queue-filter] select");     // only in the Queue and History tabs
+  const search = $("[data-queue-search]");
   const view = filterForm.dataset.view;
   const liveBox = $("[data-live]");
   let currentKey = panel.dataset.currentKey;
@@ -32,13 +34,14 @@
   async function reloadQueue(append) {
     const more = $("[data-queue-more]");
     const url = append && more ? more.dataset.queueMore
-      : `${queueUrl}?${new URLSearchParams({ view, state: filter ? filter.value : "", offset: 0, ...sortParams() })}`;
+      : `${queueUrl}?${new URLSearchParams({ view, state: filter ? filter.value : "", q: search.value.trim(), offset: 0, ...sortParams() })}`;
     const r = await fetch(url);
     if (!r.ok) return;
     const html = await r.text();
-    const picked = new Set([...rows.querySelectorAll('input[name="key"]:checked')].map((c) => c.value));
+    const picked = new Set([...rows.querySelectorAll('input[type=checkbox][name="key"]:checked')].map((c) => c.value));
     if (append) rows.insertAdjacentHTML("beforeend", html); else rows.innerHTML = html;
-    rows.querySelectorAll('input[name="key"]').forEach((c) => { c.checked = picked.has(c.value); });
+    rows.querySelectorAll('input[type=checkbox][name="key"]').forEach((c) => { c.checked = picked.has(c.value) || (matching && matching.includes(c.value)); });
+    shownTotal = Number(r.headers.get("X-Shown-Total") || 0);
     updateSelection();
     $("[data-queue-empty]").hidden = rows.children.length > 0;
     const next = r.headers.get("X-Next");
@@ -69,21 +72,78 @@
   const selectAlls = [...document.querySelectorAll("[data-select-all]")];   // table header, and a separate one on phones
   const needSelection = [...document.querySelectorAll("[data-needs-selection]")];
   needSelection.forEach((b) => { b.dataset.label = b.textContent; });
+  // "Select all N matching": every entry of the tab (with its filter and search), not only the
+  // rows loaded so far; the keys of rows not shown go into the form as hidden inputs
+  let matching = null, matchingSizes = null, shownTotal = Number(rows.dataset.total || 0);
+  const matchBox = $("[data-select-matching]"), matchInputs = $("[data-matching-keys]");
+  function clearMatching() {
+    matching = matchingSizes = null;
+    matchInputs.replaceChildren();
+  }
+  async function selectMatching() {
+    const params = new URLSearchParams({ view, state: filter ? filter.value : "", q: search.value.trim() });
+    const r = await fetch(`${keysUrl}?${params}`);
+    if (!r.ok) return;
+    const j = await r.json();
+    matching = j.keys;
+    matchingSizes = j.sizes;
+    const shown = new Set([...rows.querySelectorAll('input[type=checkbox][name="key"]')].map((c) => c.value));
+    matchInputs.replaceChildren(...matching.filter((k) => !shown.has(k)).map((k) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "key";
+      input.value = k;
+      return input;
+    }));
+    rows.querySelectorAll('input[type=checkbox][name="key"]').forEach((c) => { c.checked = true; });
+    updateSelection();
+  }
+  function renderMatching(n, boxes) {
+    const button = (text, onClick) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "secondary";
+      b.textContent = text;
+      b.addEventListener("click", onClick);
+      return b;
+    };
+    if (matching) {
+      matchBox.hidden = false;
+      matchBox.replaceChildren(`All ${matching.length.toLocaleString()} matching entries are selected.`,
+        button("Clear selection", () => {
+          clearMatching();
+          rows.querySelectorAll('input[type=checkbox][name="key"]').forEach((c) => { c.checked = false; });
+          updateSelection();
+        }));
+    } else if (n && n === boxes.length && shownTotal > rows.querySelectorAll("tr:not(.run-divider)").length) {
+      matchBox.hidden = false;
+      matchBox.replaceChildren(`All ${n.toLocaleString()} entries shown are selected.`,
+        button(view === "queue" ? "Select all matching entries" : `Select all ${shownTotal.toLocaleString()} matching`, selectMatching));
+    } else {
+      matchBox.hidden = true;
+    }
+  }
+  window.selectedStatusKeys = () => matching
+    || [...rows.querySelectorAll('input[type=checkbox][name="key"]:checked')].map((c) => c.value);
+
   function updateSelection() {
-    const boxes = [...rows.querySelectorAll('input[name="key"]')];
-    const n = boxes.filter((c) => c.checked).length;
+    const boxes = [...rows.querySelectorAll('input[type=checkbox][name="key"]')];
+    if (matching && boxes.some((c) => !c.checked)) clearMatching();   // unticking one ends "all matching"
+    const n = matching ? matching.length : boxes.filter((c) => c.checked).length;
+    renderMatching(boxes.filter((c) => c.checked).length, boxes);
     needSelection.forEach((b) => {
       b.disabled = n === 0;
       b.textContent = n ? `${b.dataset.label.replace("…", "")} (${n.toLocaleString()})${b.dataset.label.endsWith("…") ? "…" : ""}` : b.dataset.label;
     });
+    const ticked = boxes.filter((c) => c.checked).length;
     selectAlls.forEach((s) => {
-      s.checked = n > 0 && n === boxes.length;
-      s.indeterminate = n > 0 && n < boxes.length;
+      s.checked = ticked > 0 && ticked === boxes.length;
+      s.indeterminate = ticked > 0 && ticked < boxes.length;
     });
   }
   rows.addEventListener("change", (e) => { if (e.target.name === "key") updateSelection(); });
   selectAlls.forEach((selectAll) => selectAll.addEventListener("change", () => {
-    rows.querySelectorAll('input[name="key"]').forEach((c) => { c.checked = selectAll.checked; });
+    rows.querySelectorAll('input[type=checkbox][name="key"]').forEach((c) => { c.checked = selectAll.checked; });
     updateSelection();
   }));
 
@@ -93,9 +153,11 @@
     return `${n.toFixed(2)} TB`;
   };
   document.querySelectorAll("[data-confirm-delete]").forEach((b) => b.addEventListener("click", (e) => {
-    const picked = [...rows.querySelectorAll('input[name="key"]:checked')];
-    const bytes = picked.reduce((sum, c) => sum + Number(c.dataset.size || 0), 0);
-    if (!confirm(`Delete ${picked.length.toLocaleString()} original${picked.length === 1 ? "" : "s"} (${gb(bytes)}) permanently? This cannot be undone.`)) e.preventDefault();
+    const picked = [...rows.querySelectorAll('input[type=checkbox][name="key"]:checked')];
+    const count = matching ? matching.length : picked.length;
+    const bytes = matching && matchingSizes ? matchingSizes.reduce((a, b) => a + b, 0)
+      : picked.reduce((sum, c) => sum + Number(c.dataset.size || 0), 0);
+    if (!confirm(`Delete ${count.toLocaleString()} original${count === 1 ? "" : "s"} (${gb(bytes)}) permanently? This cannot be undone.`)) e.preventDefault();
   }));
   document.querySelectorAll("form[data-confirm]").forEach((f) => f.addEventListener("submit", (e) => {
     if (!confirm(f.dataset.confirm)) e.preventDefault();
@@ -113,8 +175,8 @@
     await reloadQueue();
   }
   const keysOf = (tr) => {
-    const box = tr.querySelector('input[name="key"]');
-    return box && box.checked ? [...rows.querySelectorAll('input[name="key"]:checked')].map((c) => c.value) : [tr.dataset.key];
+    const box = tr.querySelector('input[type=checkbox][name="key"]');
+    return box && box.checked ? [...rows.querySelectorAll('input[type=checkbox][name="key"]:checked')].map((c) => c.value) : [tr.dataset.key];
   };
   rows.addEventListener("click", (e) => {
     const b = e.target.closest("[data-move]");
@@ -238,17 +300,35 @@
   });
   if (replaceSelected) replaceSelected.addEventListener("click", () => {
     const picked = new FormData();
-    rows.querySelectorAll('input[name="key"]:checked').forEach((c) => picked.append("key", c.value));
+    window.selectedStatusKeys().forEach((k) => picked.append("key", k));
     window.BulkReplace.open(picked, bulk);
   });
 
   setInterval(() => { if (liveBox.checked && !document.hidden) poll(false); }, 3000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden && liveBox.checked) poll(false); });
   $("[data-refresh]").addEventListener("click", () => poll(true));
-  if (filter) filter.addEventListener("change", () => {
-    document.querySelectorAll("[data-state]").forEach((i) => { i.value = filter.value; });   // "Dismiss" applies to what the filter shows
+  // The result filter and the search reload the list; the page address keeps them for reloads,
+  // and the column sort links carry the search on
+  function filtersChanged() {
+    clearMatching();
+    document.querySelectorAll("[data-state]").forEach((i) => { i.value = filter ? filter.value : ""; });   // "Dismiss" applies to what is shown
+    document.querySelectorAll("[data-q]").forEach((i) => { i.value = search.value.trim(); });
+    const url = new URL(location.href);
+    for (const [k, v] of [["state", filter ? filter.value : ""], ["q", search.value.trim()]]) {
+      if (v) url.searchParams.set(k, v); else url.searchParams.delete(k);
+    }
+    history.replaceState(null, "", url);
+    document.querySelectorAll("a.sort-link, a.sort-chip").forEach((a) => {
+      const u = new URL(a.href);
+      if (search.value.trim()) u.searchParams.set("q", search.value.trim()); else u.searchParams.delete("q");
+      a.href = u;
+    });
     reloadQueue(false);
-  });
+  }
+  if (filter) filter.addEventListener("change", filtersChanged);
+  let searchTimer = null;
+  search.addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(filtersChanged, 300); });
+  filterForm.addEventListener("submit", (e) => { e.preventDefault(); clearTimeout(searchTimer); filtersChanged(); });
   const more = $("[data-queue-more]");
   if (more) more.addEventListener("click", () => reloadQueue(true));
 })();

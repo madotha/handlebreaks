@@ -2,6 +2,7 @@
 // long file lists, and selection for queueing. A ticked folder is sent as a whole
 // (the server expands it), so files inside it don't need to be loaded.
 (function () {
+  const cancelUrl = document.currentScript.dataset.cancelUrl;
   // "Added: custom range…" shows the two date fields
   const addedSelect = document.querySelector("[data-added-select]");
   if (addedSelect) {
@@ -228,6 +229,38 @@
     await load(parent, true);
   }
   window.ReplaceDialog.attach(form, { say, done: (btn) => reloadLevel(btn.closest(".dir-body")) });
+
+  // Delete encode (static/deleteencode.js) and cancelling a replace that hasn't started:
+  // the server answers right away, then the folder level of the file is loaded again
+  window.onEncodeDeleted = (res, btn) => {
+    say(res.message, res.kind === "error" ? "error" : "ok");
+    if (res.ok && btn && btn.isConnected) reloadLevel(btn.closest(".dir-body"));
+  };
+  form.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-cancel-replace]");
+    if (!btn) return;
+    e.preventDefault();
+    const body = new FormData();
+    body.append("csrf", form.querySelector('input[name="csrf"]').value);
+    body.append("id", btn.dataset.cancelReplace);
+    body.append("json", "1");
+    btn.disabled = true;
+    try {
+      const res = await (await fetch(cancelUrl, { method: "POST", body, headers: { Accept: "application/json" } })).json();
+      say(res.message, res.ok ? "ok" : "error");
+      if (window.ReplaceProgress) window.ReplaceProgress.kick();
+      await reloadLevel(btn.closest(".dir-body"));
+    } catch (err) {
+      say("The replace could not be cancelled. Reload the page and try again.", "error");
+      btn.disabled = false;
+    }
+  });
+
+  // The table headers stick below the action bar, which changes height with the window
+  const bar = form.querySelector(".action-bar");
+  if (bar) new ResizeObserver(() => {
+    document.documentElement.style.setProperty("--bar-h", `${bar.getBoundingClientRect().height}px`);
+  }).observe(bar);
 
   // "Collapse all": close every folder, forget them for reloads and drop their content
   // (reopening is quick: loaded folders are kept in sessionStorage)

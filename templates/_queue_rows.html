@@ -1,21 +1,17 @@
 {# One page of rows of a Status tab (view); also returned on its own for "Show more" and refreshing. #}
 {% from "_icons.html" import icon %}
-{# Bitrate of the original (or of the file that replaced it), and of the encode if it is still in the output folder #}
-{# (one line each: before the encode, then after it) #}
-{% macro bitrate_cell(r, what) -%}
-<td class="small num c-bitrate" data-label="Bitrate">
-  {%- if r.bitrate %}<span class="line" data-tip="{{ what }}: overall bitrate (video and audio) from the last scan">{{ r.bitrate|bitrate }}</span>{% endif %}
-  {%- if r.enc_bitrate %}<span class="line" data-tip="Encode: estimated from its size and the original's duration">{% if r.bitrate %}→ {% endif %}{{ r.enc_bitrate|bitrate }}</span>{% endif -%}
-</td>
-{%- endmacro %}
+{% from "_cells.html" import bitrate_cell, codec_cell, res_cell %}
 {% for r in rows %}
   {% if view == 'queue' %}
-  {% if r.first_next %}<tr class="run-divider"><td colspan="7">Next run <span class="muted">· starts a new worker once the current run is finished</span></td></tr>{% endif %}
+  {% if r.first_next %}<tr class="run-divider"><td colspan="10">Next run <span class="muted">· starts a new worker once the current run is finished</span></td></tr>{% endif %}
   <tr class="{{ 'is-current' if r.state == 'encoding' }}"{% if r.state == 'waiting' %} data-key="{{ r.key }}" data-waiting{% endif %}>
     <td class="grip">{% if r.state == 'waiting' and can_move %}<span class="grip-handle" draggable="true" data-grip aria-label="Drag to change the order" data-tip="Drag to change the order">{{ icon('grip') }}</span>{% endif %}</td>
     <td class="check">{% if r.state == 'waiting' %}<input type="checkbox" name="key" value="{{ r.key }}" form="bulk" aria-label="Select">{% endif %}</td>
     <td class="num muted">{{ r.n }}</td>
     <td class="name entry" title="{{ r.key }}">{% if r.where %}<span class="entry-where">{{ r.where|wbr }}</span>{% endif %}<span class="entry-file">{{ r.file|wbr }}</span></td>
+    {{ codec_cell(r) }}
+    {{ res_cell(r) }}
+    {{ bitrate_cell(r) }}
     <td class="small wrap">{{ r.preset_name or "Share's preset" }}</td>
     <td><span class="qstate qstate-{{ r.state|lower }}">{{ states.get(r.state, r.state) }}</span>{% if r.next_run and r.state == 'waiting' and not can_move %} <span class="qrun muted small">next run</span>{% endif %}</td>
     <td class="move">{% if r.state == 'waiting' and can_move %}<button type="button" class="icon-btn" data-move="up" aria-label="Move up" data-tip="Move up">{{ icon('up') }}</button><button type="button" class="icon-btn" data-move="down" aria-label="Move down" data-tip="Move down">{{ icon('down') }}</button>{% endif %}</td>
@@ -26,6 +22,8 @@
     <td class="name entry" title="{{ r.key }}">{% if r.where %}<span class="entry-where">{{ r.where|wbr }}</span>{% endif %}<span class="entry-file">{{ r.file|wbr }}</span></td>
     <td class="small nowrap num">{{ r.size|size }}</td>
     <td class="small nowrap wrap">{{ r.kept|localtime }}</td>
+    <td class="small c-preset wrap" data-label="Preset">{{ r.preset_name }}</td>
+    {{ bitrate_cell(r, 'Replacing file') }}
     <td class="small wrap">
       {% if r.warn == 'missing' %}<span class="badge badge-warn" data-tip="The file that replaced this original is no longer in the library (it may have been renamed, moved or deleted). It is only deleted with &quot;Also when the replacement is missing&quot;.">replacement missing</span>
       {% elif r.warn == 'offline' %}<span class="muted" data-tip="The share of the replacing file can't be reached right now, so it isn't deleted (only with &quot;Also when the replacement is missing&quot;).">library not reachable</span>
@@ -39,7 +37,9 @@
     <td class="check"><input type="checkbox" name="key" value="{{ r.key }}" form="bulk" aria-label="Select"></td>
     <td class="name entry" title="{{ r.key }}">{% if r.where %}<span class="entry-where">{{ r.where|wbr }}</span>{% endif %}<span class="entry-file">{{ r.file|wbr }}</span></td>
     <td class="small c-preset wrap" data-label="Preset">{{ r.preset_name }}</td>
-    {{ bitrate_cell(r, 'Original') }}
+    {{ codec_cell(r) }}
+    {{ res_cell(r) }}
+    {{ bitrate_cell(r) }}
     <td class="small nowrap num"{% if r.original_size %} data-tip="Original: {{ r.original_size|size }}"{% endif %}>{{ r.size|size }}</td>
     <td class="small nowrap num wrap">{% if r.original_size %}{% set saved = r.original_size - r.size %}{% if saved > 0 %}<span data-tip="Replacing the original ({{ r.original_size|size }}) frees this much"><span class="line">{{ saved|size }}</span><span class="line muted">{{ (saved / r.original_size * 100)|round|int }} %<span class="phone-label"> saved</span></span></span>{% else %}<span class="muted" data-tip="The encode is larger than the original ({{ r.original_size|size }})"><span class="line">{{ (-saved)|size }}</span><span class="line">larger</span></span>{% endif %}{% else %}<span class="muted">–</span>{% endif %}</td>
     <td class="small nowrap wrap">{{ r.at|localtime }}</td>
@@ -54,6 +54,8 @@
       {%- elif r.plex in ('pending', 'scanning') %} <span class="badge" data-tip="Plex is told about the new file and checked in a moment">Plex …</span>
       {%- elif r.plex in ('failed', 'skipped') %} <span class="badge badge-warn" data-tip="Plex didn't pick up the new file; see the notification, or scan the folder in Plex">Plex ✗</span>{% endif %}</td>
     <td class="name entry" title="{{ r.key }}">{% if r.where %}<span class="entry-where">{{ r.where|wbr }}</span>{% endif %}<span class="entry-file">{{ r.file|wbr }}</span></td>
+    {{ codec_cell(r) }}
+    {{ res_cell(r) }}
     {{ bitrate_cell(r, 'Replacing file' if r.status == 'REPLACED' else 'Original') }}
     <td>{% if r.can_retry %}<form class="inline-form" method="post" action="{{ url_for('queue_again') }}">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="key" value="{{ r.key }}">

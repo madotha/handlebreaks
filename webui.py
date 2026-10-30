@@ -841,6 +841,20 @@ def codec_class(c):
     return "good" if c in enc.OPTIMIZED_CODECS else "other"
 
 
+@app.template_filter("res_label")
+def res_label(width, height=None):
+    """Short resolution class of a video ("1080p", "4K", "SD"), from its width first (cropped
+    films are less high than their class) and its height; None without probe data."""
+    if not width:
+        return None
+    h = height or 0
+    for name, w, hh in (("4K", 3200, 1800), ("1440p", 2200, 1300), ("1080p", 1700, 900), ("720p", 1100, 650),
+                        ("576p", 900, 540), ("480p", 600, 400)):
+        if width >= w or h >= hh:
+            return name
+    return "SD"
+
+
 def to_datetime(value):
     """Stored time ("YYYY-MM-DD HH:MM", in the server's local time) or datetime -> aware datetime."""
     if isinstance(value, datetime):
@@ -1124,8 +1138,9 @@ def sort_rows(rows, keyfunc, descending, tiebreak=None):
 def tree_level(path, filters, queued, offset=0, sort=None):
     """Direct subfolders and files of `path` ("" = top level) that match the filters.
     Each folder counts its files: optimized (status h265: optimized codec or name),
-    unknown (not probed) and other. Returns (folders, files of the requested page,
-    number of files in total)."""
+    unknown (not probed) and other, and offered, queued, awaiting review and failed (offered
+    files whose last encode failed). Returns (folders, files of the requested page, number of
+    files in total)."""
     clause, params = filter_sql(filters, path)
     plen = len(path) + 1 if path else 0
     sort = sort or {"sort": "name", "dir": "asc"}          # no sorting = by name
@@ -1134,18 +1149,26 @@ def tree_level(path, filters, queued, offset=0, sort=None):
     folders = {}
     with closing(db()) as con:
         # Subfolders: SQLite groups by the next path part and counts (fast for 70,000+ files)
-        q_sum = "0"
+        q_sum = f_sum = "0"
         if queued:
             con.execute("CREATE TEMP TABLE q (key TEXT PRIMARY KEY)")
             con.executemany("INSERT OR IGNORE INTO q VALUES (?)", [(k,) for k in queued])
             q_sum = "SUM(key IN (SELECT key FROM q))"
-        for head, count, size, optimized, unknown, in_queue, added in con.execute(
+        failed = [k for k, (st, _) in enc.load_results().items() if st == "FAIL"]
+        if failed:
+            con.execute("CREATE TEMP TABLE failed (key TEXT PRIMARY KEY)")
+            con.executemany("INSERT OR IGNORE INTO failed VALUES (?)", [(k,) for k in failed])
+            f_sum = "SUM(status = 'offer' AND key IN (SELECT key FROM failed))"
+        for head, count, size, optimized, unknown, in_queue, added, offered, waiting, n_failed in con.execute(
                 f"SELECT substr(key, ?, instr(substr(key, ?), '/') - 1), COUNT(*), COALESCE(SUM(size), 0), "
-                f"SUM(status = 'h265'), SUM(status != 'h265' AND video_codec IS NULL), {q_sum}, MAX(added) "
+                f"SUM(status = 'h265'), SUM(status != 'h265' AND video_codec IS NULL), {q_sum}, MAX(added), "
+                f"SUM(status = 'offer'), SUM(status = 'waiting'), {f_sum} "
                 f"FROM files{where}instr(substr(key, ?), '/') > 0 GROUP BY 1", [start, start] + params + [start]):
             folders[head] = {"name": head, "path": f"{path}/{head}" if path else head, "count": count,
                              "size": size, "optimized": optimized, "unknown": unknown, "selectable": count - in_queue,
-                             "added": added}
+                             "added": added, "states": [(n, label) for n, label in (
+                                 (offered, "offered"), (in_queue, "queued"), (waiting, "to review"),
+                                 (n_failed, "failed")) if n]}
         # Files directly in this folder, sorted (only their rows are loaded)
         cols = ("key", "size", "status", "video_codec", "bitrate", "duration", "width", "height", "added")
         here = [dict(zip(cols, r)) for r in con.execute(
@@ -1204,13 +1227,21 @@ def level_context(path, filters, queued, offset=0, sort=None, dir_offset=0):
     # awaiting review even if the database still says "queued": only the next scan updates
     # that status (the worker doesn't write to the database).
     if any(f["status"] in ("waiting", "queued") for f in files):
-        encoded = enc.encoded_files(enc.first_existing(enc.ENCODED_CANDIDATES))
-        pending = enc.pending_replaces()
+        enc_dir = enc.first_existing(enc.ENCODED_CANDIDATES)
+        encoded = enc.encoded_files(enc_dir)
+        pending = enc.open_replaces()
+        used = enc.encode_presets()
         for f in files:
             f["encoded"] = encoded.get(Path(f["name"]).stem.lower()) if f["status"] in ("waiting", "queued") else None
             if f["encoded"]:
                 f["status"] = "waiting"
+                try:
+                    f["enc_bitrate"] = encode_bitrate((enc_dir / f["encoded"]).stat().st_size, f["duration"])
+                except OSError:
+                    pass
+                f["preset_name"] = presets.name_of(used[f["key"]]) if used.get(f["key"]) else ""
             f["replacing"] = f["key"] in pending
+            f["replace_id"] = pending[f["key"]][0] if f["replacing"] and not pending[f["key"]][1] else None
     # The file being encoded is shown as such, and a file whose last encode failed is marked
     # (a later success or a rescan to "waiting" clears it: only the latest result counts).
     cur = enc.current_progress()
@@ -1281,7 +1312,7 @@ def files():
     if filters:
         level = level_context("", filters, queued, sort=sort)
     else:                                       # the unfiltered top level is the same until data changes
-        level = cached(("top", tuple(sorted(sort.items())), hash(frozenset(queued))), enc.db_version(),
+        level = cached(("top", tuple(sorted(sort.items())), hash(frozenset(queued))), (enc.db_version(), activity_version()),
                        lambda: level_context("", filters, queued, sort=sort))
     return render_template(
         "files.html", total=total, total_size=total_size, shown=shown,
@@ -1388,15 +1419,22 @@ VIEWS = {"queue": "Queue", "review": "Awaiting review", "history": "History", "o
 
 # Sortable columns per tab: field -> (label, sort key of a row). No sorting = the tab's own order:
 # processing order (queue), by file (awaiting review), newest first (history).
+_CODEC_SORT = ("Codec", lambda i: codec_name(i["video_codec"]).lower() if i["video_codec"] else "~")
+_RES_SORT = ("Resolution", lambda i: (i["width"] or 0) * (i["height"] or 0))
 VIEW_SORT = {
     "queue": {
         "file":   ("File", lambda i: natural(enc.short(i["key"]))),
+        "codec":  _CODEC_SORT,
+        "resolution": _RES_SORT,
+        "bitrate": ("Bitrate", lambda i: i["bitrate"] or -1),
         "preset": ("Preset", lambda i: (presets.name_of(i["preset"]) if i["preset"] else "").lower()),
         "state":  ("State", lambda i: list(enc.QUEUE_STATES).index(i["state"]) if i["state"] in enc.QUEUE_STATES else 99),
     },
     "review": {
         "file": ("File", lambda i: natural(enc.short(i["key"]))),
         "preset": ("Preset", lambda i: (presets.name_of(i["preset"]) if i["preset"] else "").lower()),
+        "codec":  _CODEC_SORT,
+        "resolution": _RES_SORT,
         "bitrate": ("Bitrate", lambda i: i["bitrate"] or -1),
         "size":  ("Size", lambda i: i["size"]),
         "saved": ("Saved", lambda i: i["original_size"] - i["size"] if i["original_size"] else float("-inf")),
@@ -1406,14 +1444,19 @@ VIEW_SORT = {
         "file": ("File", lambda i: natural(i["key"])),
         "size": ("Size", lambda i: i["size"]),
         "kept": ("Kept since", lambda i: i["kept"]),
+        "preset": ("Preset", lambda i: (presets.name_of(i["preset"]) if i["preset"] else "").lower()),
+        "bitrate": ("Bitrate", lambda i: i["bitrate"] or -1),
     },
     "history": {
         "at":     ("Time", lambda i: i["at"]),
         "status": ("Result", lambda i: i["status"]),
         "file":   ("File", lambda i: natural(enc.short(i["key"]))),
+        "codec":  _CODEC_SORT,
+        "resolution": _RES_SORT,
         "bitrate": ("Bitrate", lambda i: i["bitrate"] or -1),
     },
 }
+HIDDEN_DEFAULT = {"history": {"codec", "resolution"}}    # columns hidden until the user shows them (Columns menu)
 HISTORY_RESULTS = ("OK", "FAIL", "STOPPED", "MISSING", "EXISTS", "REPLACED")
 
 
@@ -1440,18 +1483,19 @@ def awaiting_review():
         if not encoded:
             return []
         with closing(db()) as con:
-            originals = {k: (size, bitrate, duration) for k, size, bitrate, duration
-                         in con.execute("SELECT key, size, bitrate, duration FROM files WHERE status != 'h265'")
-                         if Path(k).stem.lower() in encoded}
+            originals = {r[0]: r[1:] for r in con.execute(
+                "SELECT key, size, bitrate, duration, video_codec, width, height FROM files WHERE status != 'h265'")
+                if Path(r[0]).stem.lower() in encoded}
         out = []
         for k in sorted(originals, key=natural):
             try:
                 st = (enc_dir / encoded[Path(k).stem.lower()]).stat()
             except OSError:
                 continue
-            size, bitrate, duration = originals[k]
+            size, bitrate, duration, codec, width, height = originals[k]
             out.append({"key": k, "at": datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M"),
-                        "size": st.st_size, "original_size": size, "bitrate": bitrate,
+                        "size": st.st_size, "original_size": size, "bitrate": bitrate, "duration": duration,
+                        "video_codec": codec, "width": width, "height": height,
                         "enc_bitrate": encode_bitrate(st.st_size, duration), "state": "OK"})
         return out
     found = cached(("awaiting", str(enc_dir)), (enc.db_version(), folder_version), compute)
@@ -1466,24 +1510,33 @@ def encode_bitrate(size, duration):
     return int(size * 8 / duration) if size and duration else None
 
 
-def file_bitrates(keys):
-    """{key: (bitrate, duration)} from the last scan, for the files of the History."""
+INFO_FIELDS = ("bitrate", "duration", "video_codec", "width", "height")
+
+
+def file_info(keys):
+    """{key: {bitrate, duration, video_codec, width, height}} from the last scan."""
     keys, found = list(dict.fromkeys(k for k in keys if k)), {}
     with closing(db()) as con:
         for i in range(0, len(keys), 900):          # SQLite's limit of parameters per query
             part = keys[i:i + 900]
-            found.update((k, (b, d)) for k, b, d in con.execute(
-                f"SELECT key, bitrate, duration FROM files WHERE key IN ({', '.join('?' * len(part))})", part))
+            found.update((r[0], dict(zip(INFO_FIELDS, r[1:]))) for r in con.execute(
+                f"SELECT key, {', '.join(INFO_FIELDS)} FROM files WHERE key IN ({', '.join('?' * len(part))})", part))
     return found
 
 
-def history_bitrates(rows):
-    """Bitrate per History entry: the original's for encode results, the replacing file's
-    for replaces (the original isn't in the library any more)."""
-    rates = file_bitrates([r["new_key"] or r["key"] for r in rows])
+def add_info(rows, key_of=lambda r: r["key"]):
+    """Copy the scan data (bitrate, codec, resolution …) of each row's file into the row."""
+    info = file_info([key_of(r) for r in rows])
+    empty = dict.fromkeys(INFO_FIELDS)
     for r in rows:
-        r["bitrate"], r["duration"] = rates.get(r["new_key"] or r["key"], (None, None))
+        r.update(info.get(key_of(r)) or empty)
     return rows
+
+
+def history_bitrates(rows):
+    """Scan data per History entry: the original's for encode results, the replacing file's
+    for replaces (the original isn't in the library any more)."""
+    return add_info(rows, lambda r: r["new_key"] or r["key"])
 
 
 def history_encodes(rows):
@@ -1573,22 +1626,38 @@ def queue_rows(view, state):
     if view == "review":
         return review, counts
     if view == "originals":
+        used = enc.encode_presets()
+        kept = add_info([dict(o, preset=used.get(o["orig_key"], "")) for o in kept], lambda o: o["new_key"])
         return kept, counts
     if view == "history":
         return history_bitrates(history), counts
-    return [i for i in active if not state or i["state"] == state], counts
+    return add_info([i for i in active if not state or i["state"] == state]), counts
 
 
-def queue_view(view="queue", state="", offset=0, sort=None):
+def matches(key, q):
+    """True if every word of the search q is part of the key (folders and file name)."""
+    key = key.lower()
+    return all(word in key for word in q.lower().split())
+
+
+def tab_rows(view, state="", q=""):
+    """All rows of a tab matching its result filter and search, and the counts of the tabs."""
+    shown, counts = queue_rows(view, state)
+    if q.strip():
+        shown = [r for r in shown if matches(r["key"], q)]
+    return shown, counts
+
+
+def queue_view(view="queue", state="", offset=0, sort=None, q=""):
     """One tab of the Status page: counts for the tab labels and one page of rows
-    (optionally only one state or result, optionally sorted)."""
+    (optionally only one state or result, only entries matching the search q, optionally sorted)."""
     sort = sort or {}
     fields = VIEW_SORT[view]
-    shown, counts = queue_rows(view, state)
+    shown, counts = tab_rows(view, state, q)
     if sort:
         shown = sorted(shown, key=fields[sort["sort"]][1], reverse=sort["dir"] == "desc")
     # Waiting entries can be reordered in the queue's own order; a divider shows where the next run starts
-    can_move = view == "queue" and not sort and state in ("", "waiting")
+    can_move = view == "queue" and not sort and not q.strip() and state in ("", "waiting")
     if can_move and any(i["run"] for i in shown):
         first = next((i for i in shown if i["next_run"] and i["state"] == "waiting"), None)
         if first:
@@ -1611,9 +1680,10 @@ def queue_view(view="queue", state="", offset=0, sort=None):
         kept_info(rows)
     nxt = offset + QUEUE_PAGE
     return {"rows": rows, "counts": counts, "shown_total": len(shown), "view": view,
-            "more_url": url_for("status_queue", view=view, state=state, offset=nxt, **sort) if nxt < len(shown) else None,
+            "more_url": url_for("status_queue", view=view, state=state, q=q or None, offset=nxt, **sort)
+                        if nxt < len(shown) else None, "q": q, "hidden_default": HIDDEN_DEFAULT.get(view, set()),
             "states": enc.QUEUE_STATES, "state": state, "sort": sort, "can_move": can_move,
-            "sort_links": {f: (url_for("status", view=view, state=state, **next_sort(f, sort)), sort_arrow(f, sort))
+            "sort_links": {f: (url_for("status", view=view, state=state, q=q or None, **next_sort(f, sort)), sort_arrow(f, sort))
                            for f in fields},
             "fields": {f: v[0] for f, v in fields.items()},
             "keep_days": enc.history_keep_days(), "history_results": HISTORY_RESULTS,
@@ -1785,13 +1855,17 @@ def encodes_delete():
     keys = list(dict.fromkeys(request.form.getlist("key")))
     requeue = request.form.get("requeue") == "1"
     preset = request.form.get("preset", "").strip() or None
-    back = safe_next(url_for("status", view="review"))
+    as_json = bool(request.form.get("json"))       # the Files page reloads only the folder
+
+    def back(msg, kind):
+        if as_json:
+            return {"ok": kind != "error", "message": msg, "kind": kind}, 200 if kind != "error" else 400
+        flash(msg, kind)
+        return safe_next(url_for("status", view="review"))
     if requeue and preset and not presets.exists(preset):
-        flash("Unknown preset.", "error")
-        return back
+        return back("Unknown preset.", "error")
     if not keys:
-        flash("No entries selected.", "error")
-        return back
+        return back("No entries selected.", "error")
     with closing(db()) as con:
         marks = ", ".join("?" * len(keys))
         known = {k for (k,) in con.execute(f"SELECT key FROM files WHERE key IN ({marks})", keys)}
@@ -1803,9 +1877,8 @@ def encodes_delete():
     gone = [k for k, n in names.items() if n in deleted]
     left = len(keys) - len(gone)
     if not gone:
-        flash("Nothing deleted: no finished encode found for the selected files (or they are being "
-              "replaced or are already in the queue).", "error")
-        return back
+        return back("Nothing deleted: no finished encode found for the selected files (or they are being "
+                    "replaced or are already in the queue).", "error")
     msg = f"{len(gone):,} encode{'' if len(gone) == 1 else 's'} deleted, {fmt_size(sum(deleted.values()))} freed."
     if requeue:
         queued = enc.write_batch(gone, preset)
@@ -1816,8 +1889,7 @@ def encodes_delete():
         enc.unwait(gone)
     if left:
         msg += f" {left:,} left out (no encode in the output folder, a replace pending, or already queued)."
-    flash(msg, "warn" if left else "ok")
-    return back
+    return back(msg, "warn" if left else "ok")
 
 
 @app.route("/status")
@@ -1829,7 +1901,8 @@ def status():
     stop = enc.stop_requested()
     return render_template("status.html", cur=cur, paused=enc.is_paused(), can_stop=enc.worker_can_stop(),
                            stopping=stop[0] if stop and cur and stop[1] == cur["key"] else None,
-                           q=queue_view(view, state, sort=sort_state(request.args, f"queue:{view}", VIEW_SORT[view])),
+                           q=queue_view(view, state, sort=sort_state(request.args, f"queue:{view}", VIEW_SORT[view]),
+                                        q=request.args.get("q", "")),
                            views=VIEWS, auto_interval=scan_interval(cfg), preset_list=preset_choices(),
                            auto_next=next_auto_scan(cfg), short=enc.short, entry_parts=entry_parts,
                            last_scan=enc.last_scan())
@@ -1846,13 +1919,25 @@ def status_queue():
     view = status_view(request.args)
     state = request.args.get("state", "")
     offset = max(int(request.args.get("offset", 0) or 0), 0)
-    data = queue_view(view, state, offset, sort_args(request.args, VIEW_SORT[view]))
+    data = queue_view(view, state, offset, sort_args(request.args, VIEW_SORT[view]), request.args.get("q", ""))
     resp = app.make_response(render_template("_queue_rows.html", **data))
     resp.headers["X-Next"] = data["more_url"] or ""
     resp.headers["X-Shown-Total"] = str(data["shown_total"])
     if view == "review":
         resp.headers["X-Summary"] = data["review_summary"]
     return resp
+
+
+@app.route("/status/keys")
+def status_keys():
+    """Every entry of a tab that matches its filter and search ("Select all N matching"): keys,
+    and for kept originals their sizes (for the confirmation)."""
+    view = status_view(request.args)
+    rows, _ = tab_rows(view, request.args.get("state", ""), request.args.get("q", ""))
+    if view == "queue":
+        rows = [r for r in rows if r["state"] == "waiting"]         # only waiting entries can be selected
+    return {"keys": [r["key"] for r in rows],
+            "sizes": [r["size"] for r in rows] if view == "originals" else None}
 
 
 @app.route("/queue/remove", methods=["POST"])
@@ -1907,8 +1992,9 @@ def status_dismiss():
         enc.dismiss(upto, upto)
         n = len(upto)
     else:
-        if request.form.get("all"):
-            keys = [r["key"] for r in (awaiting_review() if view == "review" else enc.history_entries(state))]
+        if request.form.get("all"):              # everything the tab shows, with its filter and search
+            keys = [r["key"] for r in tab_rows(view if view in ("review", "history") else "history", state,
+                                                request.form.get("q", ""))[0]]
         else:
             keys = request.form.getlist("key")
         if not keys:
