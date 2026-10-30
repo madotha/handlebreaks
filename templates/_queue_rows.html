@@ -1,10 +1,11 @@
 {# One page of rows of a Status tab (view); also returned on its own for "Show more" and refreshing. #}
 {% from "_icons.html" import icon %}
 {# Bitrate of the original (or of the file that replaced it), and of the encode if it is still in the output folder #}
+{# (one line each: before the encode, then after it) #}
 {% macro bitrate_cell(r, what) -%}
-<td class="small nowrap num c-bitrate" data-label="Bitrate">
-  {%- if r.bitrate %}<span data-tip="{{ what }}: overall bitrate (video and audio) from the last scan">{{ r.bitrate|bitrate }}</span>{% endif %}
-  {%- if r.enc_bitrate %}{% if r.bitrate %} → {% endif %}<span data-tip="Encode: estimated from its size and the original's duration">{{ r.enc_bitrate|bitrate }}</span>{% endif -%}
+<td class="small num c-bitrate" data-label="Bitrate">
+  {%- if r.bitrate %}<span class="line" data-tip="{{ what }}: overall bitrate (video and audio) from the last scan">{{ r.bitrate|bitrate }}</span>{% endif %}
+  {%- if r.enc_bitrate %}<span class="line" data-tip="Encode: estimated from its size and the original's duration">{% if r.bitrate %}→ {% endif %}{{ r.enc_bitrate|bitrate }}</span>{% endif -%}
 </td>
 {%- endmacro %}
 {% for r in rows %}
@@ -15,7 +16,7 @@
     <td class="check">{% if r.state == 'waiting' %}<input type="checkbox" name="key" value="{{ r.key }}" form="bulk" aria-label="Select">{% endif %}</td>
     <td class="num muted">{{ r.n }}</td>
     <td class="name entry" title="{{ r.key }}">{% if r.where %}<span class="entry-where">{{ r.where|wbr }}</span>{% endif %}<span class="entry-file">{{ r.file|wbr }}</span></td>
-    <td class="small">{{ r.preset_name or "Share's preset" }}</td>
+    <td class="small wrap">{{ r.preset_name or "Share's preset" }}</td>
     <td><span class="qstate qstate-{{ r.state|lower }}">{{ states.get(r.state, r.state) }}</span>{% if r.next_run and r.state == 'waiting' and not can_move %} <span class="qrun muted small">next run</span>{% endif %}</td>
     <td class="move">{% if r.state == 'waiting' and can_move %}<button type="button" class="icon-btn" data-move="up" aria-label="Move up" data-tip="Move up">{{ icon('up') }}</button><button type="button" class="icon-btn" data-move="down" aria-label="Move down" data-tip="Move down">{{ icon('down') }}</button>{% endif %}</td>
   </tr>
@@ -24,8 +25,8 @@
     <td class="check"><input type="checkbox" name="key" value="{{ r.key }}" form="bulk" data-size="{{ r.size }}" aria-label="Select"></td>
     <td class="name entry" title="{{ r.key }}">{% if r.where %}<span class="entry-where">{{ r.where|wbr }}</span>{% endif %}<span class="entry-file">{{ r.file|wbr }}</span></td>
     <td class="small nowrap num">{{ r.size|size }}</td>
-    <td class="small nowrap">{{ r.kept|localtime }}</td>
-    <td class="small">
+    <td class="small nowrap wrap">{{ r.kept|localtime }}</td>
+    <td class="small wrap">
       {% if r.warn == 'missing' %}<span class="badge badge-warn" data-tip="The file that replaced this original is no longer in the library (it may have been renamed, moved or deleted). It is only deleted with &quot;Also when the replacement is missing&quot;.">replacement missing</span>
       {% elif r.warn == 'offline' %}<span class="muted" data-tip="The share of the replacing file can't be reached right now, so it isn't deleted (only with &quot;Also when the replacement is missing&quot;).">library not reachable</span>
       {% elif r.warn == 'plex' %}<span class="badge badge-warn" data-tip="Plex didn't pick up the file that replaced this original (see Status → History). It isn't deleted automatically; check Plex before deleting it.">Plex not updated</span>
@@ -37,17 +38,17 @@
   <tr>
     <td class="check"><input type="checkbox" name="key" value="{{ r.key }}" form="bulk" aria-label="Select"></td>
     <td class="name entry" title="{{ r.key }}">{% if r.where %}<span class="entry-where">{{ r.where|wbr }}</span>{% endif %}<span class="entry-file">{{ r.file|wbr }}</span></td>
-    <td class="small c-preset" data-label="Preset">{{ r.preset_name }}</td>
+    <td class="small c-preset wrap" data-label="Preset">{{ r.preset_name }}</td>
     {{ bitrate_cell(r, 'Original') }}
     <td class="small nowrap num"{% if r.original_size %} data-tip="Original: {{ r.original_size|size }}"{% endif %}>{{ r.size|size }}</td>
-    <td class="small nowrap num">{% if r.original_size %}{% set saved = r.original_size - r.size %}{% if saved > 0 %}<span data-tip="Replacing the original ({{ r.original_size|size }}) frees this much">saved {{ saved|size }} ({{ (saved / r.original_size * 100)|round|int }} %)</span>{% else %}<span class="muted" data-tip="The encode is larger than the original ({{ r.original_size|size }})">{{ (-saved)|size }} larger</span>{% endif %}{% else %}<span class="muted">–</span>{% endif %}</td>
-    <td class="small nowrap">{{ r.at|localtime }}</td>
-    <td class="nowrap">{% include "_replace_button.html" %}</td>
+    <td class="small nowrap num wrap">{% if r.original_size %}{% set saved = r.original_size - r.size %}{% if saved > 0 %}<span data-tip="Replacing the original ({{ r.original_size|size }}) frees this much"><span class="line">{{ saved|size }}</span><span class="line muted">{{ (saved / r.original_size * 100)|round|int }} %<span class="phone-label"> saved</span></span></span>{% else %}<span class="muted" data-tip="The encode is larger than the original ({{ r.original_size|size }})"><span class="line">{{ (-saved)|size }}</span><span class="line">larger</span></span>{% endif %}{% else %}<span class="muted">–</span>{% endif %}</td>
+    <td class="small nowrap wrap">{{ r.at|localtime }}</td>
+    <td class="nowrap actions">{% include "_replace_button.html" %}</td>
   </tr>
   {% else %}
   <tr>
     <td class="check"><input type="checkbox" name="key" value="{{ r.key }}" form="bulk" aria-label="Select"></td>
-    <td class="small nowrap">{{ r.at|localtime }}</td>
+    <td class="small nowrap wrap">{{ r.at|localtime }}</td>
     <td><span class="result result-{{ r.status|lower }}">{{ 'Replaced' if r.status == 'REPLACED' else states.get(r.status, r.status) }}</span>
       {%- if r.plex == 'ok' %} <span class="badge badge-ok" data-tip="Plex lists the new file">Plex ✓</span>
       {%- elif r.plex in ('pending', 'scanning') %} <span class="badge" data-tip="Plex is told about the new file and checked in a moment">Plex …</span>

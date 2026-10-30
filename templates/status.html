@@ -114,7 +114,10 @@
     {% for f in q.fields %}<a class="sort-chip{{ ' active' if q.sort_links[f][1] }}" href="{{ q.sort_links[f][0] }}"
        aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(q.sort_links[f][1], 'none') }}">{{ q.fields[f] }}{% if q.sort_links[f][1] %} {{ q.sort_links[f][1] }}{% endif %}</a>{% endfor %}
   </nav>
-  <label class="select-all-phone"><input type="checkbox" data-select-all> Select all shown</label>{# phones: the table header with its checkbox is hidden #}
+  <div class="phone-table-tools">{# phones: the table header with its checkbox and the Columns menu is hidden #}
+    <label class="select-all-phone"><input type="checkbox" data-select-all> Select all shown</label>
+    <span class="col-menu-slot" data-col-menu-slot></span>
+  </div>
   {% if q.view == 'originals' %}
   <form id="kept-older-form" method="post" action="{{ url_for('originals_delete') }}" data-confirm="Delete all originals that were kept longer than the chosen time, permanently? This cannot be undone.">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -135,11 +138,11 @@
   </form>
   {% endif %}
   <div class="table-wrap">
-    <table class="queue-table queue-{{ q.view }}">
+    <table class="queue-table queue-{{ q.view }}" data-resizable="status:{{ q.view }}">
       <thead><tr>{% if q.view == 'queue' %}<th class="grip"></th>{% endif %}<th class="check"><input type="checkbox" data-select-all aria-label="Select all entries shown"></th>
         {% if q.view == 'queue' %}<th class="num">#</th>{% endif %}
-        {% for f in q.fields %}<th aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(q.sort_links[f][1], 'none') }}"><a class="sort-link{{ ' active' if q.sort_links[f][1] }}" href="{{ q.sort_links[f][0] }}" title="Sort: ascending → descending → off">{{ q.fields[f] }}{% if q.sort_links[f][1] %} {{ q.sort_links[f][1] }}{% endif %}</a></th>{% endfor %}
-        <th>{% if q.view == 'originals' %}Replacement{% endif %}</th></tr></thead>
+        {% for f in q.fields %}<th data-col="{{ f }}" data-label="{{ q.fields[f] }}" aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(q.sort_links[f][1], 'none') }}"><a class="sort-link{{ ' active' if q.sort_links[f][1] }}" href="{{ q.sort_links[f][0] }}" title="Sort: ascending → descending → off">{{ q.fields[f] }}{% if q.sort_links[f][1] %} {{ q.sort_links[f][1] }}{% endif %}</a></th>{% endfor %}
+        <th class="col-rest">{% if q.view == 'originals' %}Replacement{% endif %}</th></tr></thead>
       <tbody data-queue-rows>{% with rows=q.rows, states=q.states, view=q.view, can_move=q.can_move %}{% include "_queue_rows.html" %}{% endwith %}</tbody>
     </table>
   </div>
@@ -172,5 +175,6 @@
 <script src="{{ url_for('static', filename='bulkreplace.js') }}"></script>
 <script src="{{ url_for('static', filename='deleteencode.js') }}"></script>
 <script src="{{ url_for('static', filename='rangeselect.js') }}"></script>
+<script src="{{ url_for('static', filename='columns.js') }}"></script>
 <script src="{{ url_for('static', filename='status.js') }}" data-live-url="{{ url_for('status_live') }}" data-queue-url="{{ url_for('status_queue') }}" data-move-url="{{ url_for('queue_move') }}"></script>
 {% endblock %}

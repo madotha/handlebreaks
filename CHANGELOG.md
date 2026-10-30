@@ -7,6 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.18.0] - 2026-10-30
+
+### Added
+- Status page: column widths can be adjusted by dragging the edge of a column header (or with ←/→ on the focused edge). Each column keeps a minimum width so its content stays readable, and the widths are remembered per tab in the browser. Double-click an edge, or use **Reset widths**, to go back to automatic widths.
+- Status page: the **Columns** menu (at the right end of the table header; on phones next to **Select all shown**) hides the columns you don't need, per tab. The file name always stays.
+
+### Changed
+- Status → Awaiting review and History: the bitrate shows on two lines, the original's first and the encode's below it. Saved shows the amount and the percentage on two lines. Dates, presets and other values wrap between whole values, never inside a number, when a column gets narrow.
+
 ## [3.17.0] - 2026-10-30
 
 ### Added
