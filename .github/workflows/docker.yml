@@ -1,0 +1,149 @@
+# Builds the Docker image for every release tag (vX.Y.Z) and publishes it to the GitHub
+# container registry as ghcr.io/madotha/handlebreaks with the tags X.Y.Z, X.Y, X and latest.
+# Each architecture builds natively on its own runner (no emulation); a smoke test checks
+# the image before anything is published. Started by hand on a branch, it only builds and
+# tests. Standard runners and public images are free for public repositories.
+name: Docker image
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: handlebreaks:test
+          # HandBrakeCLI takes long to build; its stage stays cached until its version changes
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,scope=${{ matrix.arch }},mode=max
+
+      - name: Smoke test
+        run: |
+          set -eu
+          run() { docker run --rm --entrypoint "$1" handlebreaks:test "${@:2}"; }
+          version=$(run python3 encoding.py version)
+          echo "$version"
+          if [ "${GITHUB_REF_TYPE}" = tag ] && [ "$version" != "Handlebreaks ${GITHUB_REF_NAME}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} doesn't match the version in encoding.py ($version)"; exit 1
+          fi
+          run HandBrakeCLI --version 2>/dev/null | grep -E '^HandBrake [0-9]'
+          run ffprobe -version | head -1
+          audit=$(run python3 encoding.py preset-check)
+          echo "$audit"
+          echo "$audit" | grep -q 'Settings without an editor field: none' \
+            || { echo "::error::preset-check: settings without an editor field"; exit 1; }
+          # the web UI starts and answers its health check, with the hardening of docker-compose.yml
+          docker run -d --name smoke --read-only --tmpfs /tmp --cap-drop ALL -v smoke-data:/data \
+            --security-opt no-new-privileges:true -e TZ=UTC handlebreaks:test
+          for i in $(seq 1 30); do
+            docker exec smoke python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7979/health', timeout=3)" 2>/dev/null && ok=1 && break
+            sleep 2
+          done
+          docker logs smoke | tail -20
+          docker rm -f smoke && docker volume rm smoke-data
+          [ "${ok:-0}" = 1 ] || { echo "::error::web UI didn't answer"; exit 1; }
+
+      - name: Log in to the registry
+        if: github.ref_type == 'tag'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push by digest
+        if: github.ref_type == 'tag'
+        id: push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Keep the digest
+        if: github.ref_type == 'tag'
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/$(echo '${{ steps.push.outputs.digest }}' | cut -d: -f2)"
+
+      - uses: actions/upload-artifact@v7
+        if: github.ref_type == 'tag'
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  publish:
+    needs: build
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: digest-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v4
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+          flavor: latest=true
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish the multi-arch tags
+        working-directory: /tmp/digests
+        run: |
+          # the annotations give the package page on GitHub its description and repository link
+          docker buildx imagetools create \
+            --annotation "index:org.opencontainers.image.source=https://github.com/${{ github.repository }}" \
+            --annotation "index:org.opencontainers.image.description=Semi-automatic H.264 to H.265 re-encoding of a Plex library with HandBrakeCLI, with a web UI" \
+            --annotation "index:org.opencontainers.image.licenses=MIT" \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf '${{ env.IMAGE }}@sha256:%s ' *)
+          docker buildx imagetools inspect "${{ env.IMAGE }}:${{ steps.meta.outputs.version }}"

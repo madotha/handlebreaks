@@ -28,14 +28,13 @@ The fastest way to try it. Tested on macOS with Docker Desktop; Linux with Docke
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or Docker Engine with Compose), running
 - Your Plex library reachable as a folder on this machine, e.g. a NAS share mounted at `/Volumes/Media` (macOS: Finder → Go → Connect to Server, `smb://nas/Media`)
 - A folder with enough free space for finished encodes (the output folder). H.265 files are usually 30–60 % smaller than the H.264 originals, so plan for about half the size of what you encode at a time.
-- git, or the code downloaded as a ZIP
 
-**Steps:**
+**Steps:** the image is prebuilt (for Intel and Apple silicon / ARM), so you only need two files:
 
 ```bash
-git clone https://github.com/madotha/handlebreaks.git
-cd handlebreaks
-cp .env.example .env
+mkdir handlebreaks && cd handlebreaks
+curl -fsSLO https://raw.githubusercontent.com/madotha/handlebreaks/main/docker-compose.yml
+curl -fsSL -o .env https://raw.githubusercontent.com/madotha/handlebreaks/main/.env.example
 ```
 
 Edit `.env` and set two paths:
@@ -48,14 +47,14 @@ HOST_ENCODED_DIR="/Users/you/Movies/_ENCODED"      # where finished encodes go (
 Then start it and open the web UI:
 
 ```bash
-docker compose up -d --build
+docker compose up -d                               # downloads the image the first time
 open http://127.0.0.1:7979                         # Linux: xdg-open, or just open it in a browser
 ```
 
 1. **Settings → Library**: replace the two example shares with your folders. A library folder `/Volumes/Media/Movies` is `/media/Movies` inside the container. Each folder needs a green ✓.
 2. **Scan now**. The first scan reads every file with ffprobe; for a large library this takes a while (roughly 30–60 minutes for 70,000 files over the network); the Status page shows that it's running. Later scans only read new or changed files. A scan saves its ffprobe results as it goes, so if it is interrupted (restart, unreachable NAS), the next scan resumes with the remaining files.
 3. **Files**: tick files or whole folders and click **Queue for encoding**. Progress is on the **Status** page.
-4. Check the finished files in the output folder. To put one into the library in place of the original, Docker needs write access to the library: remove `:ro` from the `/media` line in `docker-compose.yml` (or in a `docker-compose.override.yml`), then use **Replace…**. Otherwise, move the files yourself.
+4. Check the finished files in the output folder. To put one into the library in place of the original, Docker needs write access to the library: remove `:ro` from the `/media` line in `docker-compose.yml`, then run `docker compose up -d` again and use **Replace…**. Otherwise, move the files yourself.
 
 For more details, the native macOS setup (faster encoding) and the mixed setup, see [Choose a setup](#choose-a-setup) and the [wiki](https://github.com/madotha/handlebreaks/wiki).
 
@@ -88,9 +87,9 @@ The web UI also shows statistics about your library, lets you edit HandBrake pre
 | | A: native on macOS | B: Docker | C: Docker + native encoding |
 |---|---|---|---|
 | Runs on | macOS | macOS (Docker Desktop) | macOS (Docker Desktop) |
-| Encoding | HandBrakeCLI on the Mac, all CPU cores, Apple AAC | HandBrakeCLI 1.9 (Linux) in Docker's VM, limited to the CPUs Docker Desktop may use | Native, like A |
+| Encoding | HandBrakeCLI on the Mac, all CPU cores, Apple AAC | HandBrakeCLI 1.11 (Linux) in Docker's VM, limited to the CPUs Docker Desktop may use | Native, like A |
 | Web UI, scan | On the Mac (Python venv) | In the container | In the container |
-| Install effort | Homebrew packages, Python venv, launchd agents | Docker Desktop and two config files | Both A and B |
+| Install effort | Homebrew packages, Python venv, launchd agents | Docker Desktop and two downloaded files, prebuilt image | Both A and B |
 | Instructions | [Setup A](https://github.com/madotha/handlebreaks/wiki/Setup-A-Native-macOS) | [Quick start](#quick-start-docker), [Setup B](https://github.com/madotha/handlebreaks/wiki/Setup-B-Docker) | [Setup C](https://github.com/madotha/handlebreaks/wiki/Setup-C-Docker-and-Native-Encoding) |
 
 If you're unsure, use **B** to try it out, or **A** for the fastest encoding. Other operating systems aren't documented yet.
@@ -110,7 +109,7 @@ What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Updating
 
-Check [CHANGELOG.md](CHANGELOG.md) for what changed. Your data is kept, and database and config changes are migrated automatically on the first run. Releases that need manual steps are described under [Updating](https://github.com/madotha/handlebreaks/wiki/Updating) in the wiki (including updating from versions 1.x and 2.x).
+Check [CHANGELOG.md](CHANGELOG.md) for what changed. Your data is kept, and database and config changes are migrated automatically on the first run. Releases that need manual steps are described under [Updating](https://github.com/madotha/handlebreaks/wiki/Updating) in the wiki, including updating from versions 1.x and 2.x, and switching a Docker install from before version 3.21 (which built its image itself) to the prebuilt image.
 
 ```bash
 # Native (Setup A), in the install folder
@@ -118,12 +117,13 @@ git pull
 .venv/bin/pip install -r requirements.txt                       # if you use the web UI
 launchctl kickstart -k gui/$(id -u)/local.plex-encoding-web     # restart the web UI
 
-# Docker (Setup B), in the folder you cloned into (e.g. handlebreaks)
-git pull
-docker compose up -d --build
+# Docker (Setup B), in the handlebreaks folder
+docker compose pull
+docker compose up -d
 
 # Setup C: update the native install as above, then
-docker compose -f docker-compose.yml -f docker-compose.hybrid.yml up -d --build
+docker compose -f docker-compose.yml -f docker-compose.hybrid.yml pull
+docker compose -f docker-compose.yml -f docker-compose.hybrid.yml up -d
 ```
 
 ## Security

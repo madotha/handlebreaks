@@ -1,0 +1,12 @@
+# Handlebreaks: build the image from this folder instead of pulling the published one,
+# e.g. to try local changes. Add it to the other compose files:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#   (Setup C: -f docker-compose.yml -f docker-compose.hybrid.yml -f docker-compose.build.yml)
+#
+# The first build compiles HandBrakeCLI and takes a while (roughly 15-40 minutes);
+# later builds reuse it until its version in the Dockerfile changes.
+services:
+  encoding:
+    build: .
+    image: handlebreaks:local

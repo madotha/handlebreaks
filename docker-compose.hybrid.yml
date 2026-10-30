@@ -1,7 +1,8 @@
 # Handlebreaks, Mac hybrid: the container runs the web UI and scans, while the Mac keeps
 # encoding natively with launchd and encode.sh (all CPU cores, Apple AAC).
 #
-#   docker compose -f docker-compose.yml -f docker-compose.hybrid.yml up -d --build
+#   docker compose -f docker-compose.yml -f docker-compose.hybrid.yml up -d
+#   (update: the same with pull, then up -d; after git pull for the Mac side)
 #
 # Container and Mac share the program folder of the native installation
 # (HOST_APP_DIR in .env): config.env, queue/ and logs/. config.env therefore needs

@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.21.0] - 2026-10-30
+
+### Added
+- Prebuilt Docker images: every release is published as `ghcr.io/madotha/handlebreaks` for Intel (amd64) and ARM (arm64, e.g. Apple silicon), tagged `X.Y.Z`, `X.Y`, `X` and `latest`. A Docker install now needs only `docker-compose.yml` and `.env`, no clone and no build, and updates with `docker compose pull` and `docker compose up -d`. `HANDLEBREAKS_TAG` in `.env` picks the version (default `3`: every 3.x release, never a new major version on its own). To build the image yourself, add the new `docker-compose.build.yml`. Existing Docker installs switch once, see [Updating to version 3.21](https://github.com/madotha/handlebreaks/wiki/Updating#updating-to-version-321).
+
+### Changed
+- The Docker image's HandBrakeCLI is now 1.11.2 (before: Debian's 1.9.2), built from HandBrake's official signed source, so Docker setups get the settings, encoders and presets of the current HandBrake.
+
 ## [3.20.1] - 2026-10-30
 
 ### Fixed

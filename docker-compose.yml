@@ -1,10 +1,15 @@
 # Handlebreaks, everything in one container: web UI (port 7979), scans and encoding.
+# Uses the prebuilt image from GitHub's container registry; nothing to build.
 #
 #   cp .env.example .env        # enter the folders on the Mac
-#   docker compose up -d --build
+#   docker compose up -d
 #   open http://127.0.0.1:7979
 #
-# To keep encoding natively on the Mac, add docker-compose.hybrid.yml.
+# Update: docker compose pull && docker compose up -d
+# The tag 3 follows every 3.x release; a new major version (which may need manual steps,
+# see the wiki's Updating page) never arrives on its own. HANDLEBREAKS_TAG in .env pins a
+# version (e.g. 3.21.0). To build the image from this folder instead, add
+# docker-compose.build.yml. To keep encoding natively on the Mac, add docker-compose.hybrid.yml.
 #
 # Shares inside HOST_MEDIA_DIR appear as /media/<folder>. Shares elsewhere: mount
 # them in a local docker-compose.override.yml (gitignored, picked up automatically), e.g.
@@ -14,8 +19,7 @@
 #         - /Volumes/Archive/Shows:/media/Archive:ro
 services:
   encoding:
-    build: .
-    image: handlebreaks
+    image: ghcr.io/madotha/handlebreaks:${HANDLEBREAKS_TAG:-3}
     container_name: ${CONTAINER_NAME:-handlebreaks}   # another name only to run a second instance next to it
     init: true
     restart: unless-stopped
