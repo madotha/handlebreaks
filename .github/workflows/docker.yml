@@ -57,6 +57,15 @@ jobs:
           fi
           run HandBrakeCLI --version 2>/dev/null | grep -E '^HandBrake [0-9]'
           run ffprobe -version | head -1
+          # x265 must encode with a thread pool: built with libnuma it gets none on kernels
+          # without NUMA (Docker Desktop's VM) and is about 4x slower
+          if run sh -c 'ldd /usr/local/bin/HandBrakeCLI' | grep -q libnuma; then
+            echo "::error::HandBrakeCLI links libnuma (configure needs --disable-numa)"; exit 1
+          fi
+          run sh -c 'ffmpeg -v error -f lavfi -i testsrc2=size=1280x720:rate=25 -t 2 -c:v libx264 /tmp/t.mkv \
+            && HandBrakeCLI -i /tmp/t.mkv -o /tmp/o.mkv -e x265 -q 24 2>&1 >/dev/null' \
+            | grep -E 'Thread pool created|No thread pool|^encoded' | tee /tmp/x265.txt
+          grep -q 'Thread pool created' /tmp/x265.txt || { echo "::error::x265 encoded without a thread pool"; exit 1; }
           audit=$(run python3 encoding.py preset-check)
           echo "$audit"
           echo "$audit" | grep -q 'Settings without an editor field: none' \

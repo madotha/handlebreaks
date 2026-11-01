@@ -16,7 +16,7 @@ ARG HANDBRAKE_SHA256=12b046350f2422dc28783ff94229aff4ba5fe5e683431e057355d36163b
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl bzip2 python3 \
       autoconf automake build-essential cmake git libass-dev libbz2-dev libfontconfig-dev libfreetype-dev \
-      libfribidi-dev libharfbuzz-dev libjansson-dev liblzma-dev libmp3lame-dev libnuma-dev libogg-dev libopus-dev \
+      libfribidi-dev libharfbuzz-dev libjansson-dev liblzma-dev libmp3lame-dev libogg-dev libopus-dev \
       libsamplerate0-dev libspeex-dev libssl-dev libtheora-dev libtool libtool-bin libturbojpeg0-dev libvorbis-dev \
       libvpx-dev libx264-dev libxml2-dev m4 make meson nasm ninja-build patch pkg-config zlib1g-dev
 WORKDIR /build
@@ -24,9 +24,11 @@ RUN curl -fsSL -o hb.tar.bz2 "https://github.com/HandBrake/HandBrake/releases/do
  && echo "${HANDBRAKE_SHA256}  hb.tar.bz2" | sha256sum -c - \
  && tar xjf hb.tar.bz2 && rm hb.tar.bz2
 # CLI only. The bundled libraries (FFmpeg, x265, SVT-AV1 …) are downloaded and checked
-# against their checksums by HandBrake's build.
+# against their checksums by HandBrake's build. Without NUMA: x265 built with libnuma creates
+# no thread pool on kernels without NUMA support, such as Docker Desktop's VM on macOS and
+# Windows, and then encodes about 4x slower. Without it x265 simply uses every CPU.
 RUN cd "HandBrake-${HANDBRAKE_VERSION}" \
- && ./configure --disable-gtk --launch-jobs="$(nproc)" --launch \
+ && ./configure --disable-gtk --disable-numa --launch-jobs="$(nproc)" --launch \
  && install -Dm755 build/HandBrakeCLI /out/bin/HandBrakeCLI \
  && install -Dm644 COPYING /out/doc/COPYING \
  && printf 'HandBrakeCLI %s, built unmodified from\n%s\nSHA-256 %s\nLicense: GPL-2.0 (COPYING)\n' "${HANDBRAKE_VERSION}" \

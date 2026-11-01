@@ -92,7 +92,7 @@ The web UI also shows statistics about your library, lets you edit HandBrake pre
 | Install effort | Homebrew packages, Python venv, launchd agents | Docker Desktop and two downloaded files, prebuilt image | Both A and B |
 | Instructions | [Setup A](https://github.com/madotha/handlebreaks/wiki/Setup-A-Native-macOS) | [Quick start](#quick-start-docker), [Setup B](https://github.com/madotha/handlebreaks/wiki/Setup-B-Docker) | [Setup C](https://github.com/madotha/handlebreaks/wiki/Setup-C-Docker-and-Native-Encoding) |
 
-If you're unsure, use **B** to try it out, or **A** for the fastest encoding. Other operating systems aren't documented yet.
+If you're unsure, use **B** to try it out, or **A** for the fastest encoding (Docker on a Mac encodes about a third slower, see [Performance](https://github.com/madotha/handlebreaks/wiki/Performance)). Other operating systems aren't documented yet.
 
 **Requirements:** the library reachable as a folder on the Mac (see [Mounting the library](https://github.com/madotha/handlebreaks/wiki/Mounting-the-Library)), enough free space in the output folder, and for A and C: Python 3.9+, HandBrakeCLI and ffmpeg (`brew install handbrake ffmpeg`).
 
@@ -100,7 +100,7 @@ If you're unsure, use **B** to try it out, or **A** for the fastest encoding. Ot
 
 The [wiki](https://github.com/madotha/handlebreaks/wiki) describes the latest release:
 
-- **Setup:** [Choose a setup](https://github.com/madotha/handlebreaks/wiki/Choose-a-Setup), [A: native on macOS](https://github.com/madotha/handlebreaks/wiki/Setup-A-Native-macOS), [B: Docker](https://github.com/madotha/handlebreaks/wiki/Setup-B-Docker), [C: Docker + native encoding](https://github.com/madotha/handlebreaks/wiki/Setup-C-Docker-and-Native-Encoding), [Mounting the library](https://github.com/madotha/handlebreaks/wiki/Mounting-the-Library)
+- **Setup:** [Choose a setup](https://github.com/madotha/handlebreaks/wiki/Choose-a-Setup), [Performance](https://github.com/madotha/handlebreaks/wiki/Performance), [A: native on macOS](https://github.com/madotha/handlebreaks/wiki/Setup-A-Native-macOS), [B: Docker](https://github.com/madotha/handlebreaks/wiki/Setup-B-Docker), [C: Docker + native encoding](https://github.com/madotha/handlebreaks/wiki/Setup-C-Docker-and-Native-Encoding), [Mounting the library](https://github.com/madotha/handlebreaks/wiki/Mounting-the-Library)
 - **Using it:** [Web UI](https://github.com/madotha/handlebreaks/wiki/Web-UI), [Command line](https://github.com/madotha/handlebreaks/wiki/Command-Line), [Scanning](https://github.com/madotha/handlebreaks/wiki/Scanning), [Replacing originals](https://github.com/madotha/handlebreaks/wiki/Replacing-Originals) (and connecting Plex), [Restarts and offline shares](https://github.com/madotha/handlebreaks/wiki/Restarts-and-Offline-Shares)
 - **Reference:** [Configuration](https://github.com/madotha/handlebreaks/wiki/Configuration), [Shares](https://github.com/madotha/handlebreaks/wiki/Shares), [Presets](https://github.com/madotha/handlebreaks/wiki/Presets), [Files and data](https://github.com/madotha/handlebreaks/wiki/Files-and-Data)
 - **Maintenance:** [Updating](https://github.com/madotha/handlebreaks/wiki/Updating), [Security](https://github.com/madotha/handlebreaks/wiki/Security), [Troubleshooting](https://github.com/madotha/handlebreaks/wiki/Troubleshooting), [Uninstalling](https://github.com/madotha/handlebreaks/wiki/Uninstalling)

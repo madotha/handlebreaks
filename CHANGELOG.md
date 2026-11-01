@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.21.1] - 2026-11-01
+
+### Fixed
+- Docker: encoding in Docker Desktop (macOS, and likely Windows) was about 4 times slower than it should be, in every version so far. The x265 of the image (Debian's before 3.21, the own build since) was built with NUMA support and, on kernels without NUMA such as Docker Desktop's VM, ran without its thread pool, so it used only a few cores. HandBrakeCLI is now built without NUMA, and the image workflow checks that x265 encodes with a thread pool. Measurements: [Performance](https://github.com/madotha/handlebreaks/wiki/Performance).
+
 ## [3.21.0] - 2026-10-30
 
 ### Added
