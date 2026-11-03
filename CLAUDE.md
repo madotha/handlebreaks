@@ -22,6 +22,7 @@ The repo is published on GitHub (`git@github.com:madotha/handlebreaks.git`, MIT 
   - MINOR: new backward-compatible features, subcommands or options.
   - PATCH: bug fixes and small adjustments, including changes to filters or presets that don't change the behaviour of the interface.
 - Every user-visible change gets an entry under `## [Unreleased]` in `CHANGELOG.md` ([Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format: Added, Changed, Deprecated, Removed, Fixed, Security). Pure doc or repo housekeeping doesn't need one.
+- Before a release, the user tests it: develop on a branch (not `main`), build a local image from it (`docker compose -f docker-compose.yml -f docker-compose.build.yml … up -d --build`, plus the overrides the install uses) and run it in place of the published one, so the user tries the changes with real data and in their browsers. Release only after their OK; fixes go into the same branch and get tested again. Changes to stored data (database, file formats, queue: anything MAJOR) are tested in a separate instance with a copy of the data (own `CONTAINER_NAME`, `-p <name>`, data folder), so a rejected version leaves nothing behind. After the release the install switches back to the published image (`pull` + `up -d`).
 - To release:
   1. Bump `__version__`.
   2. Rename `[Unreleased]` to `[X.Y.Z] - YYYY-MM-DD` and add a fresh empty `[Unreleased]` section.
