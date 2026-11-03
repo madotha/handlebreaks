@@ -3,15 +3,81 @@
 // (the server expands it), so files inside it don't need to be loaded.
 (function () {
   const cancelUrl = document.currentScript.dataset.cancelUrl;
-  // "Added: custom range…" shows the two date fields
-  const addedSelect = document.querySelector("[data-added-select]");
-  if (addedSelect) {
-    addedSelect.addEventListener("change", () => {
-      document.querySelector("[data-date-range]").hidden = addedSelect.value !== "custom";
+  // Filter panel (left of the tree; a drawer on phones). On wider screens every click
+  // applies at once; in the drawer "Show files" applies all changes together.
+  const layout = document.querySelector("[data-files-layout]");
+  const filterForm = document.querySelector("[data-filter-form]");
+  const range = document.querySelector("[data-date-range]");
+  const phone = matchMedia("(max-width: 720px)");
+  if (layout && filterForm) {
+    const panel = layout.querySelector("[data-filter-panel]");
+    const toggle = document.querySelector("[data-filter-toggle]");
+    const backdrop = layout.querySelector("[data-filter-backdrop]");
+    const datesSet = () => [...range.querySelectorAll('input[type="date"]')].some((i) => i.value);
+    const apply = () => {
+      sessionStorage.setItem("files:filter-scroll", panel.scrollTop);
+      filterForm.requestSubmit();
+    };
+    filterForm.addEventListener("change", (e) => {
+      const t = e.target;
+      if (t.name === "added") range.hidden = t.value !== "custom";
+      if (phone.matches || t.type === "search") return;
+      if (t.type === "date" || (t.name === "added" && t.value === "custom")) {
+        // a custom range applies once both dates are set, or with "Show files" for an open end
+        const dates = [...range.querySelectorAll('input[type="date"]')];
+        if (dates.every((i) => i.value)) apply();
+        else {
+          filterForm.classList.add("fp-pending");
+          if (t.name === "added") dates[0].focus();
+        }
+        return;
+      }
+      apply();
     });
+    // Leave empty fields out of the URL, and the dates unless the custom range is chosen
+    filterForm.addEventListener("formdata", (e) => {
+      const data = e.formData;
+      const custom = data.get("added") === "custom";
+      ["q", "added", "from", "to"].forEach((name) => {
+        if (!data.get(name) || (!custom && (name === "from" || name === "to"))) data.delete(name);
+      });
+    });
+    const saved = sessionStorage.getItem("files:filter-scroll");
+    if (saved) { panel.scrollTop = +saved; sessionStorage.removeItem("files:filter-scroll"); }
+
+    const setOpen = (open) => {           // phones: the drawer
+      layout.classList.toggle("fp-open", open);
+      backdrop.hidden = !open;
+      document.documentElement.classList.toggle("fp-lock", open);
+      toggle.setAttribute("aria-expanded", open);
+      if (open) panel.querySelector("input, button").focus();
+      else toggle.focus();
+    };
+    const sync = () => toggle.setAttribute("aria-expanded",
+      phone.matches ? layout.classList.contains("fp-open") : !layout.classList.contains("fp-collapsed"));
+    toggle.addEventListener("click", () => {
+      if (phone.matches) { setOpen(!layout.classList.contains("fp-open")); return; }
+      const hidden = layout.classList.toggle("fp-collapsed");
+      localStorage.setItem("files:filters", hidden ? "hidden" : "shown");
+      sync();
+    });
+    panel.querySelector("[data-filter-close]").addEventListener("click", () => {
+      if (phone.matches) setOpen(false);
+      else toggle.click();
+    });
+    backdrop.addEventListener("click", () => setOpen(false));
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && layout.classList.contains("fp-open")) setOpen(false);
+    });
+    phone.addEventListener("change", () => {
+      if (!phone.matches && layout.classList.contains("fp-open")) setOpen(false);
+      const choice = localStorage.getItem("files:filters");
+      layout.classList.toggle("fp-collapsed", !phone.matches && (choice === "hidden" || (!choice && innerWidth < 1440)));
+      sync();
+    });
+    sync();
   }
   // The date pickers: no future dates, "from" never after "to"; a click anywhere in a field opens its picker
-  const range = document.querySelector("[data-date-range]");
   if (range) {
     const [from, to] = range.querySelectorAll('input[type="date"]');
     const now = new Date();

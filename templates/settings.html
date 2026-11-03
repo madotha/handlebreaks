@@ -148,6 +148,7 @@
       </div>
       {% endif %}
     {% endfor %}
+    {% if section == 'files' %}{% include "_files_settings.html" %}{% endif %}
     {% if plex_status %}<p class="flash {{ 'ok' if plex_status[0] else 'error' }}">{{ plex_status[1] }}</p>{% endif %}
     {% if section == 'encoding' %}<p class="hint"><a href="{{ url_for('presets_page') }}">Manage presets</a></p>{% endif %}
     <button>Save</button>

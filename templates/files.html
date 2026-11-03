@@ -27,42 +27,82 @@
   {% if unscanned %}<p class="flash info">Not scanned yet: {{ unscanned|join(', ') }}. Start their initial scan under <a href="{{ url_for('settings', section='library') }}">Settings → Library</a>, or scan all shares.</p>{% endif %}
   {% if not ffprobe %}<p class="flash info">ffprobe is not installed. Codec, resolution and bitrate stay empty until ffmpeg is installed.</p>{% endif %}
 
-  <form class="filters" method="get">
-    <input type="search" name="q" value="{{ q }}" placeholder="Search name or folder" aria-label="Search">
-    <details class="multi">
-      <summary>{{ codec_summary }}</summary>
-      <div class="multi-menu">
-        {% for key, label, n in codec_groups if n %}
-          <label><input type="checkbox" name="codec" value="{{ key }}" {% if key in codec %}checked{% endif %}>
-            <span class="codec codec-{{ key.split(':')[1] }}">{{ label }}</span> <span class="muted">{{ n|count }}</span></label>
-        {% endfor %}
-        <hr>
-        {% for c, n in codecs %}
-          <label><input type="checkbox" name="codec" value="{{ c }}" {% if c in codec %}checked{% endif %}>
-            <span class="codec codec-{{ codec_class(c) }}">{{ c|codec_name }}</span> <span class="muted">{{ n|count }}</span></label>
-        {% endfor %}
+  <div class="files-layout" data-files-layout>
+  <script>{# hidden: as last chosen; without a choice below 1440 px, where the panel would squeeze the table (also in files.js) #}
+    (function () { const v = localStorage.getItem("files:filters");
+      if (matchMedia("(min-width: 721px)").matches && (v === "hidden" || (!v && innerWidth < 1440))) document.querySelector("[data-files-layout]").classList.add("fp-collapsed"); })();</script>
+  <aside class="filter-panel" id="filter-panel" data-filter-panel aria-label="Filters">
+    <form id="filter-form" class="filter-form" method="get" action="{{ url_for('files') }}" data-filter-form>
+      <input type="hidden" name="f" value="1">
+      {% for k, v in sort.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}{# keep the column sort #}
+      <div class="fp-head">
+        <h2>Filters</h2>
+        <button type="button" class="icon-btn" data-filter-close aria-label="Close filters" data-tip="Close">{{ icon('close') }}</button>
       </div>
-    </details>
-    <select name="status" aria-label="Status">
-      <option value="">All statuses</option>
-      {% for s, label in status_labels.items() if statuses.get(s) %}<option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ label }} ({{ statuses[s]|count }})</option>{% endfor %}
-    </select>
-    <select name="added" aria-label="Date added" data-added-select>
-      <option value="">Added: any time</option>
-      {% for key, (label, _) in added_ranges.items() %}<option value="{{ key }}" {% if key == added %}selected{% endif %}>Added: {{ label|lower if key != 'custom' else 'custom range…' }}</option>{% endfor %}
-    </select>
-    <span class="date-range" data-date-range {% if added != 'custom' %}hidden{% endif %}>
-      <input type="date" name="from" value="{{ date_from }}" aria-label="Added from" title="Added from (this day is included)">
-      <span class="muted">to</span>
-      <input type="date" name="to" value="{{ date_to }}" aria-label="Added until" title="Added until (this day is included)">
-    </span>
-    {% for k, v in sort.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}{# keep the column sort #}
-    <button>Filter</button>
-    {% if filtered or sort %}<a href="{{ url_for('files', sort='none') }}">Reset</a>{% endif %}
-  </form>
-  {% if added_error %}<p class="flash error">{{ added_error }}</p>{% endif %}
-  <p class="result-line"><span class="muted">{{ shown|count }} of {{ total|count }} files{% if filtered %} match{% endif %}</span> <span class="codec codec-good">optimized</span> <span class="codec codec-other">other codec</span></p>
-
+      <fieldset class="fp-group">
+        <legend>Codec</legend>
+        {% for key, label in codec_groups.items() %}
+          <label class="fp-opt"><input type="checkbox" name="codec" value="{{ key }}" {% if key in codec %}checked{% endif %}>
+            <span class="dot dot-{{ key.split(':')[1] }}" aria-hidden="true"></span><span class="fp-label">{{ label }}</span><span class="fp-n">{{ facets.groups[key]|count }}</span></label>
+        {% endfor %}
+        {% if facets.unknown or 'unknown' in codec %}
+          <label class="fp-opt"><input type="checkbox" name="codec" value="unknown" {% if 'unknown' in codec %}checked{% endif %}>
+            <span class="dot dot-unknown" aria-hidden="true"></span><span class="fp-label">Not probed</span><span class="fp-n">{{ facets.unknown|count }}</span></label>
+        {% endif %}
+        {% set singles = facets.codecs %}
+        {% if singles %}
+          <details class="fp-more" {% if codec|reject('in', ['group:good', 'group:other', 'unknown'])|list %}open{% endif %}>
+            <summary>Single codecs <span class="muted">{{ singles|length }}</span></summary>
+            {% for c, n in singles %}
+              <label class="fp-opt"><input type="checkbox" name="codec" value="{{ c }}" {% if c in codec %}checked{% endif %}>
+                <span class="dot dot-{{ codec_class(c) }}" aria-hidden="true"></span><span class="fp-label">{{ c|codec_name }}</span><span class="fp-n">{{ n|count }}</span></label>
+            {% endfor %}
+          </details>
+        {% endif %}
+      </fieldset>
+      <fieldset class="fp-group">
+        <legend>Status</legend>
+        {% for s, label in status_labels.items() if facets.statuses.get(s) or s in status %}
+          <label class="fp-opt"><input type="checkbox" name="status" value="{{ s }}" {% if s in status %}checked{% endif %}>
+            <span class="fp-label">{{ label }}</span><span class="fp-n">{{ facets.statuses.get(s, 0)|count }}</span></label>
+        {% endfor %}
+      </fieldset>
+      <fieldset class="fp-group">
+        <legend>Added</legend>
+        <label class="fp-opt"><input type="radio" name="added" value="" {% if not added %}checked{% endif %}>
+          <span class="fp-label">Any time</span><span class="fp-n">{{ facets.added_any|count }}</span></label>
+        {% for spec, label in added_ranges %}
+          <label class="fp-opt"><input type="radio" name="added" value="{{ spec }}" {% if spec == added %}checked{% endif %}>
+            <span class="fp-label">{{ label }}</span><span class="fp-n">{{ facets.added.get(spec, 0)|count }}</span></label>
+        {% endfor %}
+        <label class="fp-opt"><input type="radio" name="added" value="custom" data-added-custom {% if added == 'custom' %}checked{% endif %}>
+          <span class="fp-label">Custom range…</span>{% if added == 'custom' %}<span class="fp-n">{{ shown|count }}</span>{% endif %}</label>
+        <div class="date-range" data-date-range {% if added != 'custom' %}hidden{% endif %}>
+          <label>From <input type="date" name="from" value="{{ date_from }}" title="Added from (this day is included)"></label>
+          <label>To <input type="date" name="to" value="{{ date_to }}" title="Added until (this day is included)"></label>
+        </div>
+        {% if added_error %}<p class="flash error">{{ added_error }}</p>{% endif %}
+        <a class="fp-edit small" href="{{ url_for('settings', section='files') }}">Edit date filters and defaults</a>
+      </fieldset>
+      <div class="fp-foot">
+        <button class="fp-apply" data-filter-apply>Show files</button>
+        <noscript><button>Filter</button></noscript>
+        {% if has_defaults and not at_defaults %}<a href="{{ url_for('files', sort='none') }}" title="The filters chosen under Settings → Files page">Reset to default</a>{% endif %}
+        {% if filtered %}<a href="{{ url_for('files', f=1) }}">Clear all</a>{% endif %}
+      </div>
+    </form>
+  </aside>
+  <div class="filter-backdrop" data-filter-backdrop hidden></div>
+  <div class="files-main">
+  <div class="files-toolbar">
+    <button type="button" class="secondary filter-toggle" data-filter-toggle aria-controls="filter-panel" aria-expanded="true">{{ icon('filter') }}<span>Filters</span>{% if chips %}<span class="badge">{{ chips|length }}</span>{% endif %}</button>
+    <input type="search" name="q" form="filter-form" value="{{ q }}" placeholder="Search name or folder" aria-label="Search" enterkeyhint="search">
+  </div>
+  <div class="result-line">
+    <span class="muted">{{ shown|count }} of {{ total|count }} files{% if filtered %} match{% endif %}{% if filtered and at_defaults %} (default filters){% endif %}</span>
+    {% for label, url in chips %}<a class="filter-chip" href="{{ url }}" aria-label="Remove filter: {{ label }}" title="Remove this filter">{{ label }}<span aria-hidden="true">×</span></a>{% endfor %}
+    {% if chips|length > 1 %}<a class="small" href="{{ url_for('files', f=1) }}">Clear all</a>{% endif %}
+  </div>
   <form id="queue-form" method="post" action="{{ url_for('queue') }}" data-folder-url="{{ url_for('files_folder') }}" data-folder-query="{{ folder_query }}" data-version="{{ folder_version }}">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <input type="hidden" name="next" value="{{ request.full_path }}">
@@ -98,6 +138,8 @@
     </div>
     <noscript><p class="flash info">Opening folders needs JavaScript.</p></noscript>
   </form>
+  </div>{# .files-main #}
+  </div>{# .files-layout #}
   {% include "_replace_dialog.html" %}
   {% include "_bulk_replace_dialog.html" %}
   {% set delete_json = true %}{% include "_delete_encode_dialog.html" %}

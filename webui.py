@@ -46,6 +46,7 @@ from pathlib import Path
 
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, session, url_for
 from markupsafe import Markup, escape
+from werkzeug.datastructures import MultiDict
 
 import encoding as enc
 import funfacts
@@ -96,6 +97,7 @@ SETTINGS = {
         ("DATE_FORMAT", "Date format", "date_format",
          "How dates are shown everywhere in the web UI, always followed by the time (24 h). Default YYYY-MM-DD."),
     ]),
+    "files": ("Files page", []),                # default filters and date filters (files_settings_*)
     "notifications": ("Notifications", [
         ("NOTIFY_SECONDS", "Hide notifications after (seconds)", "number",
          "Notifications pop up in the corner of every page of the web UI that is open. "
@@ -966,20 +968,91 @@ def natural(name):
     return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
 
 
-CODEC_GROUPS = {"group:good": "All optimized codecs", "group:other": "All other codecs"}
+CODEC_GROUPS = {"group:good": "Optimized codecs", "group:other": "Other codecs"}
 
 
-def codec_summary(selected):
-    """Label of the codec filter button: "All codecs", one name, or "N codecs"."""
-    if not selected:
-        return "All codecs"
-    if len(selected) == 1:
-        return CODEC_GROUPS.get(selected[0]) or codec_name(selected[0])
-    return f"{len(selected)} codecs"
+# Date added filters: each is a range "newer than N and/or older than M", written as a spec
+# "<newer>-<older>" with a number and a unit each ("24h" = newer than 24 hours, "3m-1m" = 1 to
+# 3 months ago, "-1y" = older than a year). The spec is the value in URLs, so links keep working
+# when a filter is renamed or deleted. The list (ADDED_FILTERS in config.env, "label=spec"
+# pairs separated by ";") is edited under Settings -> Files page; "custom" is a date range.
+ADDED_UNITS = {"h": ("hour", "hours"), "d": ("day", "days"), "w": ("week", "weeks"),
+               "m": ("month", "months"), "y": ("year", "years")}
+DEFAULT_ADDED_FILTERS = "Last 24 hours=24h;Last 7 days=7d;Last 30 days=30d"
+SPEC_RE = re.compile(r"(?:(\d{1,4})([hdwmy]))?(?:-(?:(\d{1,4})([hdwmy]))?)?")
 
 
-ADDED_RANGES = {"24h": ("Last 24 hours", 1), "7d": ("Last 7 days", 7), "30d": ("Last 30 days", 30),
-                "custom": ("Custom range", None)}
+def parse_spec(spec):
+    """"3m-1m" -> ((3, "m"), (1, "m")); a missing side is None. None if invalid, empty or
+    the newer bound isn't before the older one."""
+    m = SPEC_RE.fullmatch((spec or "").strip())
+    if not m or not (m.group(1) or m.group(3)):
+        return None
+    newer = (int(m.group(1)), m.group(2)) if m.group(1) else None
+    older = (int(m.group(3)), m.group(4)) if m.group(3) else None
+    if (newer and not newer[0]) or (older and not older[0]):
+        return None
+    if newer and older and ago(*newer) >= ago(*older):
+        return None
+    return newer, older
+
+
+def make_spec(newer, older):
+    """Canonical spec of (n, unit) pairs: "24h", "-1y", "3m-1m"."""
+    part = lambda b: f"{b[0]}{b[1]}" if b else ""
+    return part(newer) + (f"-{part(older)}" if older else "")
+
+
+def ago(n, unit, now=None):
+    """The moment n units before now (months and years by the calendar)."""
+    now = now or datetime.now()
+    if unit in ("m", "y"):
+        months = now.year * 12 + now.month - 1 - (n * 12 if unit == "y" else n)
+        year, month = divmod(months, 12)
+        month += 1
+        last = (datetime(year + month // 12, month % 12 + 1, 1) - timedelta(days=1)).day
+        return now.replace(year=year, month=month, day=min(now.day, last))
+    return now - timedelta(hours=n) * {"h": 1, "d": 24, "w": 168}[unit]
+
+
+def amount(b):
+    return f"{b[0]} {ADDED_UNITS[b[1]][b[0] != 1]}"
+
+
+def spec_label(spec):
+    """Generated label of a spec: "Last 7 days", "1 month to 3 months ago", "Older than 1 year"."""
+    newer, older = parse_spec(spec) or (None, None)
+    if newer and older:
+        return (f"{older[0]} to {amount(newer)} ago" if older[1] == newer[1]
+                else f"{amount(older)} to {amount(newer)} ago")
+    if newer:
+        return f"Last {amount(newer)}" if newer[0] != 1 else f"Last {ADDED_UNITS[newer[1]][0]}"
+    if older:
+        return f"Older than {amount(older)}"
+    return spec
+
+
+def added_filters(value=None):
+    """The configured date added filters as [(spec, label)], in their order; invalid entries
+    are left out. value: an ADDED_FILTERS string (default: config.env, missing = the built-in
+    three, empty = none)."""
+    if value is None:
+        value = enc.CONFIG.get("ADDED_FILTERS")
+        value = DEFAULT_ADDED_FILTERS if value is None else value
+    out = {}
+    for item in value.split(";"):
+        label, _, spec = item.rpartition("=")
+        parsed = parse_spec(spec)
+        if parsed:
+            spec = make_spec(*parsed)
+            out.setdefault(spec, label.strip() or spec_label(spec))
+    return list(out.items())
+
+
+def added_label(spec):
+    """Label of a spec: the configured one, else a generated one (links from notifications,
+    or a filter that was renamed meanwhile)."""
+    return dict(added_filters()).get(spec) or spec_label(spec)
 
 
 def parse_date(text):
@@ -993,25 +1066,48 @@ def parse_date(text):
     return None
 
 
+FILTER_KEYS = ("q", "codec", "status", "added")
+
+
 def file_filters(src):
-    """Filter values from a request (query string or form). codec is a list: codec
-    names, "unknown" (not probed) and the groups in CODEC_GROUPS can be combined.
-    added is one of ADDED_RANGES; "custom" uses from/to (yyyy-mm-dd, or dd.mm.yyyy from
-    older links, either may be empty); they are kept as yyyy-mm-dd, invalid dates are
-    left out (see added_problem)."""
-    filters = {k: src.get(k, "").strip() for k in ("q", "status") if src.get(k, "").strip()}
-    codecs = [c.strip() for c in src.getlist("codec") if c.strip()]
-    if codecs:
-        filters["codec"] = codecs
-    added = src.get("added", "")
-    if added in ADDED_RANGES:
-        if added != "custom":
-            filters["added"] = added
-        else:
-            dates = {k: parse_date(src.get(k, "")).strftime("%Y-%m-%d") for k in ("from", "to") if parse_date(src.get(k, ""))}
-            if dates:
-                filters.update(added="custom", **dates)
+    """Filter values from a request (query string or form). codec and status are lists: codec
+    names, "unknown" (not probed) and the groups in CODEC_GROUPS can be combined, and a file
+    matches any of the chosen statuses. added is a spec (see parse_spec, normalized) or
+    "custom" with from/to (yyyy-mm-dd, or dd.mm.yyyy from older links, either may be empty);
+    they are kept as yyyy-mm-dd, invalid dates are left out (see added_problem)."""
+    filters = {"q": src.get("q", "").strip()} if src.get("q", "").strip() else {}
+    for key in ("codec", "status"):
+        values = list(dict.fromkeys(v.strip() for v in src.getlist(key) if v.strip()))
+        if values:
+            filters[key] = values
+    added = src.get("added", "").strip()
+    if added == "custom":
+        dates = {k: parse_date(src.get(k, "")).strftime("%Y-%m-%d") for k in ("from", "to") if parse_date(src.get(k, ""))}
+        if dates:
+            filters.update(added="custom", **dates)
+    elif parse_spec(added):
+        filters["added"] = make_spec(*parse_spec(added))
     return filters
+
+
+def same_filters(a, b):
+    """True if two filter dicts select the same files (the order of codecs and statuses doesn't matter)."""
+    norm = lambda f: {k: sorted(v) if isinstance(v, list) else v for k, v in f.items()}
+    return norm(a) == norm(b)
+
+
+def default_filters():
+    """The Files page's default filters (FILES_DEFAULT_FILTERS in config.env, a query string
+    such as "codec=group:other&added=24h"); {} = all files."""
+    return file_filters(MultiDict(urllib.parse.parse_qsl(enc.CONFIG.get("FILES_DEFAULT_FILTERS") or "")))
+
+
+def page_filters(src):
+    """Filters of a Files page request: those in the URL, or the defaults if it sets none.
+    f=1 marks filters chosen on the page, so "all files" isn't replaced by the defaults."""
+    if "f" in src or any(k in src for k in FILTER_KEYS):
+        return file_filters(src)
+    return default_filters()
 
 
 def added_problem(src):
@@ -1032,12 +1128,14 @@ def added_problem(src):
 def added_bounds(filters):
     """(from, to) as epoch seconds for the date added filter (either may be None), or None."""
     added = filters.get("added")
-    if added in ("24h", "7d", "30d"):
-        return time.time() - ADDED_RANGES[added][1] * 86400, None
     if added == "custom":
         lo, hi = parse_date(filters.get("from", "")), parse_date(filters.get("to", ""))
         return (lo.timestamp() if lo else None,
                 (hi + timedelta(days=1)).timestamp() if hi else None)   # "to" includes that whole day
+    parsed = parse_spec(added) if added else None
+    if parsed:
+        newer, older = parsed
+        return (ago(*newer).timestamp() if newer else None, ago(*older).timestamp() if older else None)
     return None
 
 
@@ -1070,8 +1168,8 @@ def filter_sql(filters, path=""):
             params += good
         where.append("(" + " OR ".join(alts) + ")")
     if filters.get("status"):
-        where.append("status = ?")
-        params.append(filters["status"])
+        where.append(f"status IN ({', '.join('?' * len(filters['status']))})")
+        params += filters["status"]
     if path:                                    # all keys below path/ ("0" sorts right after "/")
         where.append("key >= ? AND key < ?")
         params += [path + "/", path + "0"]
@@ -1266,8 +1364,66 @@ def level_context(path, filters, queued, offset=0, sort=None, dir_offset=0):
 
 def sort_links(filters, sort):
     """Column header links: field -> (URL of the Files page with the next sort state, arrow or "")."""
-    return {field: (url_for("files", **filters, **next_sort(field, sort)), sort_arrow(field, sort))
+    return {field: (url_for("files", f=1, **filters, **next_sort(field, sort)), sort_arrow(field, sort))
             for field in SORT_FIELDS}
+
+
+def facet_counts(filters):
+    """Numbers of the filter panel: files per codec, status and date added filter, each
+    counted with the other filters applied, so a number says how many files that choice shows."""
+    def without(key):
+        drop = {key, "from", "to"} if key == "added" else {key}
+        return filter_sql({k: v for k, v in filters.items() if k not in drop})
+    specs = [spec for spec, _ in added_filters()]
+    if filters.get("added") not in (None, "custom") and filters["added"] not in specs:
+        specs.append(filters["added"])
+    sums, sum_params = [], []
+    for spec in specs:
+        lo, hi = added_bounds({"added": spec})
+        sums.append("COALESCE(SUM(added >= ? AND added < ?), 0)")
+        sum_params += [lo if lo is not None else -1e18, hi if hi is not None else 1e18]
+    with closing(db()) as con:
+        clause, params = without("codec")
+        codecs = con.execute(f"SELECT COALESCE(video_codec, ?), COUNT(*) FROM files{clause} GROUP BY 1 ORDER BY 2 DESC",
+                             [UNKNOWN_CODEC] + params).fetchall()
+        clause, params = without("status")
+        statuses = dict(con.execute(f"SELECT status, COUNT(*) FROM files{clause} GROUP BY status", params).fetchall())
+        clause, params = without("added")
+        row = con.execute(f"SELECT {', '.join(['COUNT(*)'] + sums)} FROM files{clause}", sum_params + params).fetchone()
+    groups = {k: sum(n for c, n in codecs if codec_class(c) == k.split(":")[1]) for k in CODEC_GROUPS}
+    singles = [(c, n) for c, n in codecs if c != UNKNOWN_CODEC]
+    singles += [(c, 0) for c in filters.get("codec", []) if c not in CODEC_GROUPS and c != UNKNOWN_CODEC
+                and c not in dict(singles)]      # chosen, but no file matches the other filters
+    return {"codecs": singles, "unknown": dict(codecs).get(UNKNOWN_CODEC, 0),
+            "groups": groups, "statuses": statuses, "added_any": row[0], "added": dict(zip(specs, row[1:]))}
+
+
+def filter_label(key, value, filters):
+    """How an active filter value is shown in the chips above the list."""
+    if key == "q":
+        return f"“{value}”"
+    if key == "codec":
+        return CODEC_GROUPS.get(value) or codec_name(value)
+    if key == "status":
+        return enc.STATUS_LABELS.get(value, value)
+    if value == "custom":
+        shown = lambda d: parse_date(d).strftime(DATE_FORMATS[date_format()]) if d else ""
+        lo, hi = shown(filters.get("from")), shown(filters.get("to"))
+        return f"Added {lo} to {hi}" if lo and hi else f"Added since {lo}" if lo else f"Added until {hi}"
+    return f"Added: {added_label(value)[0].lower()}{added_label(value)[1:]}"
+
+
+def filter_chips(filters):
+    """[(label, URL of the page without that value)] for every active filter value."""
+    chips = []
+    for key in FILTER_KEYS:
+        values = filters.get(key)
+        for value in (values if isinstance(values, list) else [values] if values else []):
+            rest = {k: v for k, v in filters.items() if k != key and not (key == "added" and k in ("from", "to"))}
+            if isinstance(values, list) and len(values) > 1:
+                rest[key] = [v for v in values if v != value]
+            chips.append((filter_label(key, value, filters), url_for("files", f=1, **rest)))
+    return chips
 
 
 def library_summary():
@@ -1297,7 +1453,7 @@ def sort_state(src, name, fields=None):
 
 @app.route("/files")
 def files():
-    filters = file_filters(request.args)
+    filters = page_filters(request.args)
     sort = sort_state(request.args, "files")
     empty = render_template("files.html", total=0, filters=filters, sort=sort)
     if g.config_error:
@@ -1320,17 +1476,20 @@ def files():
     else:                                       # the unfiltered top level is the same until data changes
         level = cached(("top", tuple(sorted(sort.items())), hash(frozenset(queued))), (enc.db_version(), activity_version()),
                        lambda: level_context("", filters, queued, sort=sort))
+    facets = facet_counts(filters)
+    ranges = added_filters()
+    if filters.get("added") not in (None, "custom") and filters["added"] not in dict(ranges):
+        ranges.append((filters["added"], added_label(filters["added"])))   # e.g. from a notification's link
+    defaults = default_filters()
     return render_template(
         "files.html", total=total, total_size=total_size, shown=shown,
-        optimized_share=opt_size / total_size * 100 if total_size else 0, codecs=codecs,
-        statuses=statuses, q=filters.get("q", ""), codec=filters.get("codec", []),
-        status=filters.get("status", ""), filtered=bool(filters),
-        added=filters.get("added", request.args.get("added", "") if request.args.get("added") in ADDED_RANGES else ""),
+        optimized_share=opt_size / total_size * 100 if total_size else 0,
+        q=filters.get("q", ""), codec=filters.get("codec", []), status=filters.get("status", []),
+        filtered=bool(filters), facets=facets, chips=filter_chips(filters),
+        added=filters.get("added", "custom" if request.args.get("added") == "custom" else ""),
         date_from=filters.get("from", ""), date_to=filters.get("to", ""),
-        added_ranges=ADDED_RANGES, added_error=added_problem(request.args),
-        codec_groups=[(k, label, sum(n for c, n in codecs if codec_class(c) == k.split(":")[1]))
-                      for k, label in CODEC_GROUPS.items()],
-        codec_summary=codec_summary(filters.get("codec", [])),
+        added_ranges=ranges, added_error=added_problem(request.args),
+        has_defaults=bool(defaults), at_defaults=same_filters(filters, defaults), codec_groups=CODEC_GROUPS,
         last_scan=enc.last_scan(), ffprobe=bool(enc.FFPROBE), preset_list=preset_choices(),
         unscanned=unscanned, folder_version=version, **level)
 
@@ -2425,6 +2584,87 @@ def preset_delete(pid):
     return redirect(url_for("presets_page"))
 
 
+def range_row(label="", spec="", orig=None):
+    """A row of the date filter editor: label, newer/older amount and unit, the spec it had."""
+    newer, older = parse_spec(spec) or (None, None)
+    return {"label": label, "newer_n": newer[0] if newer else "", "newer_u": newer[1] if newer else "d",
+            "older_n": older[0] if older else "", "older_u": older[1] if older else "d",
+            "orig": spec if orig is None else orig, "error": ""}
+
+
+def files_settings_context(rows=None, form=None):
+    """What Settings -> Files page shows: the default filters with their choices and the
+    date filter rows (rows/form: the submitted ones, when saving failed)."""
+    defaults = file_filters(MultiDict([(k[2:], v) for k, v in form.items(multi=True) if k.startswith("d_")])) \
+        if form is not None else default_filters()
+    codecs = library_summary()[3] if not g.config_error else []
+    singles = [c for c, _ in codecs if c != UNKNOWN_CODEC]
+    singles += [c for c in defaults.get("codec", []) if c not in CODEC_GROUPS and c != UNKNOWN_CODEC and c not in singles]
+    ranges = added_filters()
+    if defaults.get("added") and defaults["added"] not in dict(ranges):
+        ranges.append((defaults["added"], added_label(defaults["added"])))
+    return {"defaults": defaults, "codec_groups": [("group:good", "Optimized codecs", "good"), ("group:other", "Other codecs", "other"),
+                                                   (UNKNOWN_CODEC, "Not probed", "unknown")],
+            "codecs": singles, "statuses": enc.STATUS_LABELS, "ranges": ranges, "units": ADDED_UNITS,
+            "rows": rows if rows is not None else [range_row(label, spec) for spec, label in added_filters()]}
+
+
+LABEL_BAD_RE = re.compile(r'[;=]')
+
+
+def files_settings_form(form):
+    """Parse and check Settings -> Files page. Returns (config updates, errors, rows)."""
+    rows, errors, specs = [], {}, {}
+    cols = [form.getlist(k) for k in ("r_label", "r_newer_n", "r_newer_u", "r_older_n", "r_older_u", "r_orig")]
+    for label, newer_n, newer_u, older_n, older_u, orig in zip(*cols):
+        label, newer_n, older_n = label.strip(), newer_n.strip(), older_n.strip()
+        row = {"label": label, "newer_n": newer_n, "newer_u": newer_u, "older_n": older_n, "older_u": older_u,
+               "orig": orig, "error": ""}
+        if not (label or newer_n or older_n):
+            continue                            # an empty row (the blank one at the end, or a cleared one)
+        rows.append(row)
+        nums = [n for n in (newer_n, older_n) if n]
+        if any(not re.fullmatch(r"[1-9]\d{0,3}", n) for n in nums):
+            row["error"] = "Enter whole numbers from 1 to 9999."
+        elif not nums:
+            row["error"] = "Enter \u201cnewer than\u201d, \u201colder than\u201d or both."
+        elif newer_u not in ADDED_UNITS or older_u not in ADDED_UNITS:
+            row["error"] = "Choose a unit."
+        else:
+            spec = (f"{newer_n}{newer_u}" if newer_n else "") + (f"-{older_n}{older_u}" if older_n else "")
+            if not parse_spec(spec):
+                row["error"] = ("\u201cNewer than\u201d must be the longer time, e.g. newer than 3 months "
+                                "and older than 1 month.")
+            elif LABEL_BAD_RE.search(label) or FORBIDDEN_RE.search(label):
+                row["error"] = 'Labels can\'t contain ; = " ` \\ or $.'
+            elif len(label) > 40:
+                row["error"] = "Keep the label to 40 characters."
+            else:
+                spec = make_spec(*parse_spec(spec))
+                if spec in specs.values():
+                    row["error"] = "Another filter has the same range."
+                specs[id(row)] = spec
+                row["spec"] = spec
+                row["label"] = label or spec_label(spec)
+        if row["error"]:
+            errors["rows"] = "Some date filters need a fix (see below)."
+    # Default filters; a default date filter follows its row when the range was edited
+    picked = MultiDict([(k[2:], v) for k, v in form.items(multi=True) if k.startswith("d_")])
+    added = picked.get("added", "")
+    renamed = {r["orig"]: r.get("spec") for r in rows if r["orig"]}
+    if added in renamed:
+        added = renamed[added] or ""
+    elif added and added not in renamed.values():
+        added = ""                              # its filter was deleted
+    picked.setlist("added", [added] if added else [])
+    defaults = file_filters(picked)
+    query = urllib.parse.urlencode([(k, v) for k in ("codec", "status", "added")
+                                    for v in (defaults.get(k) if isinstance(defaults.get(k), list) else [defaults[k]] if defaults.get(k) else [])])
+    updates = {"ADDED_FILTERS": ";".join(f"{r['label']}={r['spec']}" for r in rows if r.get("spec")),
+               "FILES_DEFAULT_FILTERS": query}
+    return updates, errors, rows
+
+
 @app.route("/settings")
 def settings_index():
     return redirect(url_for("settings", section=next(iter(SETTINGS))))
@@ -2439,7 +2679,14 @@ def settings(section):
     if section == "library":
         fields = library_fields(cfg)
     errors = {}
-    if request.method == "POST":
+    files_rows = None
+    if section == "files" and request.method == "POST":
+        updates, errors, files_rows = files_settings_form(request.form)
+        if not errors:
+            enc.write_config(updates)
+            flash(f"{title}: saved.", "ok")
+            return redirect(url_for("settings", section=section))
+    elif request.method == "POST":
         updates, removed = {}, []
         valid_presets = {pid for pid, _ in preset_choices()}
         for key, label, typ, _ in fields:
@@ -2487,6 +2734,8 @@ def settings(section):
         shares=share_list(cfg) if section == "library" else [], open_share=request.args.get("open", ""),
         next_share=enc.next_share_number() if section == "library" else None,
         plex_status=plex_status(cfg) if section == "plex" else None,
+        files_settings=files_settings_context(files_rows, request.form if files_rows is not None else None)
+        if section == "files" else None,
         config_file=enc.CONFIG_FILE, config_exists=enc.CONFIG_FILE.exists(),
         env_overrides={k: os.environ[k] for k, _, _, _ in fields if k in ENV_OVERRIDES and k in os.environ})
 

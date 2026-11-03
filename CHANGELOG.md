@@ -7,6 +7,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.22.0] - 2026-11-03
+
+### Added
+- Files page: default filters. Under Settings → Files page you choose the codecs, statuses and date filter the Files page starts with, e.g. "Other codecs" and "Last 24 hours" (`FILES_DEFAULT_FILTERS`). **Reset to default** returns to them, **Clear all** shows every file.
+- Own date filters: Settings → Files page lists the "Added" choices with editable labels and ranges, newer than and/or older than an amount of hours, days, weeks, months or years, e.g. "1 to 3 months ago" or "Older than 1 year" (`ADDED_FILTERS`; by default the last 24 hours, 7 days and 30 days as before). The custom date range stays available.
+
+### Changed
+- Files page: the filters are now a panel next to the list instead of dropdowns. Every choice shows how many files it gives and applies with one click; active filters show as removable chips above the list. On wide screens the panel can be hidden, on phones it opens from the side with **Show files**.
+- Files page: several statuses can be selected at once (e.g. offered and awaiting review). Links with a single status keep working.
+
 ## [3.21.1] - 2026-11-01
 
 ### Fixed
