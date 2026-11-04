@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.22.1] - 2026-11-04
+
 ### Changed
 - Files page on phones: a more compact layout, so about three times as many folders and files fit on the screen ([details](https://github.com/madotha/handlebreaks/wiki/Web-UI#files-on-a-phone)).
   - Folders take two lines: the name and size, then the bar, share optimized and counts. The ↻ button shows on open folders.
