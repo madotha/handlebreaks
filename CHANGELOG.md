@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.23.0] - 2026-11-04
+
 ### Added
 - Install Handlebreaks as an app: on iPhone, iPad and Android via **Add to Home Screen**, in Chrome and Edge with the install button ([details](https://github.com/madotha/handlebreaks/wiki/Web-UI#install-it-as-an-app)). It opens full screen on the Status page, with its own icon and shortcuts to Status, Awaiting review and Files. Over `https` it also keeps its styles and scripts and shows its own "isn't reachable" page that reopens the page once the server answers again.
 - Live state on the page tabs: the number of files awaiting review on **Status**, a dot on **Files** while a scan runs, and on phones a ring around the Status icon with the progress of the current encode.
