@@ -121,7 +121,7 @@ If you're unsure, use **B** to try it out, or **A** for the fastest encoding (Do
 <details>
 <summary><b>Set it up with an AI coding agent</b></summary>
 
-If you use an AI coding agent that can run commands on your machine (e.g. Claude Code), you can let it do the setup. Start it in an empty folder and paste this prompt. It asks you for everything that depends on your environment before changing anything:
+If you use an AI coding agent that can run commands on your machine (e.g. Claude Code), you can let it do the setup. Start it in an empty folder and paste this prompt (also on the wiki's [Choose a setup](https://github.com/madotha/handlebreaks/wiki/Choose-a-Setup#set-it-up-with-an-ai-coding-agent) page). It asks you for everything that depends on your environment before changing anything:
 
 > Set up "Handlebreaks" (Plex encoding automation) from `https://github.com/madotha/handlebreaks.git` on this machine. Clone it, and clone its wiki (`https://github.com/madotha/handlebreaks.wiki.git`) next to it. Read the README.md and the wiki pages Choose-a-Setup, Mounting-the-Library, Configuration and the Setup page of the setup we choose, completely, and follow them; don't invent steps that aren't in them.
 >
