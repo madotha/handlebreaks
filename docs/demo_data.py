@@ -10,7 +10,9 @@ Demo data for the README screenshot (docs/screenshot-files.png): a made-up libra
     ENCODING_DATA_DIR=/tmp/demo/data python3 webui.py --port 7980
 
 ffprobe must be on PATH for the web UI (a stub is enough; the demo never scans),
-otherwise the page shows a "ffprobe is not installed" notice.
+otherwise the page shows a "ffprobe is not installed" notice. The script also puts finished
+encodes into the output folder and an encode in progress into the data folder, for the phone
+screenshot (docs/screenshot-phone.png): the Status page at 390 px width, dark mode.
 """
 import random
 import sys
@@ -58,4 +60,16 @@ import sqlite3
 with sqlite3.connect(enc.DB_FILE) as con:
     for p in ("share1", "share2", "share3"):
         con.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (f"share_scan:{p}", "2026-10-24 09:00"))
+# For the phone screenshot (docs/screenshot-phone.png, Status page): a finished encode for
+# every file awaiting review (sparse files, they take no disk space) and an encode in progress
+out = enc.first_existing(enc.ENCODED_CANDIDATES)
+for key, info in infos.items():
+    if info["status"] == "waiting":
+        with open(out / key.rsplit("/", 1)[-1], "wb") as f:
+            f.truncate(int(info["size"] * 0.42))
+logs = enc.DATA_DIR / "logs"
+logs.mkdir(exist_ok=True)
+current = next(k for k in infos if k.startswith("share1/Sintel "))
+(logs / "current.txt").write_text(f"{current}\t3\t9\t{int(LAST_SCAN)}\n")
+(logs / "progress.log").write_text("Encoding: task 1 of 1, 64.20 % (41.80 fps, avg 38.60 fps, ETA 00h07m12s)\r")
 print(len(infos), "demo files")

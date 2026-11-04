@@ -1,4 +1,5 @@
-"""Render the logo files: static/favicon.svg and the app icons in static/icons/.
+"""Render the logo files: static/favicon.svg, the app icons in static/icons/ and the README
+logos docs/logo-light.svg and docs/logo-dark.svg.
 
 The logo is a film frame with two chevrons (amber on dark, or dark on amber). The header uses the
 same shapes as the symbol "logo" in templates/_icons.html; change both together.
@@ -56,6 +57,10 @@ PNGS = [
 
 def main():
     (STATIC / "favicon.svg").write_text(FAVICON + "\n")
+    # README header: GitHub picks the variant for its light or dark mode (<picture>)
+    docs = STATIC.parent / "docs"
+    (docs / "logo-light.svg").write_text(icon(dark=False) + "\n")
+    (docs / "logo-dark.svg").write_text(icon() + "\n")
     with sync_playwright() as p:
         browser = p.chromium.launch()
         for name, size, svg, transparent in PNGS:
@@ -65,7 +70,7 @@ def main():
             page.screenshot(path=str(STATIC / name), omit_background=transparent)
             page.close()
         browser.close()
-    print("wrote favicon.svg and", ", ".join(n for n, *_ in PNGS))
+    print("wrote favicon.svg, docs/logo-*.svg and", ", ".join(n for n, *_ in PNGS))
 
 
 if __name__ == "__main__":
