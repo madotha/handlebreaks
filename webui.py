@@ -956,6 +956,59 @@ def health():
     return "ok"
 
 
+# ─── Installable app (PWA) ────────────────────────────────────────────────────
+# Static URLs carry a version (?v=), so neither the browser nor the service worker keeps old CSS or
+# JS after an update; the newest file time covers local changes without a version bump.
+STATIC_V = enc.__version__ + "-" + format(int(max(f.stat().st_mtime for f in Path(app.static_folder).rglob("*")
+                                                  if f.is_file())), "x")
+APP_COLOR = "#1b1c1f"                           # dark surface: splash screen and the manifest's bar color
+
+
+@app.url_defaults
+def static_version(endpoint, values):
+    if endpoint == "static":
+        values.setdefault("v", STATIC_V)
+
+
+def no_cache(resp):
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.route("/manifest.webmanifest")
+def manifest():
+    def icon(name, size, purpose="any"):
+        return {"src": url_for("static", filename=f"icons/{name}"), "sizes": f"{size}x{size}",
+                "type": "image/png", "purpose": purpose}
+    small = [icon("icon-192.png", 192)]
+    data = {
+        "id": url_for("index"), "name": "Handlebreaks", "short_name": "Handlebreaks",
+        "description": "Re-encode a Plex library to H.265 with HandBrakeCLI",
+        "start_url": url_for("status"), "scope": url_for("index"), "display": "standalone",
+        "background_color": APP_COLOR, "theme_color": APP_COLOR,
+        "icons": [*small, icon("icon-512.png", 512), icon("icon-maskable-512.png", 512, "maskable")],
+        "shortcuts": [{"name": "Status", "url": url_for("status"), "icons": small},
+                      {"name": "Awaiting review", "url": url_for("status", view="review"), "icons": small},
+                      {"name": "Files", "url": url_for("files"), "icons": small}],
+    }
+    return no_cache(Response(json.dumps(data), mimetype="application/manifest+json"))
+
+
+@app.route("/sw.js")
+def service_worker():
+    """The service worker sits at the top so its scope covers every page (also under a proxy's subpath)."""
+    assets = [url_for("static", filename=f) for f in ("style.css", "favicon.svg", "theme.js")]
+    body = render_template("sw.js", cache=f"handlebreaks-{STATIC_V}", offline=url_for("offline"), assets=assets,
+                           static=url_for("static", filename="", v=None))
+    return no_cache(Response(body, mimetype="text/javascript"))
+
+
+@app.route("/offline")
+def offline():
+    """Shown by the service worker when the server can't be reached; it reloads once the server answers."""
+    return render_template("offline.html")
+
+
 @app.route("/")
 def index():
     return redirect(url_for("files"))

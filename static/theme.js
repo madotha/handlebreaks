@@ -14,6 +14,7 @@
     const next = modes[(modes.indexOf(current()) + 1) % modes.length];
     if (next === "auto") delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = next;
+    if (window.themeColor) window.themeColor(next);
     try { if (next === "auto") localStorage.removeItem("theme"); else localStorage.setItem("theme", next); } catch (e) { /* blocked */ }
     show(next);
   });

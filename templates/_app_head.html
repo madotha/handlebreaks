@@ -1,0 +1,22 @@
+{# <head> part shared by every page and the offline page: viewport, colors, theme, app icons #}
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f4f3f0" data-color="#f4f3f0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1b1c1f" data-color="#1b1c1f" media="(prefers-color-scheme: dark)">
+  {# Apply the chosen theme before the first paint, also to the browser's or app's bar (static/theme.js switches it) #}
+  <script>
+    window.themeColor = function (t) {
+      document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
+        m.content = t === "light" ? "#f4f3f0" : t === "dark" ? "#1b1c1f" : m.dataset.color; });
+    };
+    try { var t = localStorage.getItem("theme"); if (t === "light" || t === "dark") { document.documentElement.dataset.theme = t; themeColor(t); } } catch (e) {}
+  </script>
+  <meta name="application-name" content="Handlebreaks">
+  <meta name="apple-mobile-web-app-title" content="Handlebreaks">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="{{ url_for('manifest') }}">
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">

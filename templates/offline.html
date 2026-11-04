@@ -1,0 +1,32 @@
+<!doctype html>
+{# Cached by the service worker (templates/sw.js) and shown instead of the browser's error page while
+   the server can't be reached. It may be shown for any page's address, so reloading opens that page. #}
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+{% include "_app_head.html" %}
+  <title>Not reachable · Handlebreaks</title>
+</head>
+<body>
+  <main class="offline-page">
+    <img class="offline-mark" src="{{ url_for('static', filename='favicon.svg') }}" alt="">
+    <h1>Handlebreaks isn't reachable</h1>
+    <p class="muted">The server doesn't answer. Check that the computer or container running Handlebreaks is on and that
+      this device is on the same network. The page opens by itself once the server is back.</p>
+    <p class="muted small" data-offline-state aria-live="polite">Trying again every few seconds…</p>
+    <button type="button" data-retry>Try again</button>
+  </main>
+  <script>
+    (function () {
+      var health = {{ url_for('health')|tojson }}, state = document.querySelector("[data-offline-state]");
+      function check() {
+        fetch(health, { cache: "no-store" }).then(function (r) { if (!r.ok) throw r; location.reload(); })
+          .catch(function () { state.textContent = "Still not reachable (last try " + new Date().toLocaleTimeString() + ")."; });
+      }
+      setInterval(function () { if (!document.hidden) check(); }, 5000);
+      document.addEventListener("visibilitychange", function () { if (!document.hidden) check(); });
+      document.querySelector("[data-retry]").addEventListener("click", function () { location.reload(); });
+    })();
+  </script>
+</body>
+</html>

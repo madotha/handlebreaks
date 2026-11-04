@@ -6,18 +6,11 @@
 <html lang="en" data-date-format="{{ date_format }}">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="color-scheme" content="light dark">
-  <meta name="theme-color" content="#f4f3f0" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#1b1c1f" media="(prefers-color-scheme: dark)">
-  {# Apply the chosen theme before the first paint (static/theme.js switches it) #}
-  <script>try { var t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
+{% include "_app_head.html" %}
   {% block head %}{% endblock %}
   <title>{% block title %}{% endblock %} · Handlebreaks</title>
-  <meta name="application-name" content="Handlebreaks">
-  <meta name="apple-mobile-web-app-title" content="Handlebreaks">
-  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {# Installed app: keeps the static files and shows a page of its own when the server is unreachable (HTTPS or localhost only) #}
+  <script>if ("serviceWorker" in navigator) navigator.serviceWorker.register({{ url_for('service_worker')|tojson }}).catch(function () {});</script>
 </head>
 <body>
   {{ sprite() }}
@@ -72,5 +65,6 @@
   <script src="{{ url_for('static', filename='time.js') }}"></script>
   <script src="{{ url_for('static', filename='tablesort.js') }}"></script>
   <script src="{{ url_for('static', filename='notify.js') }}"></script>
+  <script src="{{ url_for('static', filename='tabbar.js') }}"></script>
 </body>
 </html>

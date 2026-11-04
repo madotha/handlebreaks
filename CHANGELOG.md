@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- Install Handlebreaks as an app: on iPhone, iPad and Android via **Add to Home Screen**, in Chrome and Edge with the install button ([details](https://github.com/madotha/handlebreaks/wiki/Web-UI#install-it-as-an-app)). It opens full screen on the Status page, with its own icon and shortcuts to Status, Awaiting review and Files. Over `https` it also keeps its styles and scripts and shows its own "isn't reachable" page that reopens the page once the server answers again.
+- Phones: the tab bar at the bottom slides away while scrolling down and comes back when scrolling up or at the top or end of the page, so almost the whole screen shows the list. The Files page's selection bar, notifications and the preset editor's Save bar move with it.
+
+### Changed
+- The browser's and app's bar color follows the theme chosen with the button at the top right, not only the system setting.
+- Styles and scripts are loaded with the version in their address, so phones never keep old ones after an update.
+
 ## [3.22.1] - 2026-11-04
 
 ### Changed
