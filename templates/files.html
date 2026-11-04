@@ -136,6 +136,7 @@
       <span class="scan-msg" data-scan-msg role="status" hidden></span>
     </div>
     <table class="col-def" data-resizable="files" hidden>{{ file_head(sort_links) }}</table>{# columns of the Columns menu, also before a folder with files is open #}
+    <nav class="crumb-bar" data-crumbs aria-label="Open folders" hidden></nav>{# phones: the folders scrolled past (files.js) #}
     <div class="tree">
       {% include "_level.html" %}
     </div>

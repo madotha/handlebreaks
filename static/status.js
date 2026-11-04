@@ -69,6 +69,21 @@
   }
 
   // Selecting entries for the buttons below the tabs
+  const bulkForm = $("#bulk");
+  // Phones: the buttons for ticked entries are a bar at the bottom; toasts sit above it (--sel-h)
+  const selBar = $("[data-bulk-sel]");
+  new ResizeObserver(() => {
+    document.documentElement.style.setProperty("--sel-h", `${selBar.getBoundingClientRect().height}px`);
+  }).observe(selBar);
+  // Phones: the buttons for the whole list are in the More menu
+  const moreBtn = $("[data-more-toggle]"), moreMenu = $("[data-more-menu]");
+  const setMore = (open) => { moreMenu.classList.toggle("open", open); moreBtn.setAttribute("aria-expanded", String(open)); };
+  moreBtn.addEventListener("click", () => setMore(!moreMenu.classList.contains("open")));
+  document.addEventListener("click", (e) => {
+    if (!moreMenu.classList.contains("open") || moreBtn.contains(e.target)) return;
+    if (!moreMenu.contains(e.target) || e.target.closest("button")) setMore(false);   // outside, or an action was chosen
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && moreMenu.classList.contains("open")) { setMore(false); moreBtn.focus(); } });
   const selectAlls = [...document.querySelectorAll("[data-select-all]")];   // table header, and a separate one on phones
   const needSelection = [...document.querySelectorAll("[data-needs-selection]")];
   needSelection.forEach((b) => { b.dataset.label = b.textContent; });
@@ -135,6 +150,7 @@
       b.disabled = n === 0;
       b.textContent = n ? `${b.dataset.label.replace("…", "")} (${n.toLocaleString()})${b.dataset.label.endsWith("…") ? "…" : ""}` : b.dataset.label;
     });
+    bulkForm.classList.toggle("has-selection", n > 0);   // phones: shows the selection bar
     const ticked = boxes.filter((c) => c.checked).length;
     selectAlls.forEach((s) => {
       s.checked = ticked > 0 && ticked === boxes.length;
@@ -304,6 +320,13 @@
     window.BulkReplace.open(picked, bulk);
   });
 
+  window.pullRefresh = () => poll(true);       // installed app: pull down at the top (static/phone.js)
+  // Phones: the current encode is one line that stays at the top; tapping it shows everything
+  const curToggle = $("[data-cur-toggle]");
+  curToggle.addEventListener("click", () => {
+    const open = panel.classList.toggle("open");
+    curToggle.setAttribute("aria-expanded", String(open));
+  });
   setInterval(() => { if (liveBox.checked && !document.hidden) poll(false); }, 3000);
   document.addEventListener("visibilitychange", () => { if (!document.hidden && liveBox.checked) poll(false); });
   $("[data-refresh]").addEventListener("click", () => poll(true));

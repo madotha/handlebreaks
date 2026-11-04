@@ -9,9 +9,17 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 - Install Handlebreaks as an app: on iPhone, iPad and Android via **Add to Home Screen**, in Chrome and Edge with the install button ([details](https://github.com/madotha/handlebreaks/wiki/Web-UI#install-it-as-an-app)). It opens full screen on the Status page, with its own icon and shortcuts to Status, Awaiting review and Files. Over `https` it also keeps its styles and scripts and shows its own "isn't reachable" page that reopens the page once the server answers again.
+- Live state on the page tabs: the number of files awaiting review on **Status**, a dot on **Files** while a scan runs, and on phones a ring around the Status icon with the progress of the current encode.
+- Status page on phones ([details](https://github.com/madotha/handlebreaks/wiki/Web-UI#status-on-a-phone)): the current encode is one line (percentage, file, time left, progress bar) that stays at the top while you scroll; the arrow next to it opens the full panel with the Stop buttons. The buttons for ticked entries appear in a bar at the bottom while something is ticked, and the actions for the whole list (Replace all finished…, Dismiss all shown, Dismiss older than…, Delete history data…, Remove all waiting) are in a **More** menu, so the list starts right below the search.
+- Files page on phones: while you scroll through an open folder, the path of the open folders (e.g. Shows › Northwind Station › Season 02) stays below the header; tapping a folder in it closes the folder and scrolls back to it.
+- Installed app: pull down at the top of a page to refresh it. Status and Files refresh in place and keep ticked files and open folders.
 - Phones: the tab bar at the bottom slides away while scrolling down and comes back when scrolling up or at the top or end of the page, so almost the whole screen shows the list. The Files page's selection bar, notifications and the preset editor's Save bar move with it.
 
 ### Changed
+- New logo: two chevrons in a film frame, amber on dark or dark on amber. Phone home screens get the dark version (iOS darkens web app icons itself in dark mode, which made the old icon almost black), browser tabs follow the system's light or dark mode, the header follows the theme button, and Android's themed icons get a monochrome version.
+- Phones: text fields and selects use 16 px text, so iPhones no longer zoom in when you tap one. Buttons, sort chips and checkboxes are larger, and a tap anywhere in a row's checkbox cell ticks it.
+- Phones: long explanations below the lists show two lines with a **More** button.
+- The Status page's buttons are grouped: those for ticked entries first, then those for the whole list.
 - The browser's and app's bar color follows the theme chosen with the button at the top right, not only the system setting.
 - Styles and scripts are loaded with the version in their address, so phones never keep old ones after an update.
 

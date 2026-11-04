@@ -2,6 +2,7 @@
 // - Shift+click ticks (or unticks) everything between the last clicked row and this one.
 // - Press on a row's checkbox cell, drag over other rows and release: all rows in between
 //   take the state the first one is getting. Mouse only; on touch screens dragging scrolls.
+// A click into the cell around a box ticks it as well.
 // Works on the visible, enabled checkboxes in `td.sel` / `td.check` cells in page order, so
 // rows loaded later (folders, "Show more") need no setup. The folder checkboxes of the Files
 // page (`.dir-toggle`) form their own ranges among the folders of the same level; setting one
@@ -89,6 +90,12 @@
   });
 
   document.addEventListener("click", (e) => {
+    // A tap next to the box in its cell ticks it too (the boxes are small targets on phones)
+    if (e.target.matches && e.target.matches(CELL)) {
+      const b = e.target.querySelector(":scope > input[type=checkbox]");
+      if (b && !b.disabled) b.click();
+      return;
+    }
     const box = e.target.matches && e.target.matches(BOX) ? e.target : null;
     if (!box) return;
     if (e.shiftKey && anchor && anchor !== box && document.contains(anchor)) {

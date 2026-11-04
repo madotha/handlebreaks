@@ -22,6 +22,7 @@
   --shadow: 0 1px 2px rgba(20, 18, 12, .06), 0 1px 1px rgba(20, 18, 12, .04);
   --shadow-pop: 0 12px 32px rgba(20, 18, 12, .18);
   --header-bg: rgba(255, 255, 255, .86);
+  --logo-bg: #eba90f; --logo-fg: #1a1406;
   --radius: 10px; --radius-sm: 7px; --control-h: 2.25rem;
   --header-h: calc(3.5rem + env(safe-area-inset-top)); --tabbar-h: 0px; --tabbar-off: 0px;   /* tabbar-off: what the tab bar covers now */
 }
@@ -39,7 +40,7 @@
   --grid: #2c2c2a; --axis: #383835;
   --shadow: 0 1px 2px rgba(0, 0, 0, .35);
   --shadow-pop: 0 16px 40px rgba(0, 0, 0, .55);
-  --header-bg: rgba(27, 28, 31, .86);
+  --header-bg: rgba(27, 28, 31, .86); --logo-bg: #2c2e33; --logo-fg: #f2b632;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -56,7 +57,7 @@
     --grid: #2c2c2a; --axis: #383835;
     --shadow: 0 1px 2px rgba(0, 0, 0, .35);
     --shadow-pop: 0 16px 40px rgba(0, 0, 0, .55);
-    --header-bg: rgba(27, 28, 31, .86);
+    --header-bg: rgba(27, 28, 31, .86); --logo-bg: #2c2e33; --logo-fg: #f2b632;
   }
 }
 
@@ -731,11 +732,11 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
   .sel-actions label.inline { flex: 1 1 55%; min-width: 0; font-size: .86rem; }   /* count and preset, then both buttons */
   .sel-actions label.inline select { flex: 1; min-width: 0; }
   .sel-actions > button { flex: 1 1 35%; padding-inline: .6rem; }
-  main:has(#queue-form.has-selection) { padding-bottom: calc(var(--tabbar-h) + var(--sel-h, 7rem) + 1.5rem); }
-  html:has(#queue-form.has-selection) .toasts { bottom: calc(var(--tabbar-off) + var(--sel-h, 0px) + .5rem); }
+  main:has(.has-selection) { padding-bottom: calc(var(--tabbar-h) + var(--sel-h, 7rem) + 1.5rem); }
+  html:has(.has-selection) .toasts { bottom: calc(var(--tabbar-off) + var(--sel-h, 0px) + .5rem); }
   .scan-msg:not([hidden]) { position: fixed; z-index: 26; left: 1rem; right: 1rem; bottom: calc(var(--tabbar-off) + .5rem); box-shadow: var(--shadow-pop);
     transition: bottom .25s ease; }
-  #queue-form.has-selection .scan-msg { bottom: calc(var(--tabbar-off) + var(--sel-h, 0px) + .5rem); }
+  html:has(.has-selection) .scan-msg { bottom: calc(var(--tabbar-off) + var(--sel-h, 0px) + .5rem); }
   .sort-bar { flex: 1 1 0; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 0 0 .1rem; border-top: 0; }
   .sort-bar::-webkit-scrollbar { display: none; }
   .sort-bar > .muted { white-space: nowrap; }
@@ -901,6 +902,103 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
 .offline-page h1 { margin: .75rem 0 .25rem; }
 .offline-page button { margin-top: .75rem; }
 .offline-mark { width: 3rem; height: 3rem; }
+
+/* ─── Live state on the page tabs (notify.js) ──────────────────────────────── */
+.nav-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 1.15rem; height: 1.15rem; padding: 0 .3rem;
+  border-radius: 99px; background: var(--accent); color: var(--accent-text); font-size: .66rem; font-weight: 700; line-height: 1;
+  font-variant-numeric: tabular-nums; }
+.nav-dot { display: inline-block; width: .45rem; height: .45rem; border-radius: 50%; background: var(--accent); animation: pulse 1.6s ease-in-out infinite; }
+.tab-icon { position: relative; display: inline-flex; }
+
+/* ─── Phone-only parts, hidden on wider screens ───────────────────────────── */
+.bulk-sel, .bulk-all { display: contents; }
+.more-btn, .cur-toggle, .crumb-bar { display: none; }
+.cur-toggle .i { transition: transform .2s ease; }
+[data-current-panel].open .cur-toggle .i { transform: rotate(180deg); }
+p.hint.clamped { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.hint-more { display: block; margin: -.15rem 0 .6rem; padding: 0; min-height: 1.6rem; }
+/* Pull to refresh in the installed app (phone.js) */
+.ptr { position: fixed; z-index: 35; left: 50%; top: calc(var(--header-h) + .4rem); width: 2.4rem; height: 2.4rem; display: grid; place-items: center;
+  border-radius: 50%; background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow-pop); color: var(--muted);
+  pointer-events: none; transform: translate(-50%, calc(var(--pull, 0) * 1px - 3.4rem)); opacity: min(1, calc(var(--pull, 0) / 60)); }
+.ptr .i { width: 1.2rem; height: 1.2rem; transition: transform .15s ease; }
+.ptr.ready { color: var(--accent); }
+.ptr.ready .i { transform: rotate(180deg); }
+.ptr.busy .i { animation: spin 1s linear infinite; }
+
+@media (max-width: 720px) {
+  /* iOS zooms into fields under 16 px and doesn't zoom back */
+  input:not([type=checkbox]):not([type=radio]):not([type=range]), select, textarea,
+  .name-input textarea, .bulk-list .name-input textarea { font-size: 16px; }
+
+  /* Tap targets of about 40 px or more */
+  :root { --control-h: 2.6rem; }
+  .row-actions button, .row-actions a.button { --control-h: 2.5rem; }
+  .more-dirs { --control-h: 2.5rem; }
+  .sort-chip { min-height: 2.4rem; }
+  .icon-btn { width: 2.25rem; height: 2.25rem; }
+  .icon-btn.icon-lg { width: 2.6rem; height: 2.6rem; }
+  input[type=checkbox], input[type=radio] { width: 1.25rem; height: 1.25rem; }
+
+  /* Tab bar: badge on the icon, the encode's progress as a ring around it */
+  .tab-icon .nav-badge { position: absolute; top: -.4rem; left: calc(100% - .45rem); min-width: 1.05rem; height: 1.05rem; font-size: .6rem;
+    box-shadow: 0 0 0 2px var(--surface); }
+  .tab-icon .nav-dot { position: absolute; top: -.15rem; left: calc(100% - .1rem); }
+  .tabbar a.encoding .tab-icon::before { content: ""; position: absolute; inset: -.3rem; border-radius: 50%;
+    background: conic-gradient(var(--accent) calc(var(--p, 0) * 1%), var(--border-strong) 0);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px)); }
+
+  /* Status: the buttons for ticked entries are a bar at the bottom while something is ticked
+     (status.js: .has-selection); the ones for the whole list are in the More menu */
+  #bulk { display: flex; flex-wrap: nowrap; align-items: center; gap: .5rem; position: relative; }
+  #bulk .select-all-phone { margin: 0 0 0 .3rem; }
+  .bulk-sel { display: none; }
+  #bulk.has-selection .bulk-sel { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; position: fixed; z-index: 25; left: 0; right: 0;
+    bottom: var(--tabbar-off); padding: .6rem max(1rem, env(safe-area-inset-left)); background: var(--surface);
+    border-top: 1px solid var(--border-strong); box-shadow: 0 -6px 18px rgba(0, 0, 0, .18); transition: bottom .25s ease; }
+  .bulk-sel > button { flex: 1 1 40%; padding-inline: .6rem; }
+  .bulk-sel > label { flex-basis: 100%; }
+  .more-btn { display: inline-flex; margin-left: auto; }
+  .bulk-all { display: none; }
+  .bulk-all.open { display: flex; flex-direction: column; align-items: stretch; gap: .5rem; position: absolute; z-index: 22; right: 0;
+    top: calc(100% + .35rem); width: min(19rem, 88vw); padding: .7rem; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); box-shadow: var(--shadow-pop); }
+  .bulk-all .inline-field { display: flex; }
+  .bulk-all .inline-field select { flex: 1; min-width: 0; }
+
+  /* Status: the current encode is one line that stays below the header; the chevron opens it */
+  [data-current-panel]:has([data-current]:not([hidden])) { position: sticky; top: var(--header-h); z-index: 15; box-shadow: var(--shadow-pop); }
+  [data-current-panel]:not(.open) { padding: .6rem .8rem; }
+  [data-current-panel]:not(.open) > .page-head, [data-current-panel]:not(.open) [data-no-stop] { display: none; }
+  [data-current-panel]:not(.open) [data-idle] { margin: 0; color: var(--muted); font-size: .9rem; }
+  [data-current-panel]:not(.open) [data-current]:not([hidden]) { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center; gap: .3rem .6rem; }
+  [data-current-panel]:not(.open) .now-head { display: contents; }
+  [data-current-panel]:not(.open) .now-head .muted, [data-current-panel]:not(.open) .entry-where,
+  [data-current-panel]:not(.open) .now-fps { display: none; }
+  [data-current-panel]:not(.open) .now-pct { font-size: 1.05rem; }
+  [data-current-panel]:not(.open) .now-file { margin: 0; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  [data-current-panel]:not(.open) .now-file .entry-file { display: inline; }
+  [data-current-panel]:not(.open) .meter { grid-column: 1 / -1; grid-row: 2; height: 4px; margin: 0; }
+  [data-current-panel]:not(.open) .now-stats { margin: 0; white-space: nowrap; }
+  .cur-toggle { display: inline-flex; }
+  [data-current-panel].open .cur-toggle { position: absolute; top: .6rem; right: .6rem; }
+  [data-current-panel].open { position: relative; }
+  [data-current-panel].open:has([data-current]:not([hidden])) { position: sticky; }
+
+  /* Files: the open folders scrolled past, below the header */
+  .crumb-bar:not([hidden]) { display: flex; align-items: center; gap: .1rem; position: fixed; z-index: 19; left: 0; right: 0; top: var(--header-h);
+    padding: .25rem max(.6rem, env(safe-area-inset-left)); overflow-x: auto; scrollbar-width: none; white-space: nowrap;
+    background: var(--header-bg); border-bottom: 1px solid var(--border);
+    -webkit-backdrop-filter: saturate(160%) blur(14px); backdrop-filter: saturate(160%) blur(14px); }
+  .crumb-bar::-webkit-scrollbar { display: none; }
+  .crumb-bar button { flex: none; min-height: 2.2rem; padding: 0 .4rem; background: none; border: 0; color: var(--text); font-size: .84rem; font-weight: 600; }
+  .crumb-bar span { color: var(--muted); }
+  details.dir > summary { scroll-margin-top: calc(var(--header-h) + .5rem); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .tabbar, .toasts, .sel-actions, .scan-msg, .editor-save { transition: none !important; }
+  .tabbar, .toasts, .sel-actions, .bulk-sel, .scan-msg, .editor-save { transition: none !important; }
+  .nav-dot { animation: none; }
 }

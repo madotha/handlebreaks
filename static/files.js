@@ -151,7 +151,17 @@
     } catch (e) { /* too big or storage blocked: just don't keep it */ }
   }
 
+  // Folder loads still running (pull to refresh waits for them)
+  const pending = new Set();
+  let allFresh = false;                         // pull to refresh: nothing from the cache
+  function track(promise) {
+    pending.add(promise);
+    promise.finally(() => pending.delete(promise));
+    return promise;
+  }
+
   async function load(details, fresh) {
+    fresh = fresh || allFresh;
     const body = details.querySelector(":scope > .dir-body");
     if (body.dataset.loaded) return;
     body.dataset.loaded = "1";
@@ -221,7 +231,7 @@
   function init(root) {
     root.querySelectorAll("details.dir").forEach((d) => {
       d.addEventListener("toggle", () => {
-        if (d.open) { openSet.add(d.dataset.path); load(d); } else { openSet.delete(d.dataset.path); }
+        if (d.open) { openSet.add(d.dataset.path); track(load(d)); } else { openSet.delete(d.dataset.path); }
       });
       if (openSet.has(d.dataset.path)) d.open = true;   // reloaded level: fires toggle -> loads
     });
@@ -338,6 +348,70 @@
   if (selBar) new ResizeObserver(() => {
     document.documentElement.style.setProperty("--sel-h", `${selBar.getBoundingClientRect().height}px`);
   }).observe(selBar);
+
+  // Installed app, pull down at the top (static/phone.js): load the tree again with the folders
+  // that are open, then tick again what was ticked
+  window.pullRefresh = async () => {
+    const tree = form.querySelector(".tree");
+    const picked = new Set([...form.querySelectorAll('input[name="key"]:checked, input[name="folder"]:checked')].map((i) => i.value));
+    const r = await fetch(`${form.dataset.folderUrl}?path=` + (form.dataset.folderQuery ? "&" + form.dataset.folderQuery : ""));
+    if (!r.ok) { say("Could not load the folders. Try again in a moment.", "error"); return; }
+    allFresh = true;
+    try {
+      tree.innerHTML = await r.text();
+      if (window.localizeTimes) window.localizeTimes(tree);
+      init(tree);
+      do {                                      // reopened folders open theirs once loaded
+        await Promise.all([...pending]);
+        await new Promise((done) => setTimeout(done));
+      } while (pending.size);
+    } finally {
+      allFresh = false;
+    }
+    form.querySelectorAll('input[name="key"], input[name="folder"]').forEach((i) => {
+      if (picked.has(i.value) && !i.disabled && !i.checked) {
+        i.checked = true;
+        i.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    });
+    update();
+  };
+
+  // Phones: the open folders around the scroll position stay named below the header; tapping
+  // one closes it and scrolls back to it
+  const crumbs = document.querySelector("[data-crumbs]");
+  let crumbKey = "", crumbTick = false;
+  function updateCrumbs() {
+    crumbTick = false;
+    const line = document.querySelector(".top").getBoundingClientRect().bottom;
+    const path = !phone.matches ? [] : [...form.querySelectorAll("details.dir[open]")].filter((d) =>
+      d.querySelector(":scope > summary").getBoundingClientRect().bottom < line && d.getBoundingClientRect().bottom > line + 48);
+    const key = path.map((d) => d.dataset.path).join("\n");
+    if (key === crumbKey) return;
+    crumbKey = key;
+    crumbs.hidden = !path.length;
+    crumbs.replaceChildren(...path.flatMap((d, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = d.querySelector(":scope > summary .dirname").textContent;
+      b.title = "Close this folder";
+      b.addEventListener("click", () => {
+        d.open = false;
+        d.querySelector(":scope > summary").scrollIntoView({ block: "start" });
+      });
+      if (!i) return [b];
+      const sep = document.createElement("span");
+      sep.textContent = "›";
+      sep.setAttribute("aria-hidden", "true");
+      return [sep, b];
+    }));
+  }
+  if (crumbs) {
+    const later = () => { if (!crumbTick) { crumbTick = true; requestAnimationFrame(updateCrumbs); } };
+    addEventListener("scroll", later, { passive: true });
+    form.addEventListener("toggle", later, true);
+    phone.addEventListener("change", later);
+  }
 
   // "Collapse all": close every folder, forget them for reloads and drop their content
   // (reopening is quick: loaded folders are kept in sessionStorage)

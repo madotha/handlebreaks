@@ -44,7 +44,9 @@
     </div>
     <p class="now-file entry">{% set cw = entry_parts(cur.key) if cur else ('', '') %}<span class="entry-where" data-cur-where>{{ cw[0] }}</span><span class="entry-file" data-cur-name>{{ cw[1] }}</span></p>
     <span class="meter big"><span data-cur-bar style="width: {{ (cur.pct if cur else 0) or 0 }}%"></span></span>
-    <p class="muted small now-stats"><span data-cur-fps>{{ (cur.fps if cur else '–') or '–' }}</span> fps · <span data-cur-eta>{{ (cur.eta if cur else '–') or '–' }}</span> left</p>
+    <p class="muted small now-stats"><span class="now-fps"><span data-cur-fps>{{ (cur.fps if cur else '–') or '–' }}</span> fps · </span><span data-cur-eta>{{ (cur.eta if cur else '–') or '–' }}</span> left</p>
+    {#- Phones: the encode is one line at the top; this shows the whole panel #}
+    <button type="button" class="icon-btn cur-toggle" data-cur-toggle aria-expanded="false" aria-label="Show the encode's details and Stop" data-tip="Details and Stop">{{ icon('chevron') }}</button>
   </div>
   <p data-idle {% if cur %}hidden{% endif %}>No encode running.</p>
 </section>
@@ -82,28 +84,40 @@
     <input type="hidden" name="state" value="{{ q.state }}" data-state>
     <input type="hidden" name="q" value="{{ q.q }}" data-q>
     <span data-matching-keys hidden></span>{# "Select all N matching": the keys not shown as rows #}
-    {% if q.view == 'queue' %}
+    <label class="select-all-phone"><input type="checkbox" data-select-all> Select all shown</label>{# phones: the table header with its checkbox is hidden #}
+    {#- Buttons for the ticked entries (phones: a bar at the bottom while something is ticked), then the
+        ones for the whole list (phones: in the More menu) #}
+    <div class="bulk-sel" data-bulk-sel>
+    {%- if q.view == 'queue' %}
       <button class="secondary" formaction="{{ url_for('queue_move') }}" name="op" value="top" data-needs-selection disabled title="Encode the selected waiting entries first">Move to top</button>
       <button class="secondary" formaction="{{ url_for('queue_move') }}" name="op" value="bottom" data-needs-selection disabled title="Encode the selected waiting entries last">Move to bottom</button>
       <button class="secondary" data-needs-selection disabled>Remove selected</button>
-      <button class="danger" name="all" value="1" data-remove-all {% if not q.counts.get('waiting') %}disabled{% endif %}
-              onclick="return confirm('Remove all waiting entries from the queue?')">Remove all waiting</button>
-    {% elif q.view == 'review' %}
+    {%- elif q.view == 'review' %}
       <button type="button" class="secondary" data-bulk-replace-selected data-needs-selection disabled title="Replace the originals of the selected files">Replace selected…</button>
-      <button type="button" class="secondary" data-bulk-replace-all title="Replace the originals of all files with a finished encode">Replace all finished…</button>
       <button type="button" class="danger" data-delete-encodes-selected data-needs-selection disabled title="Delete the selected encodes, optionally encode the files again with another preset">Delete selected…</button>
       <button class="secondary" formaction="{{ url_for('status_dismiss') }}" data-needs-selection disabled title="Hide the selected entries here; the encodes stay where they are">Dismiss selected</button>
-      <button class="secondary" formaction="{{ url_for('status_dismiss') }}" name="all" value="1"
-              onclick="return confirm('Hide all awaiting-review entries shown here (with the search, if any)? The encodes stay in the output folder and on the Files page.')">Dismiss all shown</button>
-    {% elif q.view == 'originals' %}
+    {%- elif q.view == 'originals' %}
       <button class="danger" formaction="{{ url_for('originals_delete') }}" data-needs-selection data-confirm-delete disabled title="Delete the selected originals permanently">Delete selected…</button>
       {% if q.kept_blocked %}<label class="inline-field small" data-tip="Originals whose replacement is missing or can't be checked are skipped unless this is ticked"><input type="checkbox" name="force" value="1"> Also when the replacement is missing</label>{% endif %}
+    {%- else %}
+      <button class="secondary" formaction="{{ url_for('queue_again') }}" data-needs-selection disabled title="Queue the selected failed or stopped files again">Queue again</button>
+      <button class="secondary" formaction="{{ url_for('status_dismiss') }}" data-needs-selection disabled title="Hide the selected entries here; nothing is deleted">Dismiss selected</button>
+    {%- endif %}
+    </div>
+    <button type="button" class="secondary more-btn" data-more-toggle aria-expanded="false" aria-controls="bulk-more">More {{ icon('dots') }}</button>
+    <div class="bulk-all" id="bulk-more" data-more-menu>
+    {%- if q.view == 'queue' %}
+      <button class="danger" name="all" value="1" data-remove-all {% if not q.counts.get('waiting') %}disabled{% endif %}
+              onclick="return confirm('Remove all waiting entries from the queue?')">Remove all waiting</button>
+    {%- elif q.view == 'review' %}
+      <button type="button" class="secondary" data-bulk-replace-all title="Replace the originals of all files with a finished encode">Replace all finished…</button>
+      <button class="secondary" formaction="{{ url_for('status_dismiss') }}" name="all" value="1"
+              onclick="return confirm('Hide all awaiting-review entries shown here (with the search, if any)? The encodes stay in the output folder and on the Files page.')">Dismiss all shown</button>
+    {%- elif q.view == 'originals' %}
       <span class="inline-field"><select name="older_than" form="kept-older-form" aria-label="Kept longer than">
         {% for d in (7, 30, 90, 180, 365) %}<option value="{{ d }}">kept more than {{ d }} days</option>{% endfor %}
       </select><button class="danger" form="kept-older-form" title="Delete all originals kept longer than this, permanently">Delete…</button></span>
-    {% else %}
-      <button class="secondary" formaction="{{ url_for('queue_again') }}" data-needs-selection disabled title="Queue the selected failed or stopped files again">Queue again</button>
-      <button class="secondary" formaction="{{ url_for('status_dismiss') }}" data-needs-selection disabled title="Hide the selected entries here; nothing is deleted">Dismiss selected</button>
+    {%- else %}
       <button class="secondary" formaction="{{ url_for('status_dismiss') }}" name="all" value="1"
               onclick="return confirm('Hide all entries shown here? Nothing is deleted.')">Dismiss all shown</button>
       <span class="inline-field"><select name="older_than" form="older-form" aria-label="Older than">
@@ -111,14 +125,14 @@
       </select><button class="secondary" form="older-form" data-older>Dismiss</button></span>
       <button class="danger" formaction="{{ url_for('results_clear') }}"
               onclick="return confirm('Delete the history data? This forgets every encode result (done, failed …), deletes finished batch files, logs of failed encodes and results of replace jobs, and all dismissals. Encoded files are not touched.')">Delete history data…</button>
-    {% endif %}
+    {%- endif %}
+    </div>
   </form>
   <nav class="sort-bar status-sort" aria-label="Sort the list">{# phones: the table header is hidden #}
     <span class="muted small">Sort by</span>
     {% for f in q.fields %}<a class="sort-chip{{ ' active' if q.sort_links[f][1] }}" href="{{ q.sort_links[f][0] }}"
        aria-sort="{{ {'▲': 'ascending', '▼': 'descending'}.get(q.sort_links[f][1], 'none') }}">{{ q.fields[f] }}{% if q.sort_links[f][1] %} {{ q.sort_links[f][1] }}{% endif %}</a>{% endfor %}
   </nav>
-  <label class="select-all-phone"><input type="checkbox" data-select-all> Select all shown</label>{# phones: the table header with its checkbox is hidden #}
   <p class="select-matching small" data-select-matching hidden></p>
   {% if q.view == 'originals' %}
   <form id="kept-older-form" method="post" action="{{ url_for('originals_delete') }}" data-confirm="Delete all originals that were kept longer than the chosen time, permanently? This cannot be undone.">

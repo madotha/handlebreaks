@@ -136,6 +136,21 @@
     save();
   }
 
+  // The page tabs: files awaiting review on Status, the encode's progress (a ring on phones),
+  // a dot on Files while a scan runs
+  function navState(nav) {
+    document.querySelectorAll("[data-nav-badge]").forEach((b) => {
+      b.hidden = !nav.review;
+      b.textContent = nav.review > 99 ? "99+" : String(nav.review);
+      b.title = `${nav.review.toLocaleString()} awaiting review`;
+    });
+    document.querySelectorAll('[data-nav="status"]').forEach((a) => {
+      a.classList.toggle("encoding", nav.pct !== null);
+      a.style.setProperty("--p", nav.pct === null ? 0 : nav.pct);
+    });
+    document.querySelectorAll("[data-nav-dot]").forEach((d) => { d.hidden = !nav.scanning; d.title = "Scanning"; });
+  }
+
   let busy = false;
   async function poll() {
     if (busy || document.hidden) return;
@@ -145,6 +160,7 @@
       const r = await fetch(after === null ? url : `${url}?after=${after}`, { headers: { Accept: "application/json" } });
       if (!r.ok) return;
       const data = await r.json();
+      if (data.nav) navState(data.nav);
       const now = seen();                           // another tab may have shown some meanwhile
       if (after === null || now === null || now > data.last) {   // first visit or the database was reset: start now
         remember(data.last);

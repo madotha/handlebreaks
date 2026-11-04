@@ -718,7 +718,22 @@ def events():
         items.append(item)
     items.sort(key=lambda i: i["id"])
     return {"last": last, "seconds": notify_seconds(),
-            "errors_stay": (enc.CONFIG.get("NOTIFY_ERRORS_STAY") or "1").strip() != "0", "events": items}
+            "errors_stay": (enc.CONFIG.get("NOTIFY_ERRORS_STAY") or "1").strip() != "0", "events": items,
+            "nav": nav_state()}
+
+
+def nav_state():
+    """Live state for the page tabs: files awaiting review, the current encode's progress, a running scan."""
+    cur = enc.current_progress()
+    try:
+        pct = float(cur["pct"]) if cur and cur.get("pct") else 0.0 if cur else None
+    except ValueError:
+        pct = 0.0
+    try:
+        review = len(awaiting_review())
+    except Exception:                           # output folder offline: no badge rather than an error
+        review = 0
+    return {"review": review, "pct": pct, "scanning": bool(SCAN["running"])}
 
 
 def path_summary(path):
@@ -986,7 +1001,8 @@ def manifest():
         "description": "Re-encode a Plex library to H.265 with HandBrakeCLI",
         "start_url": url_for("status"), "scope": url_for("index"), "display": "standalone",
         "background_color": APP_COLOR, "theme_color": APP_COLOR,
-        "icons": [*small, icon("icon-512.png", 512), icon("icon-maskable-512.png", 512, "maskable")],
+        "icons": [*small, icon("icon-512.png", 512), icon("icon-maskable-512.png", 512, "maskable"),
+                  icon("icon-monochrome-512.png", 512, "monochrome")],
         "shortcuts": [{"name": "Status", "url": url_for("status"), "icons": small},
                       {"name": "Awaiting review", "url": url_for("status", view="review"), "icons": small},
                       {"name": "Files", "url": url_for("files"), "icons": small}],
