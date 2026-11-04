@@ -17,13 +17,14 @@
 {% if not total %}
   <p class="empty">No data yet. Start a scan to read the library.</p>
 {% else %}
-  <section class="cards">
+  <section class="cards files-cards">
     <div class="card"><span class="label">Videos</span><span class="value">{{ total|count }}</span></div>
     <div class="card"><span class="label">Total size</span><span class="value">{{ total_size|size }}</span></div>
     <div class="card"><span class="label">Optimized (by size)</span><span class="value">{{ '%.0f'|format(optimized_share) }} %</span>
       <span class="meter"><span class="viz-good" style="width: {{ '%.1f'|format(optimized_share) }}%"></span></span></div>
     <div class="card"><span class="label">Last scan</span><span class="value small">{{ last_scan|localtime }}</span></div>
   </section>
+  <p class="files-summary">{{ total|count }} videos · {{ total_size|size }} · {{ '%.0f'|format(optimized_share) }} % optimized (by size) · scanned {{ last_scan|localtime }}</p>{# phones, instead of the cards #}
   {% if unscanned %}<p class="flash info">Not scanned yet: {{ unscanned|join(', ') }}. Start their initial scan under <a href="{{ url_for('settings', section='library') }}">Settings → Library</a>, or scan all shares.</p>{% endif %}
   {% if not ffprobe %}<p class="flash info">ffprobe is not installed. Codec, resolution and bitrate stay empty until ffmpeg is installed.</p>{% endif %}
 
@@ -108,15 +109,17 @@
     <input type="hidden" name="next" value="{{ request.full_path }}">
     {% for k, v in filters.items() %}{% for item in (v if v is not string else [v]) %}<input type="hidden" name="{{ k }}" value="{{ item }}">{% endfor %}{% endfor %}
     <div class="action-bar">
-      <span class="selected-count"><strong data-selected-count>0</strong> selected</span>
-      <label class="inline">Preset
-        <select name="preset" aria-label="Preset for this queue">
-          <option value="">Share's preset</option>
-          {% for pid, name in preset_list %}<option value="{{ pid }}">{{ name }}</option>{% endfor %}
-        </select>
-      </label>
-      <button data-queue-button>Queue for encoding</button>
-      <button type="button" class="secondary" data-bulk-replace disabled title="Replace the originals of the selected files that have a finished encode">Replace selected…</button>
+      <div class="sel-actions" data-sel-actions>{# phones: a bar above the tab bar, only while something is selected #}
+        <span class="selected-count"><strong data-selected-count>0</strong> selected</span>
+        <label class="inline">Preset
+          <select name="preset" aria-label="Preset for this queue">
+            <option value="">Share's preset</option>
+            {% for pid, name in preset_list %}<option value="{{ pid }}">{{ name }}</option>{% endfor %}
+          </select>
+        </label>
+        <button data-queue-button>Queue for encoding</button>
+        <button type="button" class="secondary" data-bulk-replace disabled title="Replace the originals of the selected files that have a finished encode">Replace selected…</button>
+      </div>
       <span class="hint">Tick files, or a folder to select all {{ 'matching ' if filtered }}files in it. Folders load when opened. The round arrow scans a file or folder again; hover over a button to see what it does. The bar shows optimized (green), other codecs (orange) and not probed (gray).</span>
       <nav class="sort-bar" aria-label="Sort the list">
         <span class="muted small">Sort by</span>

@@ -1,20 +1,25 @@
 {# File rows of one folder level; also returned on their own for "Show more". #}
 {% from "_icons.html" import icon %}
 {% from "_cells.html" import bitrate_cell, res_cell %}
+{# Phones show shorter status labels (the full one as tooltip) #}
+{% set status_short = {'waiting': 'To review', 'bad': 'Filtered', 'baseline': 'Baseline', 'h265': 'Optimized'} %}
 {% for f in files %}
   {% set is_queued = f.key in queued and not f.encoded and not f.encoding %}
+  {% set st = 'encoding' if f.encoding else 'queued' if is_queued else f.status %}
+  {% set st_label = 'Encoding' if f.encoding else status_labels['queued'] if is_queued else 'Awaiting review' if f.status == 'waiting' else status_labels.get(f.status, f.status) %}
   <tr>
     <td class="sel"><input type="checkbox" name="key" value="{{ f.key }}" aria-label="Select {{ f.name }}" {% if is_queued %}disabled data-locked title="Already queued"{% endif %}></td>
     <td class="sel"><button class="icon-btn" formaction="{{ url_for('start_scan') }}" name="path" value="{{ f.key }}" data-scan-path
           aria-label="Scan this file again" data-tip="Scan this file again (re-reads it with ffprobe)">{{ icon('refresh') }}</button></td>
     <td class="name" title="{{ f.key }}">{{ f.name|wbr }}</td>
-    <td class="c-codec">{% if f.video_codec %}<span class="codec codec-{{ codec_class(f.video_codec) }}" title="{{ f.video_codec }}">{{ f.video_codec|codec_name }}</span>{% elif f.probe_error %}<span class="muted" title="{{ f.probe_error }}">Error</span>{% else %}<span class="muted">–</span>{% endif %}</td>
+    <td class="c-codec">{% if f.video_codec %}<span class="codec codec-{{ codec_class(f.video_codec) }}" title="{{ f.video_codec }}">{{ f.video_codec|codec_label }}</span>{% elif f.probe_error %}<span class="muted" title="{{ f.probe_error }}">Error</span>{% else %}<span class="muted">–</span>{% endif %}</td>
     {{ res_cell(f, '') }}
     {{ bitrate_cell(f, 'Original', 'num') }}
     <td class="c-dur" data-label="Duration">{{ f.duration|duration }}</td>
     <td class="num c-size">{{ f.size|size }}</td>
     <td class="nowrap c-added" data-label="Added">{{ f.added|added }}</td>
-    <td class="c-status"><span class="status status-{{ 'encoding' if f.encoding else 'queued' if is_queued else f.status }}">{{ 'Encoding' if f.encoding else status_labels['queued'] if is_queued else 'Awaiting review' if f.status == 'waiting' else status_labels.get(f.status, f.status) }}</span>
+    <td class="c-status"><span class="status status-{{ st }}"{% if st in status_short %} title="{{ st_label }}"{% endif %}>
+      {%- if st in status_short %}<span class="long-label">{{ st_label }}</span><span class="short-label">{{ status_short[st] }}</span>{% else %}{{ st_label }}{% endif %}</span>
       {% if f.failed %}<span class="status status-failed" title="The last encode of this file failed (see the Status page and the log)">Failed</span>{% endif %}</td>
     <td class="actions">
       {%- if f.replacing %}<span class="muted small" title="{{ 'Waiting for the worker; it can be cancelled until the worker starts moving the files' if f.replace_id else 'The worker is moving the files; the list updates when it is done' }}">Replacing…</span>
@@ -24,5 +29,12 @@
         <button type="button" class="icon-btn" data-delete-encode data-key="{{ f.key }}" data-encoded="{{ f.encoded }}" data-preset="{{ f.preset_name }}"
           aria-label="Delete the encode" data-tip="Delete the encode, optionally encode again with another preset…">{{ icon('trash') }}</button>
       {%- endif %}</td>
+    {#- Phones: resolution, bitrate and size in one cell between codec and status. It comes last,
+        so the column numbers of the Columns menu stay; its parts follow the hidden columns
+        (data-part, static/columns.js). #}
+    <td class="c-phone">
+      {%- if f.width %}<span data-part="resolution">{{ f.width|res_label(f.height) }}</span>{% endif %}
+      {%- if f.bitrate or f.enc_bitrate %}<span data-part="bitrate">{{ f.bitrate|mbit if f.bitrate }}{{ ' → ' if f.bitrate and f.enc_bitrate }}{{ f.enc_bitrate|mbit if f.enc_bitrate }} Mb/s</span>{% endif %}
+      <span data-part="size">{{ f.size|size }}</span></td>
   </tr>
 {% endfor %}

@@ -381,6 +381,10 @@ main:has(.files-layout:not(.fp-collapsed)) { max-width: 1520px; }
 .dir-size { min-width: 5rem; text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
 .files-level { border-top: 1px solid var(--border); }
 th.sel, td.sel { width: 2rem; padding-right: 0; }
+/* Phone-only parts of the Files page (see the phone section): short labels, the summary line
+   instead of the cards, the combined details cell of a file row */
+.short-label, .files-summary, td.c-phone { display: none; }
+.sel-actions { display: contents; }
 
 /* ─── Status page ──────────────────────────────────────────────────────────── */
 .now-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
@@ -708,50 +712,73 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
   .fp-foot, .filter-form:not(.fp-pending) .fp-foot:not(:has(a)) { display: flex; position: sticky; bottom: 0; background: var(--surface); margin-top: .3rem;
     padding: .7rem 0 calc(.8rem + env(safe-area-inset-bottom)); }
   .fp-apply { display: inline-flex; flex: 1 1 100%; justify-content: center; }
-  .action-bar { top: var(--header-h); padding: .6rem .7rem; gap: .5rem; }
-  .action-bar .hint { display: none; }
-  .action-bar label.inline { flex: 1 1 100%; }
-  .action-bar label.inline select { flex: 1; }
-  .action-bar > button { flex: 1 1 auto; }
-  .sort-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: .1rem; }
-  .sort-bar::-webkit-scrollbar { display: none; }
+  /* Files page: one summary line instead of the cards */
+  .files-cards { display: none; }
+  .files-summary { display: block; margin: -.4rem 0 1rem; color: var(--muted); font-size: .84rem; line-height: 1.45; }
 
-  /* Folder rows: name on the first line, bar · share · count · size on the second */
-  .tree summary { flex-wrap: wrap; gap: .3rem .6rem; padding: .55rem .75rem; }
+  /* Action bar: only sorting and Columns, scrolls with the page. The selection (count, preset,
+     Queue, Replace) is a bar above the tab bar while something is ticked (files.js: .has-selection) */
+  .action-bar { position: static; flex-wrap: wrap; padding: .45rem .55rem; gap: .5rem; box-shadow: var(--shadow); }
+  .action-bar .hint { display: none; }
+  .sel-actions { display: none; }
+  #queue-form.has-selection .sel-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .6rem; position: fixed; z-index: 25;
+    left: 0; right: 0; bottom: var(--tabbar-h); padding: .6rem max(1rem, env(safe-area-inset-left)); background: var(--surface);
+    border-top: 1px solid var(--border-strong); box-shadow: 0 -6px 18px rgba(0, 0, 0, .18); }
+  .sel-actions .selected-count { flex: none; }
+  .sel-actions label.inline { flex: 1 1 55%; min-width: 0; font-size: .86rem; }   /* count and preset, then both buttons */
+  .sel-actions label.inline select { flex: 1; min-width: 0; }
+  .sel-actions > button { flex: 1 1 35%; padding-inline: .6rem; }
+  main:has(#queue-form.has-selection) { padding-bottom: calc(var(--tabbar-h) + var(--sel-h, 7rem) + 1.5rem); }
+  html:has(#queue-form.has-selection) .toasts { bottom: calc(var(--tabbar-h) + var(--sel-h, 0px) + .5rem); }
+  .scan-msg:not([hidden]) { position: fixed; z-index: 26; left: 1rem; right: 1rem; bottom: calc(var(--tabbar-h) + .5rem); box-shadow: var(--shadow-pop); }
+  #queue-form.has-selection .scan-msg { bottom: calc(var(--tabbar-h) + var(--sel-h, 0px) + .5rem); }
+  .sort-bar { flex: 1 1 0; min-width: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 0 0 .1rem; border-top: 0; }
+  .sort-bar::-webkit-scrollbar { display: none; }
+  .sort-bar > .muted { white-space: nowrap; }
+  .col-menu-slot.wide-only { display: none; }
+  .col-menu-slot.phone-only { display: inline-block; flex: none; }
+
+  /* Folder rows, two lines: name (↻ while open) and size; bar, share optimized and counts */
+  .tree summary { flex-wrap: wrap; gap: .15rem .55rem; padding: .5rem .7rem; min-height: 0; }
   .icon-btn { width: 2.2rem; height: 2.2rem; }       /* touch targets */
   .tooltip { display: none; }
-  .tree .meta { margin-left: 1.6rem; flex: 1 1 calc(100% - 1.6rem); min-width: 0; flex-wrap: wrap; gap: .3rem .6rem; font-size: .8rem; }
-  .tree .meta .opt { flex-wrap: wrap; gap: .3rem .5rem; }
-  .tree .meta .opt-count, .tree .meta .dir-size { min-width: 0; text-align: left; }
-  .tree .meta .dir-size { margin-left: auto; }
-  .sort-bar > .muted { white-space: nowrap; }
-  .dir-body { padding-left: .6rem; }
-  .opt-bar { width: 56px; }
+  .tree summary .meta, .tree summary .opt { display: contents; }
+  .tree summary .dirname { order: 1; flex: 1 1 0; min-width: 0; }
+  .tree summary > .icon-btn { order: 2; margin: -.4rem 0; }
+  .tree details.dir:not([open]) > summary > .icon-btn { display: none; }
+  .tree summary .dir-size { order: 3; min-width: 0; font-size: .8rem; color: var(--muted); }
+  .tree summary::after { content: ""; order: 4; flex-basis: 100%; height: 0; margin-top: -.15rem; }   /* line break */
+  .tree summary .opt-bar { order: 5; width: 44px; margin-left: 2.05rem; }
+  .tree summary .opt .codec { order: 6; min-width: 0; font-size: .72rem; padding: .05rem .4rem; }
+  .tree summary .dir-counts { order: 7; font-size: .78rem; }
+  .tree summary .dirnote { order: 8; }
+  .tree summary .opt-count { display: none; }
+  .dir-body { padding-left: .35rem; }
 
-  /* File rows: compact two-line rows; tap the name for bitrate, duration and date added */
+  /* File rows, two lines: name (Replace/Delete while there is an encode); codec, the details
+     cell (resolution, bitrate, size; it wraps under itself when short of room) and the status,
+     which always stays on that line. Tapping the name adds duration, date added and ↻ */
   .files-level thead { display: none; }
   .files-level table, .files-level tbody { display: block; }
-  .files-level tr { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .5rem; padding: .55rem .5rem .6rem;
-    border-bottom: 1px solid var(--border); }
+  .files-level tr { display: grid; grid-template-columns: 1.6rem auto minmax(0, 1fr) auto; gap: .25rem .45rem; align-items: center;
+    padding: .45rem .4rem .5rem; border-bottom: 1px solid var(--border); }
   .files-level tr:last-child { border-bottom: 0; }
-  .files-level td { display: block; border: 0; padding: 0; white-space: nowrap; background: none !important; }
-  .files-level td.sel:first-child { order: 0; width: 1.6rem; }
-  .files-level td.name { order: 1; flex: 1 1 calc(100% - 4.5rem); min-width: 0; font-weight: 550; cursor: pointer; white-space: normal; }
-  .files-level td.sel:nth-child(2) { order: 2; width: auto; }
-  .files-level td.c-codec { order: 3; margin-left: 2.1rem; }
-  .files-level td.c-res { order: 4; color: var(--muted); font-size: .82rem; }
-  .files-level td.c-size { order: 5; color: var(--muted); font-size: .82rem; }
-  .files-level td.c-status { order: 6; margin-left: auto; white-space: normal; text-align: right; }
-  .files-level td.actions { order: 6; }
-  .col-menu-slot.wide-only { display: none; }
-  .col-menu-slot.phone-only { display: inline-block; }
-  .files-level td.actions:empty { display: none; }
-  .files-level td.c-res:empty { display: none; }
-  .files-level td.c-bitrate .line { display: inline; }
-  .files-level td.c-bitrate .line + .line::before { content: " "; }
-  .files-level td.c-bitrate, .files-level td.c-dur, .files-level td.c-added { display: none; order: 7; flex-basis: 100%;
-    margin-left: 2.1rem; color: var(--muted); font-size: .82rem; text-align: left; }
-  .files-level tr.expanded td.c-bitrate, .files-level tr.expanded td.c-dur, .files-level tr.expanded td.c-added { display: block; }
+  .files-level td { display: none; border: 0; padding: 0; white-space: nowrap; background: none !important; }
+  .files-level td.sel:first-child { display: block; grid-area: 1 / 1; width: auto; }
+  .files-level td.name { display: block; grid-area: 1 / 2 / 2 / -1; min-width: 0; font-size: .85rem; font-weight: 400; cursor: pointer; white-space: normal; }
+  .files-level tr:has(td.actions > *) td.name { grid-column: 2 / 4; }
+  .files-level td.actions:has(> *) { display: flex; align-items: center; gap: .2rem; grid-area: 1 / 4; margin: -.3rem 0; }
+  .files-level td.c-codec { display: block; grid-area: 2 / 2; }
+  .files-level td.c-phone { display: flex; flex-wrap: wrap; gap: 0 .5rem; grid-area: 2 / 3; min-width: 0; color: var(--muted); font-size: .78rem; }
+  .files-level td.c-status { display: flex; gap: .25rem; grid-area: 2 / 4; justify-self: end; }
+  .files-level td.c-codec .codec, .files-level td.c-status .status { font-size: .72rem; }
+  .files-level tr:has(.codec-good) td.c-status:has(> .status-h265:only-child) { display: none; }  /* the green codec says it */
+  .files-level .long-label { display: none; }
+  .files-level .short-label { display: inline; }
+  .files-level tr.expanded td.c-dur { display: block; grid-area: 3 / 2 / 4 / 4; }
+  .files-level tr.expanded td.c-added { display: block; grid-area: 4 / 2 / 5 / 4; }
+  .files-level tr.expanded td.sel:nth-child(2) { display: block; grid-area: 3 / 4 / 5 / 5; justify-self: end; width: auto; }
+  .files-level td.c-dur, .files-level td.c-added { color: var(--muted); font-size: .78rem; }
   .files-level td[data-label]::before { content: attr(data-label) ": "; }
 
   /* Status page queue: stacked rows */

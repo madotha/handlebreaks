@@ -841,6 +841,20 @@ def codec_name(c):
     return CODEC_NAMES.get(c, c.upper())
 
 
+# Shorter names for phones, where the codec shares a line with resolution, bitrate, size and status
+CODEC_SHORT = {"hevc": "HEVC", "vvc": "VVC", "h264": "AVC", "mpeg4": "MPEG-4", "msmpeg4v3": "MS MPEG-4", "mjpeg": "MJPEG"}
+
+
+@app.template_filter("codec_label")
+def codec_label(c):
+    """The codec name, plus its short form for phones where there is one (CSS shows one of them)."""
+    name = codec_name(c)
+    short = CODEC_SHORT.get(c)
+    if not short:
+        return name
+    return Markup('<span class="long-label">{}</span><span class="short-label">{}</span>').format(name, short)
+
+
 @app.template_global()
 def codec_class(c):
     """good = optimized codec (green), other = everything else (orange), unknown = not probed."""
@@ -921,6 +935,12 @@ def fmt_size(n):
 @app.template_filter("bitrate")
 def fmt_bitrate(b):
     return f"{b / 1e6:.1f} Mbit/s" if b else "–"
+
+
+@app.template_filter("mbit")
+def fmt_mbit(b):
+    """Bitrate in Mbit/s without the unit (phones write "9.9 → 2.6 Mb/s")."""
+    return f"{b / 1e6:.1f}"
 
 
 @app.template_filter("duration")

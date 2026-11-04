@@ -55,7 +55,8 @@
 
   // The generated rules: hidden columns everywhere, fixed widths on wide screens
   function render(g) {
-    const rules = [...g.hidden].map((c) => `${g.sel} tr > :nth-child(${g.index[c]}):not([colspan]) { display: none; }`);
+    const rules = [...g.hidden].flatMap((c) => [`${g.sel} tr > :nth-child(${g.index[c]}):not([colspan]) { display: none; }`,
+      `${g.sel} [data-part="${c}"] { display: none; }`]);       // the same value inside a combined cell (Files on phones)
     const fixed = Object.keys(g.widths).length > 0;
     if (fixed) {
       const T = g.sel;

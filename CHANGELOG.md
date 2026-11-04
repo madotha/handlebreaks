@@ -7,6 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+- Files page on phones: a more compact layout, so about three times as many folders and files fit on the screen ([details](https://github.com/madotha/handlebreaks/wiki/Web-UI#files-on-a-phone)).
+  - Folders take two lines: the name and size, then the bar, share optimized and counts. The ↻ button shows on open folders.
+  - Files take two lines: the name in regular weight, then codec, resolution, bitrate, size and status. The status always stays on that line, and Replace and Delete show next to the name when there is an encode. Codec names and some statuses are shortened ("HEVC", "To review"). Tap a name for duration, date added and ↻.
+  - The bitrate is now shown in the row; the **Columns** menu hides it (and the other values) on phones too.
+  - The four summary cards are one line, and the selection bar (count, preset, Queue, Replace) appears above the tab bar only while files are ticked, instead of taking a third of the screen.
+
 ## [3.22.0] - 2026-11-03
 
 ### Added

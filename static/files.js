@@ -116,6 +116,7 @@
     button.disabled = n === 0;
     button.dataset.count = n;
     bulkButton.disabled = n === 0;
+    form.classList.toggle("has-selection", n > 0);     // phones: shows the selection bar above the tab bar
   }
 
   // Folders only open when clicked: every page load starts collapsed. Open folders are
@@ -246,11 +247,16 @@
 
   // ↻ buttons: re-read one file or folder with ffprobe, then reload the folder it's in
   const msg = form.querySelector("[data-scan-msg]");
+  let msgTimer = null;
   function say(text, kind) {
     msg.hidden = false;
     msg.className = "scan-msg " + kind;
     msg.textContent = text;
+    // Phones show the message above the tab bar, over the list: it hides by itself (tap: at once)
+    clearTimeout(msgTimer);
+    if (kind !== "busy" && phone.matches) msgTimer = setTimeout(() => { msg.hidden = true; }, kind === "error" ? 10000 : 5000);
   }
+  msg.addEventListener("click", () => { if (phone.matches) msg.hidden = true; });
   form.addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-scan-path]");
     if (!btn) return;
@@ -322,11 +328,16 @@
     }
   });
 
-  // The table headers stick below the action bar, which changes height with the window
+  // The table headers stick below the action bar, which changes height with the window;
+  // on phones, messages and popups sit above the selection bar (--sel-h, 0 while it's hidden)
   const bar = form.querySelector(".action-bar");
+  const selBar = form.querySelector("[data-sel-actions]");
   if (bar) new ResizeObserver(() => {
     document.documentElement.style.setProperty("--bar-h", `${bar.getBoundingClientRect().height}px`);
   }).observe(bar);
+  if (selBar) new ResizeObserver(() => {
+    document.documentElement.style.setProperty("--sel-h", `${selBar.getBoundingClientRect().height}px`);
+  }).observe(selBar);
 
   // "Collapse all": close every folder, forget them for reloads and drop their content
   // (reopening is quick: loaded folders are kept in sessionStorage)
@@ -355,7 +366,7 @@
     window.BulkReplace.open(new FormData(form), { say, done: () => location.reload() });
   });
 
-  // Phones: the file rows are compact; tapping a file name shows bitrate, duration and date added
+  // Phones: the file rows are compact; tapping a file name shows duration, date added and ↻
   const compact = window.matchMedia("(max-width: 720px)");
   form.addEventListener("click", (e) => {
     const cell = e.target.closest("td.name");
