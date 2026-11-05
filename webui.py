@@ -95,6 +95,7 @@ EVENT_GROUPS = {
     "scans": "Scans finished or failed (automatic scans only when they find new files)",
     "shares": "Shares or the output folder going offline and coming back",
     "cleanup": "Kept originals deleted automatically",
+    "api": "API tokens about to expire",
 }
 
 # DATE_FORMAT values: the label is the stored value, the strftime pattern renders the server's
@@ -739,6 +740,7 @@ EVENT_KINDS = {
     "offline": ("shares", "warn", "Not reachable", "library"),
     "online": ("shares", "success", "Reachable again", "library"),
     "purge": ("cleanup", "info", "Old originals deleted", "originals"),
+    "api_token_expiring": ("api", "warn", "API token expires soon", "api"),
 }
 # Several events of these kinds in one poll become one notification
 EVENT_PLURALS = {"encode_ok": "{n} encodes finished", "encode_fail": "{n} encodes failed",
@@ -832,6 +834,8 @@ def event_loop():
             event_tick()
             if time.monotonic() - pruned > 3600:
                 enc.prune_events()
+                for t in apitokens.warn_expiring(days=7):
+                    notify("api_token_expiring", None, f"{t['name']} expires {t['expires'][:10]}; create a new one under Settings → API.")
                 pruned = time.monotonic()
         except SystemExit as e:                 # e.g. config.env incomplete: try again later
             print(f"Notifications skipped: {e}", file=sys.stderr)
@@ -847,6 +851,8 @@ def event_url(link):
         return url_for("files")
     if link == "library":
         return url_for("settings", section="library")
+    if link == "api":
+        return url_for("settings", section="api")
     return url_for("status", view=link)
 
 

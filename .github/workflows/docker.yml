@@ -72,6 +72,8 @@ jobs:
             || { echo "::error::preset-check: settings without an editor field"; exit 1; }
           # every key of config.example.env has a settings field, and every setting is in the template
           run python3 webui.py --check-settings || { echo "::error::settings and config.example.env differ"; exit 1; }
+          # every API route has a scope, a summary and an example answer
+          run python3 webui.py --check-api || { echo "::error::API routes without scope or docs"; exit 1; }
           # the two-factor setup can draw its QR code
           run python3 -c "import segno; segno.make('otpauth://totp/x?secret=A').svg_inline()" || { echo "::error::segno missing"; exit 1; }
           # the web UI starts and answers its health check, with the hardening of docker-compose.yml
@@ -81,6 +83,17 @@ jobs:
             docker exec smoke python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7979/health', timeout=3)" 2>/dev/null && ok=1 && break
             sleep 2
           done
+          # the API: a token from the command line reads the status, but nothing outside its scopes
+          tok=$(docker exec smoke python3 webui.py --create-token smoke --scopes status:read 2>/dev/null)
+          api_status=$(docker exec smoke python3 -c "import urllib.request as u; print(u.urlopen(u.Request('http://127.0.0.1:7979/api/v1/status', headers={'Authorization': 'Bearer $tok'}), timeout=5).status)" 2>&1)
+          api_denied=$(docker exec smoke python3 -c "
+          import urllib.request as u, urllib.error as e
+          try: u.urlopen(u.Request('http://127.0.0.1:7979/api/v1/files', headers={'Authorization': 'Bearer $tok'}), timeout=5); print(200)
+          except e.HTTPError as x: print(x.code)" 2>&1)
+          api_anon=$(docker exec smoke python3 -c "
+          import urllib.request as u, urllib.error as e
+          try: u.urlopen('http://127.0.0.1:7979/api/v1/status', timeout=5); print(200)
+          except e.HTTPError as x: print(x.code)" 2>&1)
           # pages need a login: without an account they lead to the setup page, whose code is in the log
           gated=$(docker exec smoke python3 -c "import urllib.request; print(urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:7979/status', headers={'Sec-Fetch-Mode': 'navigate'}), timeout=3).url)" 2>&1)
           docker logs smoke | tail -20
@@ -89,6 +102,9 @@ jobs:
           [ "${ok:-0}" = 1 ] || { echo "::error::web UI didn't answer"; exit 1; }
           case "$gated" in */setup*) ;; *) echo "::error::/status didn't lead to the setup page: $gated"; exit 1;; esac
           [ "$setup_logged" -ge 1 ] || { echo "::error::the setup code isn't in the log"; exit 1; }
+          [ "$api_status" = 200 ] || { echo "::error::API with a token: $api_status"; exit 1; }
+          [ "$api_denied" = 403 ] || { echo "::error::API outside the token's scopes: $api_denied"; exit 1; }
+          [ "$api_anon" = 401 ] || { echo "::error::API without a token: $api_anon"; exit 1; }
 
       - name: Log in to the registry
         if: github.ref_type == 'tag'

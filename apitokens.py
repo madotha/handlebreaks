@@ -250,3 +250,19 @@ def expiring(days=14):
     """Active tokens that expire within `days`."""
     limit = now() + timedelta(days=days)
     return [t for t in tokens() if t["state"] == "active" and t.get("expires") and parse_time(t["expires"]) <= limit]
+
+
+def warn_expiring(days=7):
+    """Active tokens expiring within `days` that weren't warned about yet; marks them warned."""
+    limit = now() + timedelta(days=days)
+    out = []
+    with _LOCK:
+        data = _data()
+        for t in data["tokens"]:
+            exp = parse_time(t.get("expires"))
+            if state(t) == "active" and exp and exp <= limit and not t.get("warned"):
+                t["warned"] = now().isoformat()
+                out.append(dict(t))
+        if out:
+            _write(data)
+    return out

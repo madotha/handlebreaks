@@ -1,8 +1,7 @@
 # Handlebreaks API v1: specification (draft)
 
-Status: **draft for review**, not implemented. Written against Handlebreaks 4.1.1.
-Once approved, the endpoint parts of this document become the OpenAPI 3.1 description
-(`/api/v1/openapi.json`) and the wiki page **API**; this file is then removed.
+Status: phase 1 implemented in 4.2.0 (user docs: wiki page **API**; the OpenAPI description is generated from
+the route registry in `api.py`). Phases 2 and 3 are still planned as written here; keep this file until they are done.
 
 Phases:
 
@@ -117,7 +116,7 @@ Every response carries `X-Request-Id` (also written to the log next to any error
 ```
 python3 webui.py --create-token NAME --scopes status:read,queue:read [--expires 90|30|365|never] [--allow 192.168.1.0/24]
 python3 webui.py --list-tokens
-python3 webui.py --revoke-token ID|--all
+python3 webui.py --revoke-token ID   # or: --revoke-token all
 ```
 `--create-token` prints the token once on stdout (nothing else on stdout, so scripts can capture it). Docker: prefix with `docker compose exec encoding`.
 
