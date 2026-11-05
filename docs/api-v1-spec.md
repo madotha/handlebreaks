@@ -178,3 +178,169 @@ Assets: the media library (files, Plex's view of it), kept originals, the queue 
 | Resource exhaustion | Slow down the web UI | Rate limits; `limit` capped at 500; body ≤ 1 MB; ≤ 5,000 keys per request; expensive listings reuse the web UI's caches |
 
 Residual risks (documented): tokens over plain HTTP can be sniffed (use HTTPS/VPN); a token with `replace:write` can change the library within the rules of Replace… (no overwrite, original kept by default); rate limits reset on restart.
+
+---
+
+## 5. Endpoints, phase 1 (read)
+
+Common objects, used in several responses:
+
+**File** (`library:read` and wherever a file appears)
+```json
+{"key": "share2/Northwind Station (2018)/Season 02/Northwind.Station.S02E01.1080p.WEB.h264-NTB.mkv",
+ "share": {"number": 2, "name": "Shows"},
+ "folder": "Northwind Station (2018)/Season 02", "name": "Northwind.Station.S02E01.1080p.WEB.h264-NTB.mkv",
+ "size": 2147483648, "added": "2026-10-30T21:14:00+01:00",
+ "video": {"codec": "h264", "codec_name": "H.264 (AVC)", "optimized": false, "width": 1920, "height": 1080,
+           "resolution": "1080p", "duration": 2712.4, "bitrate": 6334000},
+ "probe": {"probed": "2026-10-31T02:10:00+01:00", "error": null},
+ "status": "offer", "status_label": "Offered", "last_result": {"status": "FAIL", "at": "…"}}
+```
+- `status` is one of `offer`, `queued`, `waiting` (encoded, awaiting review), `h265` (already optimized), `bad` (filtered release type), `skipped`, `baseline`; `optimized` is true for HEVC, AV1 and VVC; `video` fields are `null` until the file was probed; `last_result` is `null` without one.
+
+**Preset reference**: `{"id": "1080p-x265", "name": "1080p x265 (Ger/Eng) RF20"}`; `null` means the share's (or default) preset.
+
+### 5.1 `GET /api/v1/`: any valid token
+```json
+{"api_version": "1.0", "handlebreaks_version": "4.2.0",
+ "token": {"id": "k3m9q2xa", "name": "Homepage", "scopes": ["status:read", "…"], "expires": "…"},
+ "docs": "/api/v1/openapi.json"}
+```
+
+### 5.2 `GET /api/v1/summary`: `status:read`
+One flat object for dashboards (Homepage's `customapi` widget maps fields by dotted path). Fields of scopes the token lacks are `null` (so one dashboard token with `status:read` alone still works; with `queue:read`, `review:read`, `stats:read` the numbers fill in).
+```json
+{"encoding": {"active": true, "file": "Northwind.Station.S02E03.mkv", "percent": 41.2, "fps": 38.5,
+              "eta_seconds": 1260, "position": 3, "of": 12},
+ "worker": {"state": "encoding", "paused": false},
+ "queue": {"waiting": 9, "next_run": 4},
+ "review": {"waiting": 5, "saved_bytes": 9126805504},
+ "history": {"done_24h": 7, "failed_24h": 1},
+ "library": {"files": 70312, "optimized_percent": 38.4, "to_encode": 41022},
+ "saved": {"bytes": 1849267937280},
+ "offline": [], "scanning": false}
+```
+- `worker.state`: `encoding`, `idle`, `paused` (after Stop all, batches waiting), `waiting` (share offline, HandBrakeCLI missing or not readable: see `/status`), `off` (Docker with `WORKER_ENABLED=0` and no native worker running).
+
+### 5.3 `GET /api/v1/status`: `status:read`
+```json
+{"current": {"file": {…File…}, "position": 3, "of": 12, "percent": 41.2, "fps": 38.5, "eta_seconds": 1260,
+             "started": "2026-11-05T14:02:00+01:00", "preset": {…}},
+ "worker": {"state": "encoding", "paused": false, "stoppable": true,
+            "waiting_for": null},
+ "offline": [{"share": {"number": 1, "name": "Movies"}, "since": "…"}],
+ "scan": {"running": false, "label": null, "started": null, "last_finished": "…"},
+ "replaces": {"waiting": 0, "moving": 0, "checking": 0}}
+```
+- `current` is `null` while nothing encodes. `waiting_for` = `{"kind": "offline"|"denied"|"handbrake", "share": {…}|null, "error": "…"}` while the worker waits (the web UI's banner).
+
+### 5.4 `GET /api/v1/queue`: `queue:read`
+Parameters: `state` (`waiting`, `encoding`, `removed`; default all three), `q` (words in the key), `limit`, `cursor`, `sort` (`order` = default, `file`, `codec`, `resolution`, `bitrate`, `preset`, `state`), `dir`.
+```json
+{"items": [{"position": 3, "state": "encoding", "run": true, "file": {…File…}, "preset": {…}|null},
+           {"position": 4, "state": "waiting", "run": true, "file": {…}, "preset": null}],
+ "total": 12, "next": null}
+```
+- `position` = the worker's order; `run` = part of the current worker run (false: starts with the next run).
+
+### 5.5 `GET /api/v1/shares`: `library:read`
+```json
+{"items": [{"number": 2, "name": "Shows", "reachable": true, "preset": {…}|null, "files": 31877,
+            "last_scan": "…", "optimized_percent": 41.0}], "total": 2, "next": null}
+```
+Paths of the shares are **not** included (they reveal the host's layout and aren't needed by clients).
+
+### 5.6 `GET /api/v1/folders?path=`: `library:read`
+One level of the tree, like the Files page. `path` = `share<N>` or `share<N>/<folder>`; empty = the shares.
+Parameters: the file filters of 5.7 (counts then follow them), `limit`, `cursor`.
+```json
+{"path": "share2/Northwind Station (2018)",
+ "folders": [{"path": "share2/Northwind Station (2018)/Season 02", "name": "Season 02", "files": 10,
+              "size": 21474836480, "optimized": 2, "unknown": 0, "other": 8,
+              "states": {"offered": 6, "queued": 1, "to_review": 1, "failed": 0}}],
+ "files": {"items": [{…File…}], "total": 0, "next": null}}
+```
+- A `path` that isn't inside a share gets 404 (no `..`, no absolute paths; it is only ever matched against keys in the database, never opened on disk).
+
+### 5.7 `GET /api/v1/files`: `library:read`
+Search across the library. Parameters (all optional, combined with AND; repeatable ones as `codec=h264&codec=mpeg4`):
+- `path`: limit to a share or folder (recursive)
+- `q`: words in the key (case-insensitive, every word must match)
+- `codec`: codec names, `unknown`, `group:good`, `group:other`
+- `status`: `offer`, `queued`, `waiting`, `h265`, `bad`, `skipped`, `baseline`
+- `added`: a range spec as on the Files page (`24h`, `7d`, `3m-1m`, `-1y`) or `added_from` / `added_to` (dates, `YYYY-MM-DD`)
+- `min_size`, `max_size`, `min_bitrate`, `max_bitrate`, `resolution` (`4K`, `1440p`, `1080p`, `720p`, `576p`, `480p`, `SD`)
+- `sort` (`name`, `codec`, `resolution`, `bitrate`, `duration`, `size`, `added`, `status`), `dir`, `limit`, `cursor`
+- `facets=1` adds per-choice counts (`{"codec": {"h264": 812, …}, "status": {…}, "added": {…}}`), each counted with the other filters, like the Files page's filter panel.
+
+Answer: a list of File objects.
+
+### 5.8 `GET /api/v1/file?key=`: `library:read`
+One File, plus `queue` (`{"position", "state", "preset"}` or `null`), `encode` (`{"name", "size", "bitrate", "finished", "preset"}` while an encode waits in the output folder, else `null`) and `history` (the file's last 20 History entries).
+
+### 5.9 `GET /api/v1/review`: `review:read`
+Awaiting review: files with a finished encode in the output folder.
+Parameters: `q`, `sort` (`file`, `preset`, `codec`, `resolution`, `bitrate`, `size`, `saved`, `finished`), `dir`, `limit`, `cursor`.
+```json
+{"items": [{"file": {…File…}, "encode": {"name": "Northwind.Station.S02E01.1080p.WEB.x265-NTB.rf20.mkv",
+            "size": 734003200, "bitrate": 2165000, "finished": "…", "preset": {…}},
+            "saved_bytes": 1413480448, "saved_percent": 65.8,
+            "replace": null}],
+ "total": 5, "next": null, "saved_bytes": 9126805504}
+```
+- `replace` = `{"id", "state": "waiting"|"moving"|"checking"}` while a replace job for the file is open.
+
+### 5.10 `GET /api/v1/history`: `review:read`
+Parameters: `status` (`OK`, `FAIL`, `STOPPED`, `MISSING`, `EXISTS`, `REPLACED`), `q`, `since` (time), `include_dismissed=1`, `sort` (`at`, `file`, `status`), `dir`, `limit`, `cursor`.
+```json
+{"items": [{"at": "…", "status": "FAIL", "file": {…File…}, "can_retry": true, "log": "f-20261105-140211"},
+           {"at": "…", "status": "REPLACED", "file": {…}, "replaced_by": {…File…}, "plex": "ok"|"pending"|"scanning"|"failed"|"skipped"|null}],
+ "total": 214, "next": "…"}
+```
+- `log`: id of the HandBrake log for FAIL entries (see 5.15), `null` if there is none.
+- History is limited by `HISTORY_KEEP_DAYS` like the web UI, unless `since` asks for older entries.
+
+### 5.11 `GET /api/v1/replace/{id}`: `review:read`
+The state of one replace job: `{"id", "file", "new_name", "keep_original", "state": "waiting"|"moving"|"checking"|"done"|"failed"|"cancelled", "message", "plex", "finished"}`. (Starting and cancelling: phase 3.)
+
+### 5.12 `GET /api/v1/presets` and `GET /api/v1/presets/{id}`: `presets:read`
+List: `{"items": [{"id", "name", "default": true|false, "used_by_shares": [2], "summary": {"encoder": "x265_10bit", "quality": "rf20", "container": "mkv", "resolution_limit": "1920x1080", "audio": ["ger: AAC stereo", "eng: passthru"]}, "compatible": true, "notes": []}]}`.
+One preset: the same plus `"handbrake": {…}`, the complete HandBrake export (`PresetList[0]`) as stored, so a client can see every setting. `compatible`/`notes` come from the same check as the preset editor (settings the encoding HandBrakeCLI ignores).
+
+### 5.13 `GET /api/v1/stats`: `stats:read`
+```json
+{"library": {"files": 70312, "size": 211106232532992, "optimized_files": 27020, "optimized_size": 81064793292800,
+             "codecs": {"h264": 39871, "hevc": 26840, "unknown": 98, "…": 0},
+             "statuses": {"offer": 41022, "h265": 26840, "…": 0},
+             "resolutions": {"4K": 1203, "1080p": 41552, "…": 0}},
+ "encodes": {"total": 2140, "failed": 37, "per_day": [{"date": "2026-11-04", "ok": 14, "failed": 1}]},
+ "saved": {"bytes": 1849267937280, "replaced_files": 1980},
+ "kept_originals": {"files": 12, "size": 24696061952}}
+```
+`per_day` covers the last 30 days. Every number is the same as on the Stats page.
+
+### 5.14 `GET /api/v1/events?after=<id>`: `events:read`
+The notification feed (the same events as the web UI's popups, kept 7 days).
+```json
+{"items": [{"id": 9182, "at": "…", "kind": "encode_fail", "group": "encodes", "level": "error",
+            "title": "Encode failed", "file": {"key": "…", "name": "…"}, "detail": "HandBrakeCLI exit 3"}],
+ "last_id": 9182}
+```
+- Without `after`: only `last_id` (start of polling). `kind` is one of `encode_ok`, `encode_fail`, `run_done`, `run_interrupted`, `replace_done`, `replace_failed`, `plex_failed`, `scan_new`, `scan_done`, `scan_failed`, `offline`, `online`, `purge`, and from phase 2 `api_write` and `api_token_expiring`. Unlike the popups, the feed isn't filtered by `NOTIFY_EVENTS`.
+
+### 5.15 Logs: `logs:read`
+- `GET /api/v1/logs/failures` → `{"items": [{"id": "f-20261105-140211", "at": "…", "file": {"key", "name"}|null, "size": 48213}]}`, newest first, the HandBrake logs of failed encodes (`logs/fail-*.log`).
+- `GET /api/v1/logs/failures/{id}` → `text/plain` (UTF-8, at most the last 2 MB). Only files matching `fail-<YYYYMMDD-HHMMSS>.log` inside `logs/` are reachable; the id is checked against that pattern, never used as a path.
+- Change in `encode.sh` (installed by rename, as always for the running worker): the first line of each fail log becomes `# Handlebreaks: <key>`, so a log names its file. Older logs are matched to a FAIL result within 2 minutes of their time; `file` is `null` if none fits.
+
+### 5.16 `GET /api/v1/system`: `system:read`
+```json
+{"handlebreaks_version": "4.2.0", "api_version": "1.0",
+ "mode": "docker-ui-native-worker",
+ "handbrake": {"here": "1.11.2", "worker": "1.11.2", "worker_platform": "macOS"},
+ "ffprobe": true, "python": "3.13.5",
+ "output_folder": {"reachable": true, "free_bytes": 1294018101248, "total_bytes": 7999995002880},
+ "shares": [{"number": 2, "name": "Shows", "reachable": true}],
+ "uptime_seconds": 61234}
+```
+- `mode`: `native`, `docker`, `docker-ui-native-worker`. No paths, no settings values, no environment variables.
