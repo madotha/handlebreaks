@@ -61,7 +61,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY auth.py encoding.py funfacts.py oidc.py plex.py presets.py preset_tips.py webui.py encode.sh status.sh docker-entrypoint.sh preset.json config.example.env ./
+COPY api.py apitokens.py auth.py encoding.py funfacts.py oidc.py plex.py presets.py preset_tips.py webui.py encode.sh status.sh docker-entrypoint.sh preset.json config.example.env ./
 COPY templates/ templates/
 COPY static/ static/
 

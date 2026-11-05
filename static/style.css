@@ -926,6 +926,24 @@ code.copyable { display: block; padding: .5rem .65rem; margin: .35rem 0; overflo
 .recovery-box p { margin: 0 0 .5rem; }
 .recovery-codes { list-style: none; padding: 0; margin: .5rem 0 .75rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: .35rem .75rem; }
 .recovery-codes code { font-size: .95rem; user-select: all; }
+.api-token-value { font-size: .9rem; }
+.api-tokens, .api-ref { width: 100%; }
+.api-tokens td, .api-ref td { vertical-align: top; white-space: normal; }
+.api-tokens td.api-scopes { min-width: 12rem; overflow-wrap: anywhere; }
+.api-tokens td.nowrap, .api-ref td.nowrap { white-space: nowrap; }
+@media (max-width: 720px) {          /* phones: one block per token / endpoint instead of a wide table */
+  .api-tokens thead, .api-ref thead { display: none; }
+  .api-tokens, .api-tokens tbody, .api-tokens tr, .api-tokens td,
+  .api-ref, .api-ref tbody, .api-ref tr, .api-ref td { display: block; width: auto; }
+  .api-tokens tr, .api-ref tr { padding: .6rem 0; border-bottom: 1px solid var(--border); }
+  .api-tokens td, .api-ref td { border: 0; padding: .15rem 0; min-width: 0; }
+  .api-tokens td.nowrap, .api-ref td.nowrap { white-space: normal; }
+}
+.api-tokens .inline-form { display: inline; }
+.token-edit { display: inline-block; margin-right: .5rem; }
+.token-edit[open] { display: block; }
+.api-new .check-list label.check { align-items: baseline; flex-wrap: wrap; }
+input.medium { max-width: 26rem; }
 .account-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
 
 /* ─── Live state on the page tabs (notify.js) ──────────────────────────────── */

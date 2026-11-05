@@ -206,6 +206,100 @@
     </section>
     {% endif %}
 
+    {% if section == 'api' %}
+    {% set ai = api_info %}
+    {% if ai.new_token %}
+    <section class="panel">
+      <div class="flash warn recovery-box">
+        <p><strong>Your new token.</strong> Copy it now: it is only shown once. Send it as <code>Authorization: Bearer …</code>.</p>
+        <code class="copyable api-token-value">{{ ai.new_token }}</code>
+        <button type="button" class="secondary" data-copy-codes="{{ ai.new_token }}">Copy token</button>
+      </div>
+    </section>
+    {% endif %}
+    <section class="panel" id="tokens">
+      <div class="page-head">
+        <h3 class="panel-title">Tokens <span class="muted small">{{ ai.tokens|selectattr('state', 'equalto', 'active')|list|length }} active</span></h3>
+      </div>
+      <p class="hint">Programs such as Homepage use the API with a token. Each token can do only what its scopes allow, and nothing works without one. Base address: <code>{{ ai.base }}</code>. Over plain http the token crosses the network unencrypted: prefer https or keep the API on this machine's network.</p>
+      {% if ai.tokens %}
+      <div class="table-wrap">
+      <table class="api-tokens">
+        <thead><tr><th>Name</th><th>Scopes</th><th>Expires</th><th>Last used</th><th></th></tr></thead>
+        <tbody>
+        {% for t in ai.tokens %}
+          <tr class="{{ 'muted' if t.state != 'active' }}">
+            <td class="name"><strong>{{ t.name }}</strong><br><code class="small">hb_{{ t.id }}_…</code>
+              {% if t.state != 'active' %}<span class="badge">{{ t.state }}</span>{% endif %}
+              {% if t.allowed %}<br><span class="small muted">only from {{ t.allowed|join(', ') }}</span>{% endif %}</td>
+            <td class="small api-scopes">{{ t.scopes|join(' ') }}</td>
+            <td class="small nowrap"><span class="phone-label">Expires </span>{% if t.expires %}{{ t.expires[:16]|replace('T', ' ')|localtime }}{% else %}never{% endif %}</td>
+            <td class="small"><span class="phone-label">Last used </span>{% if t.last_used %}{{ t.last_used[:16]|replace('T', ' ')|localtime }}<br><span class="muted">{{ t.last_address }}</span>{% else %}<span class="muted">never</span>{% endif %}</td>
+            <td class="nowrap">{% if t.state == 'active' %}
+              <details class="token-edit"><summary class="link-btn">Edit</summary>
+                <form method="post" action="{{ url_for('api_token_edit', tid=t.id) }}" class="account-form">
+                  <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+                  <div class="field"><label>Name</label><input name="name" value="{{ t.name }}" maxlength="64" required></div>
+                  <div class="field"><label>Allowed addresses</label><input name="allowed" value="{{ t.allowed|join(' ') }}" placeholder="any"></div>
+                  <button class="secondary">Save</button>
+                </form></details>
+              <form method="post" action="{{ url_for('api_token_revoke', tid=t.id) }}" class="inline-form" onsubmit="return confirm('Revoke the token {{ t.name }}? Programs using it stop working.')">
+                <input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="secondary danger">Revoke</button></form>
+            {% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      <form method="post" action="{{ url_for('api_token_revoke_all') }}" onsubmit="return confirm('Revoke every token?')">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="secondary danger">Revoke all</button></form>
+      {% else %}
+      <p class="muted">No tokens yet.</p>
+      {% endif %}
+    </section>
+    <section class="panel">
+      <h3 class="panel-title">New token</h3>
+      <form method="post" action="{{ url_for('api_token_create') }}" class="api-new" data-api-new>
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <div class="field"><label for="tok-name">Name</label>
+          <input id="tok-name" name="name" required maxlength="64" placeholder="Homepage" class="medium"></div>
+        <fieldset class="check-list">
+          <legend>Scopes</legend>
+          <p class="hint">Ready-made: {% for bid, (blabel, bscopes) in ai.bundles.items() %}<button type="button" class="link-btn" data-bundle="{{ bscopes|join(' ') }}">{{ blabel }}</button>{{ ' · ' if not loop.last }}{% endfor %}</p>
+          {% for sc, (phase, desc) in ai.scopes.items() %}
+            <label class="check"><input type="checkbox" name="scope" value="{{ sc }}"> <code>{{ sc }}</code> <span class="muted small">{{ desc }}</span></label>
+          {% endfor %}
+        </fieldset>
+        <div class="field"><label for="tok-exp">Expires after</label>
+          <select id="tok-exp" name="expires">{% for d in ai.expiry %}<option value="{{ d }}" {% if d == ai.default_expiry %}selected{% endif %}>{{ d ~ ' days' if d else 'never' }}</option>{% endfor %}</select></div>
+        <div class="field"><label for="tok-allow">Allowed addresses <span class="muted small">(optional)</span></label>
+          <input id="tok-allow" name="allowed" placeholder="e.g. 192.168.1.20 or 172.18.0.0/16" class="medium">
+          <p class="hint">Only requests from these addresses or networks are accepted. Empty = any. This browser connects from {{ ai.client }}; the token list shows where a token was last used from.</p></div>
+        {% if ai.oidc_session %}
+          <p class="hint">Signed in with single sign-on: creating a token needs a sign-on within the last 10 minutes.</p>
+        {% else %}
+          <div class="field"><label for="tok-current">Current password</label>
+            <input id="tok-current" name="current" type="password" autocomplete="current-password" required class="medium"></div>
+          {% if ai.mfa %}<div class="field"><label for="tok-code">Two-factor code</label>
+            <input id="tok-code" name="code" inputmode="numeric" autocomplete="one-time-code" required maxlength="11" class="short"></div>{% endif %}
+        {% endif %}
+        <button>Create token</button>
+      </form>
+    </section>
+    <section class="panel">
+      <h3 class="panel-title">Reference</h3>
+      <p class="hint">Every endpoint with the scope it needs. The full description is at <code>{{ ai.base }}/openapi.json</code> (needs a token) and on the wiki page <a href="https://github.com/madotha/handlebreaks/wiki/API">API</a>.</p>
+      <div class="table-wrap">
+      <table class="api-ref">
+        <thead><tr><th>Endpoint</th><th>Scope</th><th>What it does</th></tr></thead>
+        <tbody>{% for r in ai.routes %}
+          <tr><td class="nowrap"><code>{{ r.method }} {{ r.path }}</code></td><td><code class="small">{{ r.scope or 'any token' }}</code></td><td class="small">{{ r.summary }}</td></tr>
+        {% endfor %}</tbody>
+      </table>
+      </div>
+    </section>
+    {% endif %}
+
     {% if section == 'security' %}
     <section class="panel">
       <h3 class="panel-title">Account</h3>

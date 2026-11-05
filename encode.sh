@@ -385,7 +385,8 @@ print("avg%d" % int(p.get("VideoAvgBitrate") or 0) if p.get("VideoQualityType", 
       went_offline; break 2
     else
       fs rm "$tmp"
-      cp "$LOGS/handbrake-last.log" "$LOGS/fail-$(date +%Y%m%d-%H%M%S).log" 2>/dev/null
+      { print -r -- "# Handlebreaks: $key"; cat "$LOGS/handbrake-last.log"; } \
+        > "$LOGS/fail-$(date +%Y%m%d-%H%M%S).log" 2>/dev/null   # first line names the file (API: logs/failures)
       log "  FAILED (exit code $rc): $key"; result FAIL "$key"
     fi
     end_critical

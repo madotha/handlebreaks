@@ -50,6 +50,8 @@ from flask.sessions import SecureCookieSessionInterface
 from markupsafe import Markup, escape
 from werkzeug.datastructures import MultiDict
 
+import api
+import apitokens
 import auth
 import encoding as enc
 import oidc
@@ -271,6 +273,17 @@ SETTINGS_PAGES = {
             S("AUTH_SESSION_DAYS", "Stay signed in for (days)", "number",
               "How long \"Keep me signed in\" lasts on a device without signing in again. "
               "Without it, the browser forgets the login when it closes. 0 = until the browser closes, always.", "30"),
+        ]),
+    ]),
+    "api": ("System", "API", [
+        ("API", [
+            S("API_ENABLED", "Answer API requests", "bool",
+              "Off: every /api/ address answers 404, tokens are kept. On: only requests with a valid token get anything.",
+              "1", env=True),
+            S("API_TRUSTED_PROXIES", "Trusted reverse proxies", "text",
+              "Addresses or networks of reverse proxies whose X-Forwarded-For header names the real client (for the "
+              "allowed networks of a token). Empty = the connecting address counts.", "", env=True,
+              placeholder="172.18.0.0/16"),
         ]),
     ]),
     "about": ("System", "About", []),
@@ -949,6 +962,8 @@ def before():
         enc.apply_config(enc.load_config())
     except SystemExit as e:
         g.config_error = str(e)
+    if request.path.startswith(api.bp.url_prefix + "/") or request.path == api.bp.url_prefix:
+        return                                  # the API: tokens only, no session, no CSRF (api.authenticate)
     app.permanent_session_lifetime = timedelta(days=session_days() or 1)   # also checked when a cookie is read
     if request.endpoint not in PUBLIC_ENDPOINTS and not signed_in():
         return login_required()
@@ -1068,7 +1083,8 @@ def start_session(user, remember, method="password", **extra):
     session.clear()
     days = session_days()
     session.permanent = bool(remember and days)
-    session.update(auth_user=user, auth_method=method, auth_gen=auth.generation(), csrf=secrets.token_urlsafe(32), **extra)
+    session.update(auth_user=user, auth_method=method, auth_gen=auth.generation(), auth_at=time.time(),
+                   csrf=secrets.token_urlsafe(32), **extra)
 
 
 def client():
@@ -3508,6 +3524,93 @@ def about_info():
     }
 
 
+# ─── API tokens (Settings → API) ──────────────────────────────────────────────
+_NEW_TOKENS = {}                                # one-time display: nonce -> (token, created)
+REAUTH_SECONDS = 600
+
+
+def reauth_problem(form):
+    """Creating a token needs the password (and the two-factor code) again, or a single sign-on
+    within the last 10 minutes."""
+    if session.get("auth_method") == "oidc":
+        if time.time() - session.get("auth_at", 0) <= REAUTH_SECONDS:
+            return None
+        return "Sign out and sign in again with single sign-on (at most 10 minutes ago) to create a token."
+    if throttled():
+        return throttled()
+    if not auth.check_password(form.get("current", "")):
+        auth.failed(client())
+        return "The current password is wrong. No token was created."
+    if auth.mfa() and not auth.check_mfa(form.get("code", "")):
+        auth.failed(client())
+        return "The two-factor code is wrong. No token was created."
+    auth.succeeded(client())
+    return None
+
+
+def api_done(message, kind="ok"):
+    flash(message, kind)
+    return redirect(url_for("settings", section="api") + "#tokens")
+
+
+@app.route("/settings/api/tokens", methods=["POST"])
+def api_token_create():
+    form = request.form
+    problem = reauth_problem(form)
+    if problem:
+        return api_done(problem, "error")
+    allowed, problem = apitokens.parse_allowed(form.get("allowed", ""))
+    if problem:
+        return api_done(problem, "error")
+    try:
+        expires = int(form.get("expires", apitokens.DEFAULT_EXPIRY))
+        token, rec = apitokens.create(form.get("name", ""), form.getlist("scope"), expires, allowed,
+                                      created_by=session.get("auth_user", ""))
+    except ValueError as e:
+        return api_done(str(e), "error")
+    now = time.time()
+    for k in [k for k, (_, t) in _NEW_TOKENS.items() if now - t > 300]:
+        del _NEW_TOKENS[k]
+    nonce = secrets.token_urlsafe(16)
+    _NEW_TOKENS[nonce] = (token, now)
+    session["api_show"] = nonce
+    return api_done(f"Token {rec['name']} created. Copy it now: it isn't shown again.")
+
+
+@app.route("/settings/api/tokens/<tid>/edit", methods=["POST"])
+def api_token_edit(tid):
+    allowed, problem = apitokens.parse_allowed(request.form.get("allowed", ""))
+    if problem:
+        return api_done(problem, "error")
+    try:
+        ok = apitokens.update(tid, name=request.form.get("name"), allowed=allowed)
+    except ValueError as e:
+        return api_done(str(e), "error")
+    return api_done("Token saved." if ok else "No such token.", "ok" if ok else "error")
+
+
+@app.route("/settings/api/tokens/<tid>/revoke", methods=["POST"])
+def api_token_revoke(tid):
+    n = apitokens.revoke(tid)
+    return api_done("Token revoked: it no longer works." if n else "No such active token.", "ok" if n else "error")
+
+
+@app.route("/settings/api/tokens/revoke-all", methods=["POST"])
+def api_token_revoke_all():
+    n = apitokens.revoke(every=True)
+    return api_done(f"{n} token{'s' if n != 1 else ''} revoked.")
+
+
+def api_context():
+    nonce = session.pop("api_show", None)
+    shown = _NEW_TOKENS.pop(nonce, (None,))[0] if nonce else None
+    base = request.host_url.rstrip("/") + request.script_root + api.bp.url_prefix
+    return {"tokens": apitokens.tokens(), "scopes": apitokens.SCOPES, "bundles": apitokens.BUNDLES,
+            "opt_in": apitokens.OPT_IN, "expiry": apitokens.EXPIRY_DAYS, "default_expiry": apitokens.DEFAULT_EXPIRY,
+            "new_token": shown, "base": base, "routes": api.ROUTES, "oidc_session": session.get("auth_method") == "oidc",
+            "mfa": bool(auth.mfa()), "client": client()}
+
+
 def settings_nav():
     """[(sidebar group, [(slug, title)])] in page order."""
     out = []
@@ -3569,6 +3672,7 @@ def settings(section, index=False):
         if section == "pages" else None,
         about=about_info() if section == "about" else None,
         security=security_context() if section == "security" else None, locks=setting_locks(),
+        api_info=api_context() if section == "api" else None,
         config_file=enc.CONFIG_FILE, config_exists=enc.CONFIG_FILE.exists(),
         env_overrides={k: shown_env(k, os.environ[k]) for k in ENV_OVERRIDES if k in os.environ})
 
@@ -3666,6 +3770,29 @@ def set_password_cli(user=None):
     return 0
 
 
+def create_token_cli(args):
+    scopes = apitokens.BUNDLES[args.scopes][1] if args.scopes in apitokens.BUNDLES else \
+        [s.strip() for s in args.scopes.split(",") if s.strip()]
+    unknown = [s for s in scopes if s not in apitokens.SCOPES]
+    if unknown:
+        print(f"Unknown scopes: {', '.join(unknown)}. Known: {', '.join(apitokens.SCOPES)}", file=sys.stderr)
+        return 2
+    expires = 0 if args.expires == "never" else int(args.expires) if args.expires.isdigit() else -1
+    allowed, problem = apitokens.parse_allowed(args.allow)
+    if problem:
+        print(problem, file=sys.stderr)
+        return 2
+    try:
+        token, rec = apitokens.create(args.create_token, scopes, expires, allowed, created_by="command line")
+    except ValueError as e:
+        print(e, file=sys.stderr)
+        return 2
+    print(token)
+    print(f"Token {rec['id']} ({rec['name']}): {' '.join(rec['scopes'])}, expires {rec['expires'] or 'never'}. "
+          "It isn't shown again.", file=sys.stderr)
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description="Handlebreaks web UI")
     ap.add_argument("--host", default=os.environ.get("WEB_HOST", "127.0.0.1"))
@@ -3677,7 +3804,30 @@ def main():
     ap.add_argument("--user", help="with --set-password: the user name (default: the current one)")
     ap.add_argument("--disable-mfa", action="store_true",
                     help="turn off two-factor authentication of the password account (lost phone), then exit")
+    ap.add_argument("--create-token", metavar="NAME", help="create an API token and print it once, then exit")
+    ap.add_argument("--scopes", default="", help="with --create-token: scopes separated by commas, or a bundle "
+                    f"({', '.join(apitokens.BUNDLES)})")
+    ap.add_argument("--expires", default=str(apitokens.DEFAULT_EXPIRY), help="with --create-token: 30, 90, 365 or never")
+    ap.add_argument("--allow", default="", help="with --create-token: allowed addresses or networks, separated by commas")
+    ap.add_argument("--list-tokens", action="store_true", help="list the API tokens, then exit")
+    ap.add_argument("--revoke-token", metavar="ID", help="revoke an API token (or all with --revoke-token all), then exit")
+    ap.add_argument("--check-api", action="store_true", help="list API routes without scope, summary or example answer, then exit")
     args = ap.parse_args()
+    if args.create_token is not None:
+        sys.exit(create_token_cli(args))
+    if args.list_tokens:
+        for t in apitokens.tokens():
+            print(f"{t['id']}  {t['state']:8}  {t['name']}  [{' '.join(t['scopes'])}]  expires {t.get('expires') or 'never'}"
+                  f"  last used {t.get('last_used') or 'never'}{'  allowed ' + ' '.join(t['allowed']) if t.get('allowed') else ''}")
+        sys.exit(0)
+    if args.revoke_token:
+        n = apitokens.revoke(every=True) if args.revoke_token == "all" else apitokens.revoke(args.revoke_token)
+        print(f"{n} token(s) revoked.")
+        sys.exit(0 if n else 1)
+    if args.check_api:
+        found = api.problems()
+        print("API routes with problems:", "; ".join(found) or "none")
+        sys.exit(1 if found else 0)
     if args.disable_mfa:
         print("Two-factor authentication is off." if auth.disable_mfa() else "Two-factor authentication wasn't on.")
         sys.exit(0)
@@ -3703,6 +3853,8 @@ def main():
         return
     serve(app, host=args.host, port=args.port, threads=8)
 
+
+api.init(sys.modules[__name__])
 
 if __name__ == "__main__":
     main()

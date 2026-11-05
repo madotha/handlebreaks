@@ -116,6 +116,12 @@
     catch (e) { btn.textContent = "Select and copy them by hand"; }
   }));
 
+  // ─── New API token: bundles tick their scopes ──────────────────────────────
+  document.querySelectorAll("[data-bundle]").forEach((btn) => btn.addEventListener("click", () => {
+    const want = new Set(btn.dataset.bundle.split(" "));
+    btn.closest("form").querySelectorAll('input[name="scope"]').forEach((box) => { box.checked = want.has(box.value); });
+  }));
+
   // ─── Connection tests (Plex, single sign-on) ───────────────────────────────
   // A button [data-conn-test="<url>"] posts the form as it is (not saved) and shows the answer
   // in the [data-conn-result] next to it.

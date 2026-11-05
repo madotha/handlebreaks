@@ -13,6 +13,7 @@ presets/
 config.env.v2.bak
 .secret_key
 auth.json
+api-tokens.json
 .setup-code
 queue/
 processing/

@@ -22,6 +22,7 @@ logs/
 .lock
 .secret_key
 auth.json
+api-tokens.json
 .setup-code
 .scan.lock
 .replace.lock
