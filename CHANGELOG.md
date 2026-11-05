@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [3.24.0] - 2026-11-05
+
 ### Added
 - **Settings → Appearance**: theme (follow the system, light or dark), accent color (amber, blue, teal, violet, pink or graphite), text size, density (compact rows and controls on wider screens), more contrast and reduced animations, plus the date format. Changes show right away while you choose and are kept after Save. The header's theme button still changes the theme for one browser; the Appearance page shows when a browser does that and can set it back to the setting. New `config.env` keys `UI_THEME`, `UI_ACCENT`, `UI_TEXT_SIZE`, `UI_DENSITY`, `UI_CONTRAST`, `UI_MOTION`; missing ones use the defaults, so nothing needs to be added by hand.
 - **Settings → Plex**: the token can be set in the web UI. It is write-only: the page only shows whether one is set, with Replace and Remove, and never sends it to the browser. A changed URL that names another server needs the token again, so a stored token never goes to a new server. **Test connection** checks the values on the form before saving and runs by itself when the page opens with a saved URL and token.
