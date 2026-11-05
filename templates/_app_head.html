@@ -9,7 +9,11 @@
       document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
         m.content = t === "light" ? "#f4f3f0" : t === "dark" ? "#1b1c1f" : m.dataset.color; });
     };
-    try { var t = localStorage.getItem("theme"); if (t === "light" || t === "dark") { document.documentElement.dataset.theme = t; themeColor(t); } } catch (e) {}
+    (function () {   /* the header button's choice for this browser (localStorage), else the setting (UI_THEME) */
+      var t = null; try { t = localStorage.getItem("theme"); } catch (e) {}
+      t = t || document.documentElement.dataset.themeDefault;
+      if (t === "light" || t === "dark") { document.documentElement.dataset.theme = t; themeColor(t); }
+    })();
   </script>
   <meta name="application-name" content="Handlebreaks">
   <meta name="apple-mobile-web-app-title" content="Handlebreaks">

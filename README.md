@@ -31,6 +31,7 @@ Handlebreaks converts movies and TV episodes in a Plex library from H.264 (and o
 - **Every HandBrake setting:** presets per share, edited in the web UI with every setting of the newest HandBrake app, or imported from it.
 - **Live status:** queue with drag-and-drop order, progress, history, statistics and notifications when encodes, replaces and scans finish.
 - **On your phone:** a layout made for phones, and it installs as an app on the home screen.
+- **Looks the way you like:** light or dark, six accent colors, text size, a compact layout and more contrast.
 - **Built for a NAS:** scans resume after an interruption, a share that goes offline pauses the work instead of failing it, and automatic rescans find new files.
 - **Easy to run:** a prebuilt Docker image for Intel and ARM, or natively on macOS for the fastest encoding.
 
@@ -85,7 +86,7 @@ open http://127.0.0.1:7979                         # Linux: xdg-open, or just op
 
 **5. First run** in the web UI:
 
-1. **Settings → Library**: replace the two example shares with your folders. A library folder `/Volumes/Media/Movies` is `/media/Movies` inside the container. Each folder needs a green ✓.
+1. **Settings → Shares & scans**: replace the two example shares with your folders. A library folder `/Volumes/Media/Movies` is `/media/Movies` inside the container. Each folder needs a green ✓.
 2. **Scan now.** The Status page shows that it's running.
 3. **Files**: tick files or whole folders and click **Queue for encoding**. Progress is on the **Status** page.
 4. Check the finished files in the output folder, then put them into the library with **Replace…** (see below) or move them yourself.
@@ -130,7 +131,7 @@ If you use an AI coding agent that can run commands on your machine (e.g. Claude
 > 1. Which setup to use: A (native on macOS), B (Docker) or C (Docker + native encoding on a Mac). Recommend one based on what you found and explain why in one sentence.
 > 2. Where my Plex library is: the mounted folder(s), and how they're mounted (e.g. SMB or NFS from a NAS). List the subfolders you find there and ask me which ones should become shares, with which display names, and whether any share needs a different preset.
 > 3. The output folder for finished encodes. Check that it exists or can be created and tell me how much free space it has.
-> 4. Optional settings: Obsidian notes folder, time zone, web UI port, automatic rescan interval, and whether to connect Plex (PLEX_URL). If I want Plex, tell me how to find my Plex token, but let me paste it into config.env myself. Never print, log or repeat the token.
+> 4. Optional settings: Obsidian notes folder, time zone, web UI port, automatic rescan interval, and whether to connect Plex (PLEX_URL). If I want Plex, tell me how to find my Plex token, but let me enter it myself under Settings → Plex in the web UI. Never print, log or repeat the token.
 >
 > Then install the missing requirements for the chosen setup (ask before installing anything), create `.env` and/or `config.env` from the templates with my answers, start the tool, and verify it: the web UI opens, every folder under Settings shows a green check mark, and a first scan starts. Don't queue encodes, replace files or change anything in my library; show me how to do that myself instead. Finish with a short summary: what you set up, where the config files are, and how to stop, update and uninstall it.
 </details>

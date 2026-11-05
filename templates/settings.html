@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
-{% block title %}Settings{% endblock %}
+{% block title %}{{ 'Settings' if index else title ~ ' · Settings' }}{% endblock %}
 
 {# Form of one share (n = its number, or "new") #}
 {% macro share_form(sh, n) %}
@@ -11,8 +11,9 @@
         <input id="name-{{ n }}" name="name" value="{{ sh.raw_name if sh else '' }}" placeholder="{{ 'the folder name' if not sh else '' }}">
         <p class="hint">Shown in the web UI, the notes and the CLI.</p></div>
       <div class="field field-wide"><label for="folder-{{ n }}">Folder</label>
-        <input id="folder-{{ n }}" name="folder" class="mono" value="{{ sh.folder if sh else '' }}" required spellcheck="false" autocomplete="off">
-        <p class="hint">Read only, never modified. Several paths for the same folder (e.g. on the Mac and in Docker) separated by <code>:</code>; the first that exists is used.</p></div>
+        <input id="folder-{{ n }}" name="folder" class="mono" value="{{ sh.folder if sh else '' }}" required spellcheck="false" autocomplete="off" data-paths>
+        <p class="hint">Read only, never modified. Several paths for the same folder (e.g. on the Mac and in Docker) separated by <code>:</code>; the first that exists is used.</p>
+        <ul class="checks" data-checks>{% if sh %}{% for p, ok in sh.checks %}<li class="{{ 'ok' if ok else 'missing' }}">{{ '✓' if ok else '✗' }} {{ p }}</li>{% endfor %}{% endif %}</ul></div>
       <div class="field"><label for="preset-{{ n }}">Preset</label>
         <select id="preset-{{ n }}" name="preset">
           <option value="">Default preset ({{ default_preset }})</option>
@@ -25,158 +26,226 @@
     </div>
   </form>
 {% endmacro %}
+
+{# "Default: …" text of a setting #}
+{% macro default_text(s) -%}
+  {%- if s.kind == 'bool' -%}{{ 'on' if s.default == '1' else 'off' }}
+  {%- elif s.kind in ('choice', 'accent') -%}{{ dict(s.choices).get(s.default, s.default) }}
+  {%- elif s.kind == 'event_groups' -%}all
+  {%- elif s.default == '' -%}empty
+  {%- else -%}{{ s.default }}{%- endif -%}
+{%- endmacro %}
+
+{# One setting: label with its config.env key, the control, hint, default, problems #}
+{% macro field(s) %}
+  {% set key = s.key %}{% set kind = s.kind %}{% set locked = key in env_overrides %}{% set value = cfg.get(key, '') %}
+  <div class="field" data-field="{{ key }}" data-kind="{{ kind }}" {% if s.default is not none %}data-default="{{ s.default }}"{% endif %}>
+    {% if kind == 'bool' %}
+      <label class="check"><input type="checkbox" name="{{ key }}" value="1" {% if value == '1' %}checked{% endif %} {% if locked %}disabled{% endif %}>
+        <span>{{ s.label }} <code>{{ key }}</code><span class="mod-dot" aria-hidden="true"></span></span></label>
+    {% elif kind == 'event_groups' %}
+      {% set picked = value.split() %}
+      <fieldset class="check-list">
+        <legend>{{ s.label }} <code>{{ key }}</code><span class="mod-dot" aria-hidden="true"></span></legend>
+        {% for group, glabel in event_groups.items() %}
+          <label class="check"><input type="checkbox" name="{{ key }}" value="{{ group }}" {% if group in picked %}checked{% endif %}> {{ glabel }}</label>
+        {% endfor %}
+      </fieldset>
+    {% elif kind == 'accent' %}
+      <fieldset class="swatches">
+        <legend>{{ s.label }} <code>{{ key }}</code><span class="mod-dot" aria-hidden="true"></span></legend>
+        <span class="swatch-row">{% for v, l in s.choices %}
+          <label class="swatch swatch-{{ v }}"><input type="radio" name="{{ key }}" value="{{ v }}" {% if (value or s.default) == v %}checked{% endif %}><span class="swatch-dot" aria-hidden="true"></span>{{ l }}</label>
+        {% endfor %}</span>
+      </fieldset>
+    {% elif kind == 'choice' and s.choices|length <= 3 %}
+      <fieldset class="segmented">
+        <legend>{{ s.label }} <code>{{ key }}</code><span class="mod-dot" aria-hidden="true"></span></legend>
+        <span class="seg">{% for v, l in s.choices %}<label><input type="radio" name="{{ key }}" value="{{ v }}" {% if (value or s.default) == v %}checked{% endif %}><span>{{ l }}</span></label>{% endfor %}</span>
+      </fieldset>
+    {% else %}
+      <label for="{{ key }}">{{ s.label }} <code>{{ key }}</code><span class="mod-dot" aria-hidden="true"></span></label>
+      {% if kind == 'preset' %}
+        <select id="{{ key }}" name="{{ key }}">
+          {% for pid, name in preset_list %}<option value="{{ pid }}" {% if value == pid %}selected{% endif %}>{{ name }}</option>{% endfor %}
+        </select>
+      {% elif kind == 'choice' %}
+        <select id="{{ key }}" name="{{ key }}">
+          {% for v, l in s.choices %}<option value="{{ v }}" {% if (value.upper() if key == 'DATE_FORMAT' else value) == v %}selected{% endif %}>{{ l }}{% if key == 'DATE_FORMAT' %} (e.g. {{ now().strftime(date_formats[v]) }}){% endif %}</option>{% endfor %}
+        </select>
+      {% elif kind == 'number' %}
+        <input id="{{ key }}" name="{{ key }}" type="number" min="0" step="1" value="{{ value or '0' }}" class="short" inputmode="numeric">
+      {% elif kind == 'secret' %}
+        <div class="secret" data-secret>
+          {% if secrets_set.get(key) %}
+            <span class="secret-state">{{ icon('check') }} Set</span>
+            <button type="button" class="secondary" data-secret-replace {% if errors.get(key) %}hidden{% endif %}>Replace</button>
+            <label class="check"><input type="checkbox" name="{{ key }}__remove" value="1" data-secret-remove> Remove</label>
+          {% endif %}
+          <input id="{{ key }}" name="{{ key }}" type="password" autocomplete="off" spellcheck="false" data-secret-input
+                 placeholder="{{ 'New token' if secrets_set.get(key) else 'Not set' }}" {% if secrets_set.get(key) and not errors.get(key) %}hidden{% endif %}>
+        </div>
+      {% else %}
+        <input id="{{ key }}" name="{{ key }}" value="{{ value }}" spellcheck="false" autocomplete="off"
+               {% if s.placeholder %}placeholder="{{ s.placeholder }}"{% endif %} {% if kind == 'paths' %}class="mono" data-paths{% endif %}>
+      {% endif %}
+    {% endif %}
+    {% if s.hint %}<p class="hint">{{ s.hint }}{% if kind == 'paths' %} Separate fallback paths for the same folder with <code>:</code>; the first one that exists is used.{% endif %}</p>{% endif %}
+    {% if s.default is not none %}
+      <p class="field-meta">Default: {{ default_text(s) }} <button type="button" class="link-btn" data-reset hidden>Reset to default</button></p>
+    {% endif %}
+    {% if key == 'UI_THEME' %}
+      <p class="flash info" data-theme-device hidden>This browser uses its own theme from the header button (<span></span>).
+        <button type="button" class="link-btn" data-theme-follow>Follow this setting</button></p>
+    {% endif %}
+    {% if locked %}<p class="flash info">Set by the environment variable <code>{{ key }}={{ env_overrides[key] }}</code> (e.g. in docker-compose.hybrid.yml). The value here is ignored.</p>{% endif %}
+    {% if errors.get(key) %}<p class="flash error">{{ errors[key] }}</p>{% endif %}
+    {% if kind == 'paths' %}
+      <ul class="checks" data-checks>{% for p, ok in checks.get(key, []) %}<li class="{{ 'ok' if ok else 'missing' }}">{{ '✓' if ok else '✗' }} {{ p }}</li>{% endfor %}</ul>
+    {% endif %}
+  </div>
+{% endmacro %}
+
 {% block content %}
-<h1>Settings</h1>
-<div class="settings">
-  <nav class="side" aria-label="Sections">
-    {% for key, sec in settings_sections.items() %}
-      <a href="{{ url_for('settings', section=key) }}" {% if key == section %}aria-current="page"{% endif %}>{{ sec[0] }}</a>
+<div class="settings{{ ' settings-index' if index }}">
+  <nav class="side" aria-label="Settings pages">
+    <h1>Settings</h1>
+    {% for group_name, items in settings_nav %}
+      <p class="side-group">{{ group_name }}</p>
+      {% for slug, page_title in items %}
+        <a href="{{ url_for('settings', section=slug) }}" {% if slug == section %}aria-current="page"{% endif %}>
+          <span>{{ page_title }}</span><span class="side-chevron" aria-hidden="true">{{ icon('chevron') }}</span></a>
+      {% endfor %}
     {% endfor %}
   </nav>
 
   <div class="settings-main">
-  {% if section == 'library' %}
-  <section class="panel shares-panel">
-    <div class="page-head">
-      <h2>Shares <span class="muted small">{{ shares|length }}</span></h2>
-      <button type="button" class="icon-btn icon-lg" data-share-add aria-label="Add a share" data-tip="Add a share">{{ icon('plus') }}</button>
+    <div class="settings-head">
+      <a class="settings-back" href="{{ url_for('settings_index') }}"><span aria-hidden="true">‹</span> Settings</a>
+      <p class="side-group">{{ group }}</p>
+      <h2 class="settings-title">{{ title }}</h2>
     </div>
-    <div class="share-list">
-      {% for sh in shares %}
-        <details class="share-card" id="share{{ sh.n }}" {% if open_share == sh.prefix %}open{% endif %}>
-          <summary>
-            <span class="share-main">
-              <span class="share-name">{{ sh.name }} <span class="muted small">share {{ sh.n }}</span></span>
-              <span class="share-paths">{% for p, ok in sh.checks %}<span class="{{ 'ok' if ok else 'missing' }}" title="{{ 'Reachable' if ok else 'Not reachable here' }}">{{ '✓' if ok else '✗' }} {{ p }}</span>{% endfor %}</span>
-            </span>
-            <span class="share-meta">
-              <span>{{ sh.preset_name or 'Default preset' }}</span>
-              <span>{% if sh.files %}{{ sh.files|count }} files · {{ sh.scanned|localtime if sh.scanned else 'scanned before 3.0' }}{% else %}not scanned yet{% endif %}</span>
-            </span>
-            <span class="share-actions">
-              <button type="button" class="icon-btn icon-lg" data-share-edit aria-label="Edit {{ sh.name }}" data-tip="Edit">{{ icon('edit') }}</button>
-              {% if sh.files %}
-                <button class="icon-btn icon-lg" form="share-action" formaction="{{ url_for('start_scan') }}" name="share" value="{{ sh.prefix }}:force"
-                        aria-label="Full rescan" data-tip="Full rescan (re-reads all {{ sh.files|count }} files with ffprobe)" {% if scan_state.running %}disabled{% endif %}
-                        onclick="return confirm('Re-read all {{ sh.files }} files of {{ sh.name }} with ffprobe? This takes about {{ ((sh.files * 0.03) / 60)|round(0, 'ceil')|int }} min or more.')">{{ icon('refresh') }}</button>
-              {% else %}
-                <button class="icon-btn icon-lg" form="share-action" formaction="{{ url_for('start_scan') }}" name="share" value="{{ sh.prefix }}"
-                        aria-label="Initial scan" data-tip="Initial scan of this share" {% if scan_state.running %}disabled{% endif %}>{{ icon('refresh') }}</button>
-              {% endif %}
-              <button class="icon-btn icon-lg danger-icon" form="share-action" formaction="{{ url_for('share_delete', n=sh.n) }}"
-                      aria-label="Remove {{ sh.name }}" data-tip="Remove this share" {% if shares|length == 1 %}disabled{% endif %}
-                      onclick="return confirm('Remove the share {{ sh.name }}? Its files disappear from the list with the next scan; the folder itself is not touched.')">{{ icon('trash') }}</button>
-            </span>
-          </summary>
-          {{ share_form(sh, sh.n) }}
-        </details>
-      {% endfor %}
-      <details class="share-card share-new" id="share-new" {% if open_share == 'new' or not shares %}open{% else %}hidden{% endif %}>
-        <summary><span class="share-main"><span class="share-name">New share <span class="muted small">will be share {{ next_share }}</span></span></span></summary>
-        {{ share_form(none, 'new') }}
-      </details>
-    </div>
-    <form id="share-action" method="post" hidden>
-      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-      <input type="hidden" name="next" value="{{ url_for('settings', section='library') }}">
-    </form>
-  </section>
-  {% endif %}
-
-  <form class="panel" method="post">
-    <h2>{{ 'Output' if section == 'library' else title }}</h2>
-    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
-    <input type="hidden" name="next" value="{{ request.path }}">
-    <button class="visually-hidden" tabindex="-1" aria-hidden="true">Save</button>{# default for Enter: save, not scan #}
     {% if not config_exists %}<p class="flash info">{{ config_file }} doesn't exist yet. Saving creates it from the template.</p>{% endif %}
 
-    {% for key, label, typ, hint in fields %}
-      {% if typ == 'heading' %}
-        <h3 class="field-group">{{ label }}
-          {% set info = share_info.get(hint) %}
-          {% if info %}
-            <span class="share-scan">
-              <span class="muted small">{% if info.files %}{{ info.files|count }} file{{ '' if info.files == 1 else 's' }} · scanned {{ info.scanned|localtime if info.scanned else 'before 3.0' }}{% else %}not scanned yet{% endif %}</span>
-              {% if info.files %}
-                <button class="secondary" formaction="{{ url_for('start_scan') }}" name="share" value="{{ hint }}:force"
-                        title="Re-read every file of this share with ffprobe" {% if scan_state.running %}disabled{% endif %}
-                        onclick="return confirm('Re-read all {{ info.files }} files of this share with ffprobe? This takes about {{ ((info.files * 0.03) / 60)|round(0, 'ceil')|int }} min or more.')">Full rescan</button>
-              {% else %}
-                <button formaction="{{ url_for('start_scan') }}" name="share" value="{{ hint }}" {% if scan_state.running %}disabled{% endif %}>Initial scan</button>
-              {% endif %}
-            </span>
-          {% endif %}
-        </h3>
-        {% if errors.get(key) %}<p class="flash error">{{ errors[key] }}</p>{% endif %}
-      {% else %}
-      <div class="field">
-        {% if typ in ('preset', 'share_preset') %}
-          <label for="{{ key }}">{{ label }} <code>{{ key }}</code></label>
-          <select id="{{ key }}" name="{{ key }}">
-            {% if typ == 'share_preset' %}<option value="">Default preset ({{ default_preset }})</option>{% endif %}
-            {% for pid, name in preset_list %}<option value="{{ pid }}" {% if cfg.get(key) == pid %}selected{% endif %}>{{ name }}</option>{% endfor %}
-          </select>
-        {% elif typ == 'date_format' %}
-          <label for="{{ key }}">{{ label }} <code>{{ key }}</code></label>
-          <select id="{{ key }}" name="{{ key }}">
-            {% for fmt, pattern in date_formats.items() %}<option value="{{ fmt }}" {% if cfg.get(key, '').upper() == fmt %}selected{% endif %}>{{ fmt }} (e.g. {{ now().strftime(pattern) }})</option>{% endfor %}
-          </select>
-        {% elif typ == 'number' %}
-          <label for="{{ key }}">{{ label }} <code>{{ key }}</code></label>
-          <input id="{{ key }}" name="{{ key }}" type="number" min="0" step="1" value="{{ cfg.get(key) or '0' }}" class="short">
-        {% elif typ == 'bool' %}
-          <label class="check"><input type="checkbox" name="{{ key }}" value="1" {% if cfg.get(key) == '1' %}checked{% endif %}> {{ label }}</label>
-        {% elif typ == 'event_groups' %}
-          {% set picked = cfg.get(key, '').split() %}
-          <fieldset class="check-list">
-            <legend>{{ label }} <code>{{ key }}</code></legend>
-            {% for group, glabel in event_groups.items() %}
-              <label class="check"><input type="checkbox" name="{{ key }}" value="{{ group }}" {% if group in picked %}checked{% endif %}> {{ glabel }}</label>
-            {% endfor %}
-          </fieldset>
-        {% else %}
-          <label for="{{ key }}">{{ label }} <code>{{ key }}</code></label>
-          <input id="{{ key }}" name="{{ key }}" value="{{ cfg.get(key, '') }}" {% if typ == 'preset' %}list="presets"{% endif %} spellcheck="false" autocomplete="off">
-          {% if typ == 'preset' %}<datalist id="presets">{% for p in presets %}<option value="{{ p }}">{% endfor %}</datalist>{% endif %}
-        {% endif %}
-        {% if hint %}<p class="hint">{{ hint }}{% if typ in ('paths', 'paths_new') %} Separate fallback paths for the same folder with <code>:</code>; the first one that exists is used.{% endif %}</p>{% endif %}
-        {% if key in env_overrides %}<p class="flash info">Set by the environment variable <code>{{ key }}={{ env_overrides[key] }}</code> (e.g. in docker-compose.hybrid.yml). The value here is ignored.</p>{% endif %}
-        {% if errors.get(key) %}<p class="flash error">{{ errors[key] }}</p>{% endif %}
-        {% if checks.get(key) %}
-          <ul class="checks">{% for p, ok in checks[key] %}<li class="{{ 'ok' if ok else 'missing' }}">{{ '✓' if ok else '✗' }} {{ p }}</li>{% endfor %}</ul>
-        {% endif %}
+    {% if section == 'library' %}
+    <section class="panel shares-panel">
+      <div class="page-head">
+        <h3 class="panel-title">Shares <span class="muted small">{{ shares|length }}</span></h3>
+        <button type="button" class="icon-btn icon-lg" data-share-add aria-label="Add a share" data-tip="Add a share">{{ icon('plus') }}</button>
       </div>
+      <div class="share-list">
+        {% for sh in shares %}
+          <details class="share-card" id="share{{ sh.n }}" {% if open_share == sh.prefix %}open{% endif %}>
+            <summary>
+              <span class="share-main">
+                <span class="share-name">{{ sh.name }} <span class="muted small">share {{ sh.n }}</span></span>
+                <span class="share-paths">{% for p, ok in sh.checks %}<span class="{{ 'ok' if ok else 'missing' }}" title="{{ 'Reachable' if ok else 'Not reachable here' }}">{{ '✓' if ok else '✗' }} {{ p }}</span>{% endfor %}</span>
+              </span>
+              <span class="share-meta">
+                <span>{{ sh.preset_name or 'Default preset' }}</span>
+                <span>{% if sh.files %}{{ sh.files|count }} files · {{ sh.scanned|localtime if sh.scanned else 'scanned before 3.0' }}{% else %}not scanned yet{% endif %}</span>
+              </span>
+              <span class="share-actions">
+                <button type="button" class="icon-btn icon-lg" data-share-edit aria-label="Edit {{ sh.name }}" data-tip="Edit">{{ icon('edit') }}</button>
+                {% if sh.files %}
+                  <button class="icon-btn icon-lg" form="share-action" formaction="{{ url_for('start_scan') }}" name="share" value="{{ sh.prefix }}:force"
+                          aria-label="Full rescan" data-tip="Full rescan (re-reads all {{ sh.files|count }} files with ffprobe)" {% if scan_state.running %}disabled{% endif %}
+                          onclick="return confirm('Re-read all {{ sh.files }} files of {{ sh.name }} with ffprobe? This takes about {{ ((sh.files * 0.03) / 60)|round(0, 'ceil')|int }} min or more.')">{{ icon('refresh') }}</button>
+                {% else %}
+                  <button class="icon-btn icon-lg" form="share-action" formaction="{{ url_for('start_scan') }}" name="share" value="{{ sh.prefix }}"
+                          aria-label="Initial scan" data-tip="Initial scan of this share" {% if scan_state.running %}disabled{% endif %}>{{ icon('refresh') }}</button>
+                {% endif %}
+                <button class="icon-btn icon-lg danger-icon" form="share-action" formaction="{{ url_for('share_delete', n=sh.n) }}"
+                        aria-label="Remove {{ sh.name }}" data-tip="Remove this share" {% if shares|length == 1 %}disabled{% endif %}
+                        onclick="return confirm('Remove the share {{ sh.name }}? Its files disappear from the list with the next scan; the folder itself is not touched.')">{{ icon('trash') }}</button>
+              </span>
+            </summary>
+            {{ share_form(sh, sh.n) }}
+          </details>
+        {% endfor %}
+        <details class="share-card share-new" id="share-new" {% if open_share == 'new' or not shares %}open{% else %}hidden{% endif %}>
+          <summary><span class="share-main"><span class="share-name">New share <span class="muted small">will be share {{ next_share }}</span></span></span></summary>
+          {{ share_form(none, 'new') }}
+        </details>
+      </div>
+      <form id="share-action" method="post" hidden>
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ url_for('settings', section='library') }}">
+      </form>
+    </section>
+    {% endif %}
+
+    {% if section == 'about' %}
+    <section class="panel">
+      <h3 class="panel-title">Handlebreaks</h3>
+      <dl class="about-list">
+        <dt>Version</dt><dd>{{ app_version }} · <a href="https://github.com/madotha/handlebreaks/blob/main/CHANGELOG.md">Changelog</a> · <a href="https://github.com/madotha/handlebreaks/releases">Releases</a></dd>
+        <dt>Runs</dt><dd>{{ about.mode }}</dd>
+        <dt>Documentation</dt><dd><a href="https://github.com/madotha/handlebreaks/wiki">Wiki</a></dd>
+      </dl>
+    </section>
+    <section class="panel">
+      <h3 class="panel-title">Tools</h3>
+      <dl class="about-list">
+        <dt>HandBrakeCLI</dt><dd>{{ about.handbrake }}{% if about.handbrake_worker %} <span class="muted">(here)</span>{% endif %}</dd>
+        {% if about.handbrake_worker %}<dt>Worker's HandBrakeCLI</dt><dd>{{ about.handbrake_worker }}</dd>{% endif %}
+        <dt>ffprobe</dt><dd>{% if about.ffprobe %}<code>{{ about.ffprobe }}</code>{% else %}not found: scans can't read codecs{% endif %}</dd>
+        <dt>Python</dt><dd>{{ about.python }}</dd>
+      </dl>
+    </section>
+    <section class="panel">
+      <h3 class="panel-title">Files</h3>
+      <dl class="about-list">
+        <dt>Data folder</dt><dd><code>{{ about.data_dir }}</code></dd>
+        <dt>Settings file</dt><dd><code>{{ about.config_file }}</code><p class="hint">Every settings page writes to it and keeps its comments. <code>$HOME</code> is allowed in values, but no other <code>$</code>, no quotes and no backslash.</p></dd>
+        <dt>Database</dt><dd><code>{{ about.db_file }}</code>{% if about.db_size is not none %} · {{ about.db_size|filesizeformat }}{% endif %}</dd>
+        <dt>Shares</dt><dd>{{ about.shares }}</dd>
+        {% if about.env %}<dt>Environment</dt><dd>{% for k, v in about.env.items() %}<code>{{ k }}={{ v }}</code>{{ ' ' }}{% endfor %}</dd>{% endif %}
+      </dl>
+    </section>
+    {% endif %}
+
+    {% if panels or section == 'pages' %}
+    <form method="post" action="{{ url_for('settings', section=section) }}" data-settings-form>
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <button class="visually-hidden" tabindex="-1" aria-hidden="true">Save</button>{# default for Enter: save #}
+      {% if section == 'pages' %}
+        <section class="panel">
+          <h3 class="panel-title">Files page</h3>
+          {% include "_files_settings.html" %}
+        </section>
       {% endif %}
-    {% endfor %}
-    {% if section == 'files' %}{% include "_files_settings.html" %}{% endif %}
-    {% if plex_status %}<p class="flash {{ 'ok' if plex_status[0] else 'error' }}">{{ plex_status[1] }}</p>{% endif %}
-    {% if section == 'encoding' %}<p class="hint"><a href="{{ url_for('presets_page') }}">Manage presets</a></p>{% endif %}
-    <button>Save</button>
-    <p class="hint">Saved to <code>{{ config_file }}</code>. <code>$HOME</code> is allowed, but no other <code>$</code>, no quotes and no backslash.</p>
-  </form>
-  <p class="about muted small">Handlebreaks v{{ app_version }} · <a href="https://github.com/madotha/handlebreaks/wiki">Documentation</a> · <a href="https://github.com/madotha/handlebreaks/blob/main/CHANGELOG.md">Changelog</a></p>
+      {% for panel_title, fields in panels %}
+        <section class="panel">
+          <h3 class="panel-title">{{ panel_title }}</h3>
+          {% for s in fields %}{{ field(s) }}{% endfor %}
+          {% if section == 'encoding' and panel_title == 'Default preset' %}
+            <div class="preset-use">
+              <p class="field-label">Presets of the shares</p>
+              <ul>{% for sh in shares %}<li><span>{{ sh.name }}</span> <span class="muted">{{ sh.preset_name or 'default preset' }}</span></li>{% endfor %}</ul>
+              <p class="hint">Change a share's preset under <a href="{{ url_for('settings', section='library') }}">Shares &amp; scans</a>; edit presets on the <a href="{{ url_for('presets_page') }}">Presets</a> page.</p>
+            </div>
+          {% endif %}
+          {% if section == 'replace' and panel_title == 'File names' %}
+            <p class="name-example" data-name-example>Example: <code data-before>{{ example[0] }}</code> <span aria-hidden="true">→</span> <code data-after>{{ example[1] }}</code>
+              <span class="muted small">(encoded as HEVC with RF 20)</span></p>
+          {% endif %}
+          {% if section == 'plex' %}
+            <div class="plex-test">
+              <button type="button" class="secondary" data-plex-test>Test connection</button>
+              <p class="flash" data-plex-result hidden></p>
+            </div>
+          {% endif %}
+        </section>
+      {% endfor %}
+      <div class="editor-save settings-save" data-save-bar>
+        <button data-save>Save</button>
+        <button type="button" class="secondary" data-discard hidden>Discard</button>
+        <span class="muted small" data-save-state></span>
+      </div>
+    </form>
+    {% endif %}
   </div>
 </div>
-{% if section == 'library' %}
-<script>
-  // Share list: the edit button opens a share, Cancel closes it, + shows the new share
-  (function () {
-    const list = document.querySelector(".share-list");
-    list.addEventListener("click", (e) => {
-      const card = e.target.closest(".share-card");
-      if (e.target.closest("[data-share-edit]")) { e.preventDefault(); card.open = !card.open; }
-      if (e.target.closest("[data-share-cancel]")) {
-        card.open = false;
-        card.querySelector("form").reset();
-        if (card.classList.contains("share-new")) card.hidden = true;
-      }
-    });
-    document.querySelector("[data-share-add]").addEventListener("click", () => {
-      const card = document.getElementById("share-new");
-      card.hidden = false; card.open = true;
-      card.querySelector('[name="folder"]').focus();
-    });
-  })();
-</script>
-{% endif %}
+<script src="{{ url_for('static', filename='settings.js') }}"></script>
 {% endblock %}

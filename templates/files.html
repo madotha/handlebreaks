@@ -88,7 +88,7 @@
       <div class="fp-foot">
         <button class="fp-apply" data-filter-apply>Show files</button>
         <noscript><button>Filter</button></noscript>
-        {% if has_defaults and not at_defaults %}<a href="{{ url_for('files', sort='none') }}" title="The filters chosen under Settings → Files page">Reset to default</a>{% endif %}
+        {% if has_defaults and not at_defaults %}<a href="{{ url_for('files', sort='none') }}" title="The filters chosen under Settings → Pages">Reset to default</a>{% endif %}
         {% if filtered %}<a href="{{ url_for('files', f=1) }}">Clear all</a>{% endif %}
       </div>
     </form>

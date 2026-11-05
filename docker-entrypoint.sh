@@ -11,7 +11,7 @@
 #    stop_grace_period in docker-compose.yml gives it the time for that.
 #
 # Whether the container encodes is controlled by WORKER_ENABLED in config.env
-# (web UI: Settings → Worker). If WORKER_ENABLED is set as an environment variable
+# (web UI: Settings → Encoding). If WORKER_ENABLED is set as an environment variable
 # (docker-compose.hybrid.yml), that value wins and config.env is ignored for it.
 # ─────────────────────────────────────────────────────────────────────────────
 set -eu

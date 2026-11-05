@@ -7,7 +7,8 @@
 {% macro nav_state(endpoint) %}{% if endpoint == 'status' %} data-nav="status"{% elif endpoint == 'files' %} data-nav="files"{% endif %}{% endmacro %}
 {% macro nav_badge(endpoint) %}{% if endpoint == 'status' %}<span class="nav-badge" data-nav-badge hidden></span>{% elif endpoint == 'files' %}<span class="nav-dot" data-nav-dot hidden></span>{% endif %}{% endmacro %}
 <!doctype html>
-<html lang="en" data-date-format="{{ date_format }}">
+<html lang="en" data-date-format="{{ date_format }}" data-theme-default="{{ ui.theme }}" data-accent="{{ ui.accent }}"
+      data-text="{{ ui.text_size }}" data-density="{{ ui.density }}" data-contrast="{{ ui.contrast }}" data-motion="{{ ui.motion }}">
 <head>
   <meta charset="utf-8">
 {% include "_app_head.html" %}

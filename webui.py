@@ -82,80 +82,6 @@ EVENT_GROUPS = {
     "cleanup": "Kept originals deleted automatically",
 }
 
-# section -> (title, [(key, label, type, hint)])
-SETTINGS = {
-    "library": ("Library", []),                 # fields built from config.env (library_fields)
-    "encoding": ("Encoding", [
-        ("DEFAULT_PRESET", "Default preset", "preset",
-         "Used for every share without its own preset. Manage presets on the Presets page."),
-    ]),
-    "notes": ("Obsidian", [
-        ("NOTE_DIR", "Notes folder", "paths", "For \"Encoding To-Do.md\" and \"Encoding Status.md\". Empty = no notes."),
-        ("STATUS_NOTE_ENABLED", "Update the status note every minute while encoding", "bool", ""),
-    ]),
-    "display": ("Display", [
-        ("DATE_FORMAT", "Date format", "date_format",
-         "How dates are shown everywhere in the web UI, always followed by the time (24 h). Default YYYY-MM-DD."),
-    ]),
-    "files": ("Files page", []),                # default filters and date filters (files_settings_*)
-    "notifications": ("Notifications", [
-        ("NOTIFY_SECONDS", "Hide notifications after (seconds)", "number",
-         "Notifications pop up in the corner of every page of the web UI that is open. "
-         "Hovering one keeps it open. 0 = keep them until you close them. Default 8."),
-        ("NOTIFY_ERRORS_STAY", "Keep errors until closed", "bool",
-         "Failed encodes, replaces and scans stay until you close them, whatever the time above. On by default."),
-        ("NOTIFY_EVENTS", "Notify about", "event_groups",
-         "Your own actions (queueing, removing, deleting) aren't notified: the page confirms them right away."),
-    ]),
-    "status": ("Status", [
-        ("HISTORY_KEEP_DAYS", "Keep history entries visible (days)", "number",
-         "The Status page's History hides results and replaces older than this. Nothing is deleted. 0 = always show. Default 30."),
-    ]),
-    "scans": ("Scans", [
-        ("SCAN_INTERVAL", "Automatic rescan interval (minutes)", "number",
-         "Rescans all shares when the last scan is this many minutes old; only new or changed "
-         "files are read with ffprobe. 0 = off. Runs while the web UI runs (always in Docker)."),
-        ("FFPROBE_WORKERS", "Parallel ffprobe calls", "number",
-         f"How many files are read at the same time during scans. Empty or 0 = number of CPUs "
-         f"({os.cpu_count()} here). Lower it if the NAS gets slow during scans."),
-    ]),
-    "replace": ("Replace", [
-        ("RENAME_CODEC_TAGS", "Codec tags in file names", "text",
-         "\"Replace…\" suggests the original name with its codec tag (h264, x264, H.264, AVC, XviD …) "
-         "replaced by the encode's codec. Format: codec=tag pairs, e.g. \"hevc=x265 av1=AV1\". "
-         "Empty = hevc=x265 av1=AV1 vvc=VVC h264=x264."),
-        ("RENAME_QUALITY", "Add the quality after the release group (e.g. x265-donm.rf20 or x265-donm.avg2000)", "bool",
-         "From the preset the file was encoded with: rf<RF value> for constant quality, avg<kbit/s> for average bitrate."),
-        ("KEEP_ORIGINALS", "Keep originals when replacing", "bool",
-         "Default of the \"Keep the original\" option in the Replace dialogs (each replace can still change it). "
-         "On: the original goes to the output folder's .replaced folder. Off: it is deleted right after the move. On by default."),
-        ("KEEP_ORIGINALS_DAYS", "Delete kept originals after (days)", "number",
-         "\"Replace…\" keeps the original in the output folder's .replaced folder (see Status → Kept originals). "
-         "With a number here they are deleted permanently once they were kept that long, "
-         "checked hourly while the web UI runs. 0 = never (default)."),
-        ("RENAME_GROUP", "Your release group", "text",
-         "Optional. Replaces the release group after the codec tag, e.g. \"donm\": "
-         "\"…h264-NTB.mkv\" becomes \"…x265-donm.mkv\". Empty = keep the original group."),
-    ]),
-    "plex": ("Plex", [
-        ("PLEX_URL", "Plex server URL", "text",
-         "E.g. http://127.0.0.1:32400. Used after \"Replace…\": Plex scans the file's folder (once for all "
-         "replaces in it), analyzes files replaced under the same name, and the web UI checks that Plex "
-         "lists the new file. The token (PLEX_TOKEN) is set in config.env only, never shown here. Empty = off."),
-        ("PLEX_PATH_MAP", "Path mapping to Plex", "text",
-         "Only if Plex sees your library under other paths than the worker, e.g. Plex on the NAS: "
-         "\"/Users/me/nfs/PlexMedia=/volume1/PlexMedia\" (worker path=Plex path; several separated by ;). "
-         "Empty = the same paths."),
-    ]),
-    "worker": ("Worker", [
-        ("WORKER_ENABLED", "Encode inside the Docker container", "bool",
-         "Docker only. Turn off when the Mac encodes natively with launchd and encode.sh, "
-         "and the container only runs the web UI and scans."),
-    ]),
-}
-
-# Defaults the code uses when a key is missing from an older config.env: shown on the form, so
-# saving a section doesn't turn them into 0 / off
 # DATE_FORMAT values: the label is the stored value, the strftime pattern renders the server's
 # fallback text (static/time.js builds the same order from html[data-date-format])
 DATE_FORMATS = {
@@ -164,6 +90,154 @@ DATE_FORMATS = {
 }
 DEFAULT_DATE_FORMAT = "YYYY-MM-DD"
 
+# Accent colors of the web UI (UI_ACCENT): value -> label; the colors are in static/style.css
+ACCENTS = {"amber": "Amber", "blue": "Blue", "teal": "Teal", "violet": "Violet", "pink": "Pink", "graphite": "Graphite"}
+
+
+def S(key, label, kind, hint="", default=None, **extra):
+    """One setting of the Settings pages. kind: text, paths, number, bool, preset, choice
+    (extra choices=[(value, label)]), event_groups, secret (never sent to the browser) or
+    accent. default: shown on the form and used when config.env lacks the key (None = no
+    default to show). extra: docker=True (only means something in Docker), env=True (an
+    environment variable of the same name wins), scope="user" (a personal preference: per
+    user once there is a login, for everyone until then), placeholder."""
+    return {"key": key, "label": label, "kind": kind, "hint": hint, "default": default, "scope": "instance", **extra}
+
+
+# Settings pages: slug -> (sidebar group, title, [(panel title, [settings])]). The shares
+# (library), the Files page filters (pages) and the About page have their own parts in
+# settings.html; FILES_DEFAULT_FILTERS and ADDED_FILTERS are in SPECIAL_KEYS.
+SETTINGS_PAGES = {
+    "library": ("Library", "Shares & scans", [
+        ("Scanning", [
+            S("SCAN_INTERVAL", "Automatic rescan interval (minutes)", "number",
+              "Rescans all shares when the last scan is this many minutes old; only new or changed "
+              "files are read with ffprobe. 0 = off. Runs while the web UI runs (always in Docker).", "0"),
+            S("FFPROBE_WORKERS", "Parallel ffprobe calls", "number",
+              f"How many files are read at the same time during scans. Empty or 0 = number of CPUs "
+              f"({os.cpu_count()} here). Lower it if the NAS gets slow during scans.", "0"),
+        ]),
+    ]),
+    "encoding": ("Encoding", "Encoding", [
+        ("Default preset", [
+            S("DEFAULT_PRESET", "Default preset", "preset",
+              "Used for every share without its own preset; a preset chosen when queueing wins over both."),
+        ]),
+        ("Output", [
+            S("ENCODED_DIR", "Output folder", "paths",
+              "Finished files land here and wait for your review. Kept originals go to its .replaced folder."),
+        ]),
+        ("Worker", [
+            S("WORKER_ENABLED", "Encode inside the Docker container", "bool",
+              "Turn off when the Mac encodes natively with launchd and encode.sh, "
+              "and the container only runs the web UI and scans.", "1", docker=True, env=True),
+        ]),
+    ]),
+    "replace": ("Review & replace", "Replace", [
+        ("File names", [
+            S("RENAME_CODEC_TAGS", "Codec tags in file names", "text",
+              "\"Replace…\" suggests the original name with its codec tag (h264, x264, H.264, AVC, XviD …) "
+              "replaced by the encode's codec. Format: codec=tag pairs, e.g. \"hevc=x265 av1=AV1\". "
+              "Empty = hevc=x265 av1=AV1 vvc=VVC h264=x264.", "", placeholder="hevc=x265 av1=AV1 vvc=VVC h264=x264"),
+            S("RENAME_GROUP", "Your release group", "text",
+              "Optional. Replaces the release group after the codec tag, e.g. \"donm\": "
+              "\"…h264-NTB.mkv\" becomes \"…x265-donm.mkv\". Empty = keep the original group.", ""),
+            S("RENAME_QUALITY", "Add the quality after the release group (e.g. x265-donm.rf20 or x265-donm.avg2000)", "bool",
+              "From the preset the file was encoded with: rf<RF value> for constant quality, avg<kbit/s> for average bitrate.", "1"),
+        ]),
+        ("Originals", [
+            S("KEEP_ORIGINALS", "Keep originals when replacing", "bool",
+              "Default of the \"Keep the original\" option in the Replace dialogs (each replace can still change it). "
+              "On: the original goes to the output folder's .replaced folder. Off: it is deleted right after the move.", "1"),
+            S("KEEP_ORIGINALS_DAYS", "Delete kept originals after (days)", "number",
+              "Kept originals (Status → Kept originals) are deleted permanently once they were kept that long, "
+              "checked hourly while the web UI runs. 0 = never.", "0"),
+        ]),
+    ]),
+    "plex": ("Integrations", "Plex", [
+        ("Connection", [
+            S("PLEX_URL", "Plex server URL", "text",
+              "E.g. http://127.0.0.1:32400; several addresses separated by spaces are tried in order. Used after "
+              "\"Replace…\": Plex scans the file's folder (once for all replaces in it), analyzes files replaced "
+              "under the same name, and the web UI checks that Plex lists the new file. Empty = off.", ""),
+            S("PLEX_TOKEN", "Plex token", "secret",
+              "Your X-Plex-Token. It is stored in config.env and never shown again. When the URL points to a "
+              "new server, enter the token again: it is only sent to servers it was entered for."),
+            S("PLEX_PATH_MAP", "Path mapping to Plex", "text",
+              "Only if Plex sees your library under other paths than the worker, e.g. Plex on the NAS: "
+              "\"/Users/me/nfs/PlexMedia=/volume1/PlexMedia\" (worker path=Plex path; several separated by ;). "
+              "Empty = the same paths.", ""),
+        ]),
+    ]),
+    "obsidian": ("Integrations", "Obsidian", [
+        ("Notes", [
+            S("NOTE_DIR", "Notes folder", "paths",
+              "For \"Encoding To-Do.md\" and \"Encoding Status.md\", e.g. a folder in your vault. Empty = no notes."),
+            S("STATUS_NOTE_ENABLED", "Update the status note every minute while encoding", "bool", "", "0"),
+        ]),
+    ]),
+    "appearance": ("Interface", "Appearance", [
+        ("Theme", [
+            S("UI_THEME", "Theme", "choice", "The header's theme button changes it for one browser only.", "auto",
+              choices=[("auto", "Follow the system"), ("light", "Light"), ("dark", "Dark")], scope="user"),
+            S("UI_ACCENT", "Accent color", "accent",
+              "The color of buttons, links and selections. Status and codec colors stay the same.", "amber",
+              choices=list(ACCENTS.items()), scope="user"),
+        ]),
+        ("Text and layout", [
+            S("UI_TEXT_SIZE", "Text size", "choice", "Scales text, buttons and tables together.", "normal",
+              choices=[("small", "Small"), ("normal", "Normal"), ("large", "Large")], scope="user"),
+            S("UI_DENSITY", "Density", "choice", "Compact fits more rows of the Files and Status lists on the screen.",
+              "comfortable", choices=[("comfortable", "Comfortable"), ("compact", "Compact")], scope="user"),
+            S("DATE_FORMAT", "Date format", "choice",
+              "How dates are shown everywhere in the web UI, always followed by the time (24 h).", DEFAULT_DATE_FORMAT,
+              choices=[(f, f) for f in DATE_FORMATS], scope="user"),
+        ]),
+        ("Accessibility", [
+            S("UI_CONTRAST", "Contrast", "choice", "More contrast makes secondary text and borders darker (lighter in dark mode).",
+              "normal", choices=[("normal", "Normal"), ("more", "More contrast")], scope="user"),
+            S("UI_MOTION", "Animations", "choice", "Reduced turns off sliding bars, popups and spinners.",
+              "system", choices=[("system", "Follow the system"), ("reduce", "Reduced")], scope="user"),
+        ]),
+    ]),
+    "notifications": ("Interface", "Notifications", [
+        ("Popups", [
+            S("NOTIFY_SECONDS", "Hide notifications after (seconds)", "number",
+              "Notifications pop up in the corner of every page of the web UI that is open. "
+              "Hovering one keeps it open. 0 = keep them until you close them.", "8", scope="user"),
+            S("NOTIFY_ERRORS_STAY", "Keep errors until closed", "bool",
+              "Failed encodes, replaces and scans stay until you close them, whatever the time above.", "1", scope="user"),
+        ]),
+        ("Events", [
+            S("NOTIFY_EVENTS", "Notify about", "event_groups",
+              "Your own actions (queueing, removing, deleting) aren't notified: the page confirms them right away.",
+              " ".join(EVENT_GROUPS), scope="user"),
+        ]),
+    ]),
+    "pages": ("Interface", "Pages", [
+        ("Status page", [
+            S("HISTORY_KEEP_DAYS", "Keep history entries visible (days)", "number",
+              "The Status page's History hides results and replaces older than this. Nothing is deleted. 0 = always show.",
+              "30", scope="user"),
+        ]),
+    ]),
+    "about": ("System", "About", []),
+}
+# Former section slugs (bookmarks, older links) -> page
+OLD_SECTIONS = {"notes": "obsidian", "display": "appearance", "files": "pages", "status": "pages",
+                "scans": "library", "worker": "encoding"}
+SETTINGS = {s["key"]: s for _, _, panels in SETTINGS_PAGES.values() for _, fields in panels for s in fields}
+# Settings with their own form parts (Settings -> Pages, Settings -> Library)
+SPECIAL_KEYS = {"FILES_DEFAULT_FILTERS", "ADDED_FILTERS"}
+SHARE_KEY_RE = re.compile(r"SHARE_\d+(_NAME|_PRESET)?")
+
+# Defaults the code uses when a key is missing from an older config.env: shown on the form, so
+# saving a page doesn't turn them into 0 / off
+SETTING_DEFAULTS = {k: s["default"] for k, s in SETTINGS.items() if s["default"] is not None}
+
+# Settings overridden by an environment variable of the same name (docker-entrypoint.sh)
+ENV_OVERRIDES = {k for k, s in SETTINGS.items() if s.get("env")}
+
 
 def date_format():
     """The configured DATE_FORMAT, or the default if it's missing or unknown."""
@@ -171,12 +245,15 @@ def date_format():
     return value if value in DATE_FORMATS else DEFAULT_DATE_FORMAT
 
 
-SETTING_DEFAULTS = {"DATE_FORMAT": DEFAULT_DATE_FORMAT, "HISTORY_KEEP_DAYS": "30", "RENAME_QUALITY": "1", "KEEP_ORIGINALS": "1",
-                    "KEEP_ORIGINALS_DAYS": "0", "NOTIFY_SECONDS": "8", "NOTIFY_ERRORS_STAY": "1",
-                    "NOTIFY_EVENTS": " ".join(EVENT_GROUPS)}
-
-# Settings overridden by an environment variable of the same name (docker-entrypoint.sh)
-ENV_OVERRIDES = {"WORKER_ENABLED"}
+def appearance():
+    """The Appearance settings for <html> (data-* attributes, read by static/style.css):
+    each value checked against its choices, default if unknown."""
+    out = {}
+    for key in ("UI_THEME", "UI_ACCENT", "UI_TEXT_SIZE", "UI_DENSITY", "UI_CONTRAST", "UI_MOTION"):
+        s = SETTINGS[key]
+        value = (enc.CONFIG.get(key) or "").strip().lower()
+        out[key[3:].lower()] = value if value in dict(s["choices"]) else s["default"]
+    return out
 
 # Allowed: everything except characters that could run code in config.env (read by zsh)
 # or end the quotes. $ only as $HOME or ${HOME}.
@@ -187,12 +264,6 @@ def raw_config():
     """Values as written in config.env ($HOME not expanded), otherwise from the template."""
     src = enc.CONFIG_FILE if enc.CONFIG_FILE.exists() else enc.EXAMPLE_CONFIG
     return enc.parse_config(src, expand=False)
-
-
-def library_fields(cfg):
-    """Settings fields of the library section below the share list (shares have their own
-    forms, see share_list() and share_save())."""
-    return [("ENCODED_DIR", "Output folder", "paths", "Finished files land here and wait for your review.")]
 
 
 def share_list(cfg):
@@ -261,18 +332,44 @@ def share_info():
     return {p: {"files": counts.get(p, 0), "scanned": scans.get(p)} for p in enc.ROOT_CANDIDATES}
 
 
-def plex_status(cfg):
-    """(ok, message) of a connection test with PLEX_URL and PLEX_TOKEN (the token is never shown)."""
+def url_hosts(value):
+    """{(host, port)} of the addresses in a PLEX_URL value (several separated by spaces)."""
+    out = set()
+    for u in value.split():
+        p = urllib.parse.urlsplit(u if "://" in u else "http://" + u)
+        try:
+            out.add(((p.hostname or "").lower(), p.port))
+        except ValueError:                      # a port that isn't a number
+            out.add(((p.hostname or "").lower(), None))
+    return out
+
+
+def stored_plex():
+    """PLEX_URL and PLEX_TOKEN as stored in config.env, $HOME expanded."""
     full = enc.parse_config(enc.CONFIG_FILE) if enc.CONFIG_FILE.exists() else {}
-    if not full.get("PLEX_URL"):
-        return None
-    if not full.get("PLEX_TOKEN"):
-        return False, "PLEX_TOKEN isn't set in config.env."
+    return full.get("PLEX_URL", ""), full.get("PLEX_TOKEN", "")
+
+
+def token_for(url, token=""):
+    """The token to use with url: the one entered, else the stored one, but only if url
+    names no server it wasn't entered for (so a changed URL never receives it)."""
+    if token:
+        return token
+    old_url, old_token = stored_plex()
+    return old_token if old_token and url_hosts(url) <= url_hosts(old_url) else ""
+
+
+def plex_status(url, token, mapping):
+    """(ok, message) of a connection test (the token is never shown)."""
+    if not url:
+        return False, "Enter the Plex server URL."
+    if not token:
+        return False, "Enter the Plex token."
     try:
-        sections = plex.Plex(full["PLEX_URL"], full["PLEX_TOKEN"], timeout=5).sections()
+        sections = plex.Plex(url, token, timeout=5).sections()
     except plex.PlexError as e:
         return False, str(e)
-    mapping = plex.path_map(full)
+    mapping = plex.path_map({"PLEX_PATH_MAP": mapping})
     shared = [t for _, t, locs in sections if any(any(plex.to_plex(p, mapping).startswith(l + "/") or plex.to_plex(p, mapping) == l
               for p in paths for l in locs) for paths in enc.ROOT_CANDIDATES.values())]
     return True, (f"Connected; token accepted. {len(sections)} libraries"
@@ -783,7 +880,7 @@ def csrf_token():
     return session["csrf"]
 
 
-app.jinja_env.globals.update(csrf_token=csrf_token, settings_sections=SETTINGS, scan_state=SCAN, now=datetime.now,
+app.jinja_env.globals.update(csrf_token=csrf_token, scan_state=SCAN, now=datetime.now,
                              app_version=enc.__version__)
 
 
@@ -834,7 +931,7 @@ def inject():
     if wait and wait["kind"] == "offline" and wait["name"] in offline:
         wait = None                             # the "Not reachable" banner already says it
     return {"config_error": g.get("config_error"), "offline": offline, "worker_wait": wait,
-            "date_format": date_format(),
+            "date_format": date_format(), "ui": appearance(),
             "keep_originals": (enc.CONFIG.get("KEEP_ORIGINALS") or "1").strip() != "0",
             "in_docker": Path("/.dockerenv").exists()}
 
@@ -1064,7 +1161,7 @@ CODEC_GROUPS = {"group:good": "Optimized codecs", "group:other": "Other codecs"}
 # "<newer>-<older>" with a number and a unit each ("24h" = newer than 24 hours, "3m-1m" = 1 to
 # 3 months ago, "-1y" = older than a year). The spec is the value in URLs, so links keep working
 # when a filter is renamed or deleted. The list (ADDED_FILTERS in config.env, "label=spec"
-# pairs separated by ";") is edited under Settings -> Files page; "custom" is a date range.
+# pairs separated by ";") is edited under Settings -> Pages; "custom" is a date range.
 ADDED_UNITS = {"h": ("hour", "hours"), "d": ("day", "days"), "w": ("week", "weeks"),
                "m": ("month", "months"), "y": ("year", "years")}
 DEFAULT_ADDED_FILTERS = "Last 24 hours=24h;Last 7 days=7d;Last 30 days=30d"
@@ -2682,7 +2779,7 @@ def range_row(label="", spec="", orig=None):
 
 
 def files_settings_context(rows=None, form=None):
-    """What Settings -> Files page shows: the default filters with their choices and the
+    """What Settings -> Pages shows: the default filters with their choices and the
     date filter rows (rows/form: the submitted ones, when saving failed)."""
     defaults = file_filters(MultiDict([(k[2:], v) for k, v in form.items(multi=True) if k.startswith("d_")])) \
         if form is not None else default_filters()
@@ -2702,7 +2799,7 @@ LABEL_BAD_RE = re.compile(r'[;=]')
 
 
 def files_settings_form(form):
-    """Parse and check Settings -> Files page. Returns (config updates, errors, rows)."""
+    """Parse and check the Files page part of Settings -> Pages. Returns (config updates, errors, rows)."""
     rows, errors, specs = [], {}, {}
     cols = [form.getlist(k) for k in ("r_label", "r_newer_n", "r_newer_u", "r_older_n", "r_older_u", "r_orig")]
     for label, newer_n, newer_u, older_n, older_u, orig in zip(*cols):
@@ -2754,86 +2851,204 @@ def files_settings_form(form):
     return updates, errors, rows
 
 
+def setting_applies(s):
+    """False for settings that mean nothing on this machine (Docker-only ones natively)."""
+    return not s.get("docker") or Path("/.dockerenv").exists()
+
+
+def page_fields(section):
+    """[(panel title, [settings])] of a settings page, without the ones that don't apply here."""
+    return [(title, fields) for title, fields in ((t, [s for s in f if setting_applies(s)]) for t, f in SETTINGS_PAGES[section][2])
+            if fields]
+
+
+def check_setting(s, form, cfg, errors):
+    """The value to store for setting s from the submitted form, or None to leave it as it is;
+    problems go into errors[key]."""
+    key, kind = s["key"], s["kind"]
+    if key in ENV_OVERRIDES and key in os.environ:
+        return None                             # the environment variable wins; the field is locked
+    if kind == "bool":
+        return "1" if form.get(key) else "0"
+    if kind == "event_groups":
+        picked = set(form.getlist(key))
+        return " ".join(gr for gr in EVENT_GROUPS if gr in picked) or "none"
+    if kind == "secret":
+        if form.get(key + "__remove"):
+            return ""
+        val = form.get(key, "").strip()
+        if val and (FORBIDDEN_RE.search(val) or re.search(r"\s", val)):
+            errors[key] = 'Not allowed: spaces, " ` \\ and $.'
+            return None
+        return val or None                      # empty: keep the stored one
+    val = form.get(key, "").strip()
+    if FORBIDDEN_RE.search(val):
+        errors[key] = 'Not allowed: " ` \\ line breaks and $ (except $HOME).'
+    elif kind in ("choice", "accent"):
+        if val not in dict(s["choices"]):
+            errors[key] = "Choose one of the listed values."
+    elif kind == "preset":
+        if not val:
+            errors[key] = "Choose a preset."
+        elif val not in dict(preset_choices()):
+            errors[key] = "Unknown preset."
+    elif kind == "number":
+        if not re.fullmatch(r"\d{1,6}", val or "0"):
+            errors[key] = "Enter a whole number (0 = off)."
+        else:
+            val = str(int(val or 0))
+    elif key == "ENCODED_DIR" and not val:
+        errors[key] = "This folder is required."
+    return val
+
+
+def plex_token_rule(updates, errors):
+    """A stored token is only kept for the servers it was entered for: a PLEX_URL naming
+    another server needs the token again (or no token)."""
+    url = updates.get("PLEX_URL")
+    if url is None or "PLEX_TOKEN" in updates:
+        return
+    old_url, old_token = stored_plex()
+    if old_token and url and not url_hosts(url) <= url_hosts(old_url):
+        errors["PLEX_TOKEN"] = ("The URL names a server this token wasn't entered for. "
+                                "Enter the token again, or remove it.")
+
+
+def about_info():
+    """What Settings -> About shows: versions, where things are, how this install runs."""
+    here = presets.capabilities()
+    worker = None if encodes_here() else presets.worker_capabilities()
+    docker = Path("/.dockerenv").exists()
+    mode = ("Docker, encodes in the container" if docker and encodes_here() else
+            "Docker, web UI and scans only (a native worker encodes)" if docker else "Native")
+    try:
+        db_size = enc.DB_FILE.stat().st_size
+    except OSError:
+        db_size = None
+    hb = lambda c: (f"{c.get('handbrake') or '?'} on {c.get('platform') or '?'}" if c and c.get("available") else "not found")
+    return {
+        "mode": mode,
+        "handbrake": hb(here), "handbrake_worker": hb(worker) if worker else None,
+        "ffprobe": enc.FFPROBE if getattr(enc, "FFPROBE", None) else None,
+        "python": sys.version.split()[0],
+        "data_dir": enc.DATA_DIR, "config_file": enc.CONFIG_FILE, "db_file": enc.DB_FILE, "db_size": db_size,
+        "env": {k: ("(set)" if "TOKEN" in k else v) for k, v in os.environ.items()
+                if k in ("ENCODING_DATA_DIR", "ENCODING_DB_FILE", "WEB_HOST", "WEB_PORT") or k in ENV_OVERRIDES},
+        "shares": len(enc.ROOT_CANDIDATES),
+    }
+
+
+def settings_nav():
+    """[(sidebar group, [(slug, title)])] in page order."""
+    out = []
+    for slug, (group, title, _) in SETTINGS_PAGES.items():
+        if not out or out[-1][0] != group:
+            out.append((group, []))
+        out[-1][1].append((slug, title))
+    return out
+
+
 @app.route("/settings")
 def settings_index():
-    return redirect(url_for("settings", section=next(iter(SETTINGS))))
+    """The first page; on phones only the list of pages (settings.html, .settings-index)."""
+    return settings("library", index=True)
 
 
 @app.route("/settings/<section>", methods=["GET", "POST"])
-def settings(section):
-    if section not in SETTINGS:
+def settings(section, index=False):
+    if section in OLD_SECTIONS:
+        return redirect(url_for("settings", section=OLD_SECTIONS[section]), 301)
+    if section not in SETTINGS_PAGES:
         abort(404)
-    title, fields = SETTINGS[section]
+    group, title, _ = SETTINGS_PAGES[section]
+    panels = page_fields(section)
     cfg = {**SETTING_DEFAULTS, **raw_config()}
-    if section == "library":
-        fields = library_fields(cfg)
-    errors = {}
-    files_rows = None
-    if section == "files" and request.method == "POST":
-        updates, errors, files_rows = files_settings_form(request.form)
+    errors, files_rows = {}, None
+    if request.method == "POST":
+        updates = {}
+        if section == "pages":
+            updates, errors, files_rows = files_settings_form(request.form)
+        for _, fields in panels:
+            for s in fields:
+                val = check_setting(s, request.form, cfg, errors)
+                if val is not None:
+                    updates[s["key"]] = val
+        plex_token_rule(updates, errors)
         if not errors:
             enc.write_config(updates)
             flash(f"{title}: saved.", "ok")
             return redirect(url_for("settings", section=section))
-    elif request.method == "POST":
-        updates, removed = {}, []
-        valid_presets = {pid for pid, _ in preset_choices()}
-        for key, label, typ, _ in fields:
-            if typ == "heading":
-                continue
-            if typ == "bool":
-                updates[key] = "1" if request.form.get(key) else "0"
-                continue
-            if typ == "event_groups":
-                picked = set(request.form.getlist(key))
-                updates[key] = " ".join(g for g in EVENT_GROUPS if g in picked) or "none"
-                continue
-            val = request.form.get(key, "").strip()
-            if FORBIDDEN_RE.search(val):
-                errors[key] = 'Not allowed: " ` \\ line breaks and $ (except $HOME).'
-            elif typ in ("preset", "share_preset") and val and val not in valid_presets:
-                errors[key] = "Unknown preset."
-            elif typ == "preset" and not val:
-                errors[key] = "Choose a preset."
-            elif key == "ENCODED_DIR" and not val:
-                errors[key] = "This folder is required."
-            elif typ == "date_format" and val not in DATE_FORMATS:
-                errors[key] = "Choose one of the listed formats."
-            elif typ == "number" and not re.fullmatch(r"\d{1,6}", val or "0"):
-                errors[key] = "Enter a whole number (0 = off)."
-            if typ == "number":
-                val = str(int(val)) if re.fullmatch(r"\d{1,6}", val) else (val or "0")
-            if not key.startswith("SHARE_new"):
-                updates[key] = val
-        if not errors:
-            enc.write_config(updates)
-            msg = f"{title}: saved."
-            if removed:
-                msg += (f" Removed {', '.join(removed)}. Its files disappear from the list "
-                        "with the next scan.")
-            flash(msg, "ok")
-            return redirect(url_for("settings", section=section))
-        cfg.update({k: v for k, v in updates.items() if v is not None})
+        cfg.update({k: v for k, v in updates.items() if v is not None and SETTINGS.get(k, {}).get("kind") != "secret"})
 
     return render_template(
-        "settings.html", section=section, title=title, fields=fields, cfg=cfg, errors=errors,
-        checks={k: path_checks(cfg.get(k) or "") for k, _, t, _ in fields if t in ("paths", "path")},
+        "settings.html", section=section, group=group, title=title, panels=panels, cfg=cfg, errors=errors, index=index,
+        settings_nav=settings_nav(), accents=ACCENTS,
+        example=(EXAMPLE_NAME, enc.suggest_name(EXAMPLE_NAME, "x.mkv", "hevc", "rf20", cfg=cfg)) if section == "replace" else None,
+        checks={s["key"]: path_checks(cfg.get(s["key"]) or "") for _, f in panels for s in f if s["kind"] == "paths"},
+        secrets_set={s["key"]: bool(stored_plex()[1]) for _, f in panels for s in f if s["kind"] == "secret"},
         preset_list=preset_choices(), default_preset=presets.name_of(cfg.get("DEFAULT_PRESET", "")),
-        date_formats=DATE_FORMATS, event_groups=EVENT_GROUPS, share_info=share_info() if section == "library" else {},
-        shares=share_list(cfg) if section == "library" else [], open_share=request.args.get("open", ""),
+        date_formats=DATE_FORMATS, event_groups=EVENT_GROUPS,
+        shares=share_list(cfg) if section in ("library", "encoding") else [], open_share=request.args.get("open", ""),
         next_share=enc.next_share_number() if section == "library" else None,
-        plex_status=plex_status(cfg) if section == "plex" else None,
         files_settings=files_settings_context(files_rows, request.form if files_rows is not None else None)
-        if section == "files" else None,
+        if section == "pages" else None,
+        about=about_info() if section == "about" else None,
         config_file=enc.CONFIG_FILE, config_exists=enc.CONFIG_FILE.exists(),
-        env_overrides={k: os.environ[k] for k, _, _, _ in fields if k in ENV_OVERRIDES and k in os.environ})
+        env_overrides={k: os.environ[k] for k in ENV_OVERRIDES if k in os.environ})
+
+
+@app.route("/settings/plex/test", methods=["POST"])
+def settings_plex_test():
+    """Connection test with the values on the form (not saved yet); an empty token field
+    uses the stored token, only for the servers it was entered for (token_for())."""
+    url = request.form.get("PLEX_URL", "").strip()
+    token = "" if request.form.get("PLEX_TOKEN__remove") else token_for(url, request.form.get("PLEX_TOKEN", "").strip())
+    if not token and not request.form.get("PLEX_TOKEN", "").strip() and stored_plex()[1] and not request.form.get("PLEX_TOKEN__remove"):
+        return {"ok": False, "message": "The URL names a server the stored token wasn't entered for. Enter the token to test."}
+    ok, message = plex_status(url, token, request.form.get("PLEX_PATH_MAP", ""))
+    return {"ok": ok, "message": message}
+
+
+@app.route("/settings/paths")
+def settings_paths():
+    """Live check of a folder field: [[path, exists], …] (static/settings.js)."""
+    resp = app.response_class(json.dumps(path_checks(request.args.get("value", ""))), mimetype="application/json")
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+EXAMPLE_NAME = "Northwind.Station.S02E01.1080p.WEB.h264-NTB.mkv"
+
+
+@app.route("/settings/replace/example")
+def settings_replace_example():
+    """The name "Replace…" would suggest for an example file with the settings on the form."""
+    cfg = {k: request.args.get(k, "") for k in ("RENAME_CODEC_TAGS", "RENAME_GROUP")}
+    cfg["RENAME_QUALITY"] = "1" if request.args.get("RENAME_QUALITY") else "0"
+    return {"before": EXAMPLE_NAME, "after": enc.suggest_name(EXAMPLE_NAME, "x.mkv", "hevc", "rf20", cfg=cfg)}
+
+
+def settings_problems():
+    """Keys of config.example.env that no settings page covers, and settings missing from it
+    (python3 webui.py --check-settings; the image workflow runs it)."""
+    template = set(enc.parse_config(enc.EXAMPLE_CONFIG, expand=False))
+    covered = set(SETTINGS) | SPECIAL_KEYS
+    return (sorted(k for k in template if k not in covered and not SHARE_KEY_RE.fullmatch(k)),
+            sorted(k for k in covered if k not in template))
 
 
 def main():
     ap = argparse.ArgumentParser(description="Handlebreaks web UI")
     ap.add_argument("--host", default=os.environ.get("WEB_HOST", "127.0.0.1"))
     ap.add_argument("--port", type=int, default=int(os.environ.get("WEB_PORT", "7979")))
+    ap.add_argument("--check-settings", action="store_true",
+                    help="list config.example.env keys without a settings field and settings missing from it, then exit")
     args = ap.parse_args()
+    if args.check_settings:
+        uncovered, missing = settings_problems()
+        print("Keys without a settings field:", ", ".join(uncovered) or "none")
+        print("Settings missing from config.example.env:", ", ".join(missing) or "none")
+        sys.exit(1 if uncovered or missing else 0)
     print(f"Handlebreaks web UI: http://{args.host}:{args.port}", file=sys.stderr)
     threading.Thread(target=auto_scan_loop, daemon=True).start()
     threading.Thread(target=replace_sync_loop, daemon=True).start()

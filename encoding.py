@@ -950,10 +950,11 @@ GROUP_RE = re.compile(r"-[A-Za-z0-9]+(?=$|[\s.\[{(])")   # release group right a
 END_GROUP_RE = re.compile(r"-[A-Za-z0-9]+(?=(?:\s*[\[{(][^\]})]*[\]})])*\s*$)")
 
 
-def codec_tags():
-    """ffprobe codec name -> tag in file names; RENAME_CODEC_TAGS ("hevc=x265 av1=AV1") overrides."""
+def codec_tags(cfg=None):
+    """ffprobe codec name -> tag in file names; RENAME_CODEC_TAGS ("hevc=x265 av1=AV1") overrides.
+    cfg: settings to use instead of config.env (the settings page's example)."""
     tags = dict(DEFAULT_CODEC_TAGS)
-    for pair in str(CONFIG.get("RENAME_CODEC_TAGS", "")).split():
+    for pair in str((CONFIG if cfg is None else cfg).get("RENAME_CODEC_TAGS", "")).split():
         codec, _, tag = pair.partition("=")
         if codec and tag:
             tags[codec.lower()] = tag
@@ -991,7 +992,7 @@ def encode_quality(key):
         return None
 
 
-def suggest_name(original_name, encoded_name, codec=None, quality=None):
+def suggest_name(original_name, encoded_name, codec=None, quality=None, cfg=None):
     """Suggested name for an encode replacing original_name: the last codec tag (h264,
     x264, H.264, AVC, XviD …) becomes the tag of the encode's codec (codec_tags(); an
     unknown codec counts as hevc), and with RENAME_GROUP set, the release group right
@@ -999,15 +1000,16 @@ def suggest_name(original_name, encoded_name, codec=None, quality=None):
     RENAME_QUALITY on (default), it follows the release group: "x265-donm.rf20". A name
     without a codec tag but with a release group at the end gets the tag before the group
     ("WEBRip-LAMA" -> "WEBRip.x265-LAMA.rf20"); other names stay as they are. The extension
-    follows the encode."""
+    follows the encode. cfg: settings to use instead of config.env."""
+    cfg = CONFIG if cfg is None else cfg
     stem = Path(original_name).stem
     ext = Path(encoded_name).suffix
     m = None
     for m in OLD_CODEC_RE.finditer(stem):
         pass
-    tag = codec_tags().get((codec or "hevc").lower())
-    group = str(CONFIG.get("RENAME_GROUP", "")).strip().strip("-")
-    q = f".{quality}" if quality and str(CONFIG.get("RENAME_QUALITY", "1")).strip() != "0" else ""
+    tag = codec_tags(cfg).get((codec or "hevc").lower())
+    group = str(cfg.get("RENAME_GROUP", "")).strip().strip("-")
+    q = f".{quality}" if quality and str(cfg.get("RENAME_QUALITY", "1")).strip() != "0" else ""
     if m and tag:
         rest = stem[m.end():]
         g = GROUP_RE.match(rest)
