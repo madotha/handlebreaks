@@ -7,7 +7,12 @@ The account lives in auth.json in the data folder (not in config.env: zsh source
 a hash holds `$` signs):
 
     {"user": "admin", "hash": "scrypt:…", "generation": 3, "changed": "2026-11-05 14:00",
-     "oidc_ok": {"issuer": "https://id.example.com", "client_id": "…"}}
+     "oidc_ok": {"issuer": "https://id.example.com", "client_id": "…"},
+     "mfa": {"secret": "BASE32…", "since": "2026-11-05 15:00", "last_step": 59012345, "recovery": ["sha256…", …]}}
+
+`mfa` is the password account's second factor: a TOTP secret (RFC 6238: SHA-1, 6 digits, 30 s,
+what every authenticator app understands), the last time step used (a code works only once) and
+the SHA-256 hashes of the unused recovery codes.
 
 `generation` is stored in every session cookie at login; raising it (new password, "Sign out
 everywhere") ends every session that carries an older one. `oidc_ok` records the provider and
@@ -18,13 +23,16 @@ the setup code in `.setup-code` (also printed to the web UI's log at startup), s
 merely reaches the page can claim the install.
 """
 
+import base64
 import hashlib
+import hmac
 import json
 import os
 import secrets
 import sys
 import threading
 import time
+import urllib.parse
 
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -185,6 +193,118 @@ def rehash(password):
         if data.get("hash"):
             data["hash"] = generate_password_hash(password, method=METHOD)
             _write(data)
+
+
+# ─── Two-factor authentication (TOTP) ─────────────────────────────────────────
+TOTP_DIGITS, TOTP_PERIOD, TOTP_WINDOW = 6, 30, 1        # a code is accepted 30 s before and after its time
+RECOVERY_COUNT = 10
+
+
+def new_mfa_secret():
+    return base64.b32encode(secrets.token_bytes(20)).decode("ascii")
+
+
+def totp(secret, step):
+    key = base64.b32decode(secret + "=" * (-len(secret) % 8), casefold=True)
+    digest = hmac.new(key, step.to_bytes(8, "big"), hashlib.sha1).digest()
+    offset = digest[-1] & 0x0F
+    value = int.from_bytes(digest[offset:offset + 4], "big") & 0x7FFFFFFF
+    return str(value % 10 ** TOTP_DIGITS).zfill(TOTP_DIGITS)
+
+
+def code_step(secret, code, after=-1):
+    """The time step a TOTP code belongs to (within the window), or None; steps up to `after`
+    were used already and don't count again."""
+    code = "".join(ch for ch in (code or "") if ch.isdigit())
+    if len(code) != TOTP_DIGITS:
+        return None
+    now = int(time.time()) // TOTP_PERIOD
+    for step in range(now - TOTP_WINDOW, now + TOTP_WINDOW + 1):
+        if step > after and hmac.compare_digest(totp(secret, step), code):
+            return step
+    return None
+
+
+def otpauth_uri(secret, user, issuer="Handlebreaks"):
+    """What the QR code holds: otpauth://totp/Handlebreaks:<user>?secret=…&issuer=Handlebreaks"""
+    label = urllib.parse.quote(f"{issuer}:{user}")
+    return f"otpauth://totp/{label}?" + urllib.parse.urlencode(
+        {"secret": secret, "issuer": issuer, "algorithm": "SHA1", "digits": TOTP_DIGITS, "period": TOTP_PERIOD})
+
+
+def format_secret(secret):
+    return " ".join(secret[i:i + 4] for i in range(0, len(secret), 4))
+
+
+def _hash_recovery(code):
+    return hashlib.sha256("".join(ch for ch in code.upper() if ch.isalnum()).encode()).hexdigest()
+
+
+def new_recovery_codes():
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return ["-".join("".join(secrets.choice(alphabet) for _ in range(5)) for _ in range(2)) for _ in range(RECOVERY_COUNT)]
+
+
+def mfa():
+    """The stored second factor, or None."""
+    m = _data().get("mfa")
+    return m if isinstance(m, dict) and m.get("secret") else None
+
+
+def enable_mfa(secret, step, recovery):
+    """Turn two-factor on with a confirmed secret; signs out every other session. Returns the
+    new generation."""
+    with _LOCK:
+        data = dict(_data())
+        data["mfa"] = {"secret": secret, "since": enc.now_str(), "last_step": step,
+                       "recovery": [_hash_recovery(c) for c in recovery]}
+        data["generation"] = int(data.get("generation", 1)) + 1
+        _write(data)
+        return data["generation"]
+
+
+def new_recovery(recovery):
+    with _LOCK:
+        data = dict(_data())
+        if isinstance(data.get("mfa"), dict):
+            data["mfa"] = dict(data["mfa"], recovery=[_hash_recovery(c) for c in recovery])
+            _write(data)
+
+
+def disable_mfa():
+    with _LOCK:
+        data = dict(_data())
+        if data.pop("mfa", None) is not None:
+            _write(data)
+            return True
+        return False
+
+
+def check_mfa(code):
+    """Check a code from the authenticator app or a recovery code and use it up. Returns
+    "totp", "recovery" or None."""
+    with _LOCK:
+        data = dict(_data())
+        m = data.get("mfa")
+        if not isinstance(m, dict) or not m.get("secret"):
+            return None
+        step = code_step(m["secret"], code, int(m.get("last_step", -1)))
+        if step is not None:
+            data["mfa"] = dict(m, last_step=step)
+            _write(data)
+            return "totp"
+        h = _hash_recovery(code or "")
+        left = [r for r in m.get("recovery", []) if not hmac.compare_digest(r, h)]
+        if len(code or "") >= 8 and len(left) < len(m.get("recovery", [])):
+            data["mfa"] = dict(m, recovery=left)
+            _write(data)
+            return "recovery"
+        return None
+
+
+def recovery_left():
+    m = mfa()
+    return len(m.get("recovery", [])) if m else 0
 
 
 # ─── Setup code ───────────────────────────────────────────────────────────────

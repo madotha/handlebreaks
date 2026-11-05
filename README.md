@@ -29,7 +29,7 @@ Handlebreaks converts movies and TV episodes in a Plex library from H.264 (and o
 - **Safe replacing:** **Replace…** puts an encode into the library in place of its original, keeps the original as a backup by default and never overwrites another file.
 - **Plex stays in sync:** after a replace, Plex rescans the folder and Handlebreaks checks that it picked up the new file.
 - **Every HandBrake setting:** presets per share, edited in the web UI with every setting of the newest HandBrake app, or imported from it.
-- **Login:** every page needs a user name and password, or single sign-on with your OpenID Connect provider (Pocket ID, Authelia, Authentik, Keycloak …); a one-time setup code from the log creates the first account, so nobody who merely reaches the page can claim it.
+- **Login:** every page needs a user name and password (optionally with two-factor codes from an authenticator app), or single sign-on with your OpenID Connect provider (Pocket ID, Authelia, Authentik, Keycloak …); a one-time setup code from the log creates the first account, so nobody who merely reaches the page can claim it.
 - **Live status:** queue with drag-and-drop order, progress, history, statistics and notifications when encodes, replaces and scans finish.
 - **On your phone:** a layout made for phones, and it installs as an app on the home screen.
 - **Looks the way you like:** light or dark, six accent colors, text size, a compact layout and more contrast.

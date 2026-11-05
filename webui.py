@@ -939,7 +939,7 @@ app.jinja_env.globals.update(csrf_token=csrf_token, scan_state=SCAN, now=datetim
 # Reachable without a login: what the login pages themselves need, the Docker health check and
 # the installable app's files (none of them shows any data)
 PUBLIC_ENDPOINTS = {"static", "health", "manifest", "service_worker", "offline", "login", "setup", "logout",
-                    "oidc_start", "oidc_callback"}
+                    "login_mfa", "oidc_start", "oidc_callback"}
 
 
 @app.before_request
@@ -1122,6 +1122,12 @@ def login():
                 if auth.needs_rehash():
                     auth.rehash(password)
                     acc = auth.account()
+                if auth.mfa():                  # second step: the code from the authenticator app
+                    session.clear()
+                    session.update(mfa_pending={"user": acc["user"], "gen": auth.generation(), "at": time.time(),
+                                                "remember": bool(request.form.get("remember")), "next": local_next("")},
+                                   csrf=secrets.token_urlsafe(32))
+                    return redirect(url_for("login_mfa"))
                 start_session(acc["user"], request.form.get("remember"))
                 return redirect(local_next(url_for("status")))
             auth.failed(client())
@@ -1130,6 +1136,38 @@ def login():
                            remember=request.method == "GET" or bool(request.form.get("remember")),
                            days=session_days(), password_login=password_login(), sso=sso_button(),
                            next=local_next("")), 401 if error else 200
+
+
+MFA_PENDING_TTL = 300                           # seconds between the password and the code
+
+
+@app.route("/login/code", methods=["GET", "POST"])
+def login_mfa():
+    """Second sign-in step for an account with two-factor authentication."""
+    pending = session.get("mfa_pending")
+    acc = auth.account()
+    if (not pending or not acc or pending.get("user") != acc["user"] or pending.get("gen") != auth.generation()
+            or time.time() - pending.get("at", 0) > MFA_PENDING_TTL or not auth.mfa() or not password_login()):
+        session.pop("mfa_pending", None)
+        if pending:
+            session["login_error"] = "The sign-in took too long. Enter your password again."
+        return redirect(url_for("login"))
+    error = None
+    if request.method == "POST":
+        error = throttled()
+        if not error:
+            kind = auth.check_mfa(request.form.get("code", ""))
+            if kind:
+                auth.succeeded(client())
+                start_session(acc["user"], pending.get("remember"))
+                if kind == "recovery":
+                    left = auth.recovery_left()
+                    flash(f"Signed in with a recovery code; {left} left. "
+                          + ("Set up new ones under Settings → Login & security." if left < 4 else ""), "warn" if left < 4 else "ok")
+                return redirect(pending.get("next") or url_for("status"))
+            auth.failed(client())
+            error = throttled() or "That code isn't right (or was already used). Enter the current code from your app."
+    return render_template("login.html", mode="mfa", error=error, next=""), 401 if error else 200
 
 
 def sso_button():
@@ -1222,7 +1260,99 @@ def security_context():
             "remembered": session.permanent, "method": acc.get("hash", "").split(":")[0],
             "session_user": session.get("auth_user"), "session_method": session.get("auth_method", "password"),
             "provider": cfg["name"], "redirect_uri": redirect_uri(), "password_login": password_login(),
-            "oidc_ready": oidc_ready(cfg), "oidc_verified": auth.oidc_verified(cfg["issuer"], cfg["client_id"])}
+            "oidc_ready": oidc_ready(cfg), "oidc_verified": auth.oidc_verified(cfg["issuer"], cfg["client_id"]),
+            "mfa": auth.mfa(), "recovery_left": auth.recovery_left(), "mfa_setup": mfa_setup_context(acc),
+            "recovery_codes": session.pop("mfa_recovery_show", None)}
+
+
+def qr_svg(text):
+    """The QR code of text as inline SVG (black on white, so every camera reads it), or None
+    without the segno package (the page then shows only the key)."""
+    try:
+        import segno
+    except ImportError:
+        return None
+    return Markup(segno.make(text, error="m").svg_inline(scale=5, border=3, dark="#000", light="#fff",
+                                                          title="QR code for the authenticator app"))
+
+
+def mfa_setup_context(acc):
+    """The secret being set up (kept in the session until it's confirmed), with its QR code."""
+    secret = session.get("mfa_new")
+    if not secret or not acc:
+        return None
+    uri = auth.otpauth_uri(secret, acc["user"])
+    return {"key": auth.format_secret(secret), "uri": uri, "qr": qr_svg(uri)}
+
+
+def password_and_code(form, need_code=True):
+    """Checks for changing two-factor: the current password and (when on) a current code."""
+    if throttled():
+        return throttled()
+    if not auth.check_password(form.get("current", "")):
+        auth.failed(client())
+        return "The current password is wrong. Nothing was changed."
+    if need_code and not auth.check_mfa(form.get("code", "")):
+        auth.failed(client())
+        return "That code isn't right. Nothing was changed."
+    auth.succeeded(client())
+    return None
+
+
+@app.route("/settings/security/mfa/start", methods=["POST"])
+def security_mfa_start():
+    if not auth.account():
+        return security_done("Two-factor authentication needs a password account.", "error")
+    session["mfa_new"] = auth.new_mfa_secret()
+    return redirect(url_for("settings", section="security") + "#mfa")
+
+
+@app.route("/settings/security/mfa/cancel", methods=["POST"])
+def security_mfa_cancel():
+    session.pop("mfa_new", None)
+    return redirect(url_for("settings", section="security"))
+
+
+@app.route("/settings/security/mfa/confirm", methods=["POST"])
+def security_mfa_confirm():
+    """Turn two-factor on once the app shows the right code; shows the recovery codes once."""
+    secret = session.get("mfa_new")
+    if not secret or not auth.account():
+        return security_done("Start the setup again.", "error")
+    problem = password_and_code(request.form, need_code=False)
+    if problem:
+        return security_done(problem, "error")
+    step = auth.code_step(secret, request.form.get("code", ""))
+    if step is None:
+        auth.failed(client())
+        flash("That code doesn't match. Check that the app added the key correctly and that the clocks are right, "
+              "then enter the current code.", "error")
+        return redirect(url_for("settings", section="security") + "#mfa")
+    codes = auth.new_recovery_codes()
+    session["auth_gen"] = auth.enable_mfa(secret, step, codes)
+    session.pop("mfa_new", None)
+    session["mfa_recovery_show"] = codes
+    return security_done("Two-factor authentication is on. Every other device has to sign in again.")
+
+
+@app.route("/settings/security/mfa/recovery", methods=["POST"])
+def security_mfa_recovery():
+    problem = password_and_code(request.form)
+    if problem:
+        return security_done(problem, "error")
+    codes = auth.new_recovery_codes()
+    auth.new_recovery(codes)
+    session["mfa_recovery_show"] = codes
+    return security_done("New recovery codes: the old ones no longer work.")
+
+
+@app.route("/settings/security/mfa/disable", methods=["POST"])
+def security_mfa_disable():
+    problem = password_and_code(request.form)
+    if problem:
+        return security_done(problem, "error")
+    auth.disable_mfa()
+    return security_done("Two-factor authentication is off.")
 
 
 def security_done(message, kind="ok"):
@@ -3539,7 +3669,12 @@ def main():
     ap.add_argument("--set-password", action="store_true",
                     help="create the account or set a new password (signs out every device), then exit")
     ap.add_argument("--user", help="with --set-password: the user name (default: the current one)")
+    ap.add_argument("--disable-mfa", action="store_true",
+                    help="turn off two-factor authentication of the password account (lost phone), then exit")
     args = ap.parse_args()
+    if args.disable_mfa:
+        print("Two-factor authentication is off." if auth.disable_mfa() else "Two-factor authentication wasn't on.")
+        sys.exit(0)
     if args.set_password:
         sys.exit(set_password_cli(args.user))
     if args.check_settings:

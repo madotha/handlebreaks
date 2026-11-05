@@ -257,6 +257,62 @@
       </form>
       {% endif %}
     </section>
+    {% if security.user %}
+    <section class="panel" id="mfa">
+      <h3 class="panel-title">Two-factor authentication</h3>
+      {% if security.recovery_codes %}
+        <div class="flash warn recovery-box">
+          <p><strong>Your recovery codes.</strong> Each works once instead of a code from the app, e.g. when the phone is lost. Save them now (password manager, printout): they won't be shown again.</p>
+          <ul class="recovery-codes">{% for c in security.recovery_codes %}<li><code>{{ c }}</code></li>{% endfor %}</ul>
+          <button type="button" class="secondary" data-copy-codes="{{ security.recovery_codes|join('\n') }}">Copy codes</button>
+        </div>
+      {% endif %}
+      {% if security.mfa %}
+        <p class="hint"><strong>On</strong> since {{ security.mfa.since|localtime }}: signing in with the password also asks for the code from your authenticator app. {{ security.recovery_left }} recovery codes left.{% if security.recovery_left < 4 %} Make new ones soon.{% endif %}</p>
+        <form method="post" class="account-form mfa-form">
+          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+          <div class="field"><label for="mfa-current">Current password</label>
+            <input id="mfa-current" name="current" type="password" autocomplete="current-password" required></div>
+          <div class="field"><label for="mfa-code">Code from the app</label>
+            <input id="mfa-code" name="code" inputmode="numeric" autocomplete="one-time-code" required maxlength="11" class="short"></div>
+          <div class="account-actions">
+            <button class="secondary" formaction="{{ url_for('security_mfa_recovery') }}">New recovery codes</button>
+            <button class="secondary danger" formaction="{{ url_for('security_mfa_disable') }}" onclick="return confirm('Turn off two-factor authentication?')">Turn off</button>
+          </div>
+        </form>
+      {% elif security.mfa_setup %}
+        <ol class="mfa-steps">
+          <li>Scan the QR code with your authenticator app (Google Authenticator, 1Password, Authy, Bitwarden, Microsoft Authenticator …), or add the key by hand.</li>
+          <li>Enter the 6-digit code the app shows, with your current password.</li>
+        </ol>
+        <div class="mfa-setup">
+          {% if security.mfa_setup.qr %}<div class="mfa-qr">{{ security.mfa_setup.qr }}</div>{% endif %}
+          <div>
+            <p class="field-label">Key</p>
+            <code class="copyable mfa-key">{{ security.mfa_setup.key }}</code>
+            <p class="hint">Time-based (TOTP), 6 digits, every 30 seconds. On this phone: <a href="{{ security.mfa_setup.uri }}">open in the authenticator app</a>.{% if not security.mfa_setup.qr %} The QR code needs the Python package segno (<code>pip install -r requirements.txt</code>).{% endif %}</p>
+          </div>
+        </div>
+        <form method="post" action="{{ url_for('security_mfa_confirm') }}" class="account-form">
+          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+          <div class="field"><label for="mfa-new-code">Code from the app</label>
+            <input id="mfa-new-code" name="code" inputmode="numeric" autocomplete="one-time-code" required maxlength="7" class="short" autofocus></div>
+          <div class="field"><label for="mfa-new-current">Current password</label>
+            <input id="mfa-new-current" name="current" type="password" autocomplete="current-password" required></div>
+          <div class="account-actions">
+            <button>Turn on</button>
+            <button class="secondary" formaction="{{ url_for('security_mfa_cancel') }}" formnovalidate>Cancel</button>
+          </div>
+        </form>
+      {% else %}
+        <p class="hint">Off. With it, signing in with the password also asks for a code from an authenticator app on your phone, so a stolen password alone isn't enough.{% if security.session_method == 'oidc' %} (Single sign-on uses your provider's own second factor.){% endif %}</p>
+        <form method="post" action="{{ url_for('security_mfa_start') }}">
+          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+          <button class="secondary">Set up two-factor authentication</button>
+        </form>
+      {% endif %}
+    </section>
+    {% endif %}
     <section class="panel">
       <h3 class="panel-title">Devices</h3>
       <p class="hint">{% if security.remembered %}This browser stays signed in for {{ security.days }} days after its last visit.{% else %}This browser forgets the login when it closes.{% endif %}

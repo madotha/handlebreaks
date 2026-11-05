@@ -110,6 +110,12 @@
     });
   });
 
+  // ─── Recovery codes: copy all at once ─────────────────────────────────────
+  document.querySelectorAll("[data-copy-codes]").forEach((btn) => btn.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(btn.dataset.copyCodes); btn.textContent = "Copied"; }
+    catch (e) { btn.textContent = "Select and copy them by hand"; }
+  }));
+
   // ─── Connection tests (Plex, single sign-on) ───────────────────────────────
   // A button [data-conn-test="<url>"] posts the form as it is (not saved) and shows the answer
   // in the [data-conn-result] next to it.

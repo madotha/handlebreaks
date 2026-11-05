@@ -916,6 +916,15 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
 .auth-sso { width: 100%; margin: .25rem 0 1rem; }
 .auth-or { text-align: center; margin: .5rem 0; }
 code.copyable { display: block; padding: .5rem .65rem; margin: .35rem 0; overflow-wrap: anywhere; user-select: all; }
+.mfa-setup { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; align-items: flex-start; margin: .75rem 0; }
+.mfa-qr { flex: none; line-height: 0; border-radius: var(--radius-sm); overflow: hidden; }
+.mfa-qr svg { width: 11rem; height: auto; display: block; }
+.mfa-setup > div:last-child { flex: 1 1 14rem; min-width: 0; }
+.mfa-key { font-size: 1rem; letter-spacing: .04em; }
+.mfa-steps { margin: .25rem 0 .5rem; padding-left: 1.25rem; }
+.recovery-box p { margin: 0 0 .5rem; }
+.recovery-codes { list-style: none; padding: 0; margin: .5rem 0 .75rem; display: grid; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); gap: .35rem .75rem; }
+.recovery-codes code { font-size: .95rem; user-select: all; }
 .account-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
 
 /* ─── Live state on the page tabs (notify.js) ──────────────────────────────── */
