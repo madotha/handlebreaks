@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [4.1.0] - 2026-11-05
+
 ### Added
 - **Single sign-on with OpenID Connect** ([details](https://github.com/madotha/handlebreaks/wiki/Web-UI#single-sign-on-oidc)), e.g. with Pocket ID, Authelia, Authentik or Keycloak: a **Sign in with …** button on the sign-in page. Set it up under Settings → Login & security or with environment variables (`AUTH_OIDC_ENABLED`, `AUTH_OIDC_ISSUER`, `AUTH_OIDC_CLIENT_ID`, `AUTH_OIDC_CLIENT_SECRET`, …); the page shows the redirect URL to register at the provider and has a **Test connection** button that checks the provider and the client's credentials. Only the users or groups you allow may sign in (`AUTH_OIDC_ALLOWED_USERS`, `AUTH_OIDC_ALLOWED_GROUPS`). Authorization code flow with PKCE, state and nonce; the client secret is write-only like the Plex token.
 - The password login can be turned off once single sign-on has worked, in the settings or with the environment variable `AUTH_PASSWORD_LOGIN=0` (`1` turns it on whatever the settings say). If single sign-on stops being set up, the password login comes back by itself, so you can't lock yourself out.
