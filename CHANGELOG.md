@@ -20,6 +20,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Settings on phones: Settings opens a list of all pages, grouped like the sidebar; each page has a back link.
 - The Docker worker setting is only shown in Docker.
 
+### Security
+- Forms sent without a session were accepted: the CSRF check compared an empty token with an empty one. A website open in the same browser could therefore send forms to the web UI (change settings, queue or delete files) as long as the browser could reach it. Such requests are now rejected. Affects all earlier 3.x versions; update.
+
 ## [3.23.0] - 2026-11-04
 
 ### Added

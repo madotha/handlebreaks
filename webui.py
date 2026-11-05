@@ -887,8 +887,8 @@ app.jinja_env.globals.update(csrf_token=csrf_token, scan_state=SCAN, now=datetim
 @app.before_request
 def before():
     if request.method == "POST":
-        sent = request.form.get("csrf", "")
-        if not secrets.compare_digest(sent, session.get("csrf", "")):
+        sent, expected = request.form.get("csrf", ""), session.get("csrf", "")
+        if not expected or not secrets.compare_digest(sent, expected):   # no session = no token (a cross-site POST)
             abort(400, "Invalid form token. Reload the page and try again.")
     g.config_error = None
     try:
