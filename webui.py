@@ -15,8 +15,9 @@ With SCAN_INTERVAL (minutes) set in config.env, the web UI also rescans all shar
 automatically once the last scan is that old (see auto_scan_loop).
 Settings    The values from config.env, editable in separate sections.
 
-There is no login yet. The web UI therefore listens on 127.0.0.1 by default.
-In Docker, docker-compose.yml publishes the port on 127.0.0.1 only.
+Every page needs a login (auth.py): until an account exists, the web UI only shows the setup
+page, unlocked by the setup code printed to the log at startup. The web UI still listens on
+127.0.0.1 by default, and docker-compose.yml publishes the port on 127.0.0.1 only.
 
 Start
 -----
@@ -45,9 +46,11 @@ from contextlib import closing
 from pathlib import Path
 
 from flask import Flask, Response, abort, flash, g, redirect, render_template, request, session, url_for
+from flask.sessions import SecureCookieSessionInterface
 from markupsafe import Markup, escape
 from werkzeug.datastructures import MultiDict
 
+import auth
 import encoding as enc
 import funfacts
 import plex
@@ -69,6 +72,15 @@ def secret_key():
 
 
 app.secret_key = secret_key()
+
+
+class SessionInterface(SecureCookieSessionInterface):
+    """The session cookie gets the Secure flag whenever the page itself came over HTTPS."""
+    def get_cookie_secure(self, app):
+        return request.is_secure or super().get_cookie_secure(app)
+
+
+app.session_interface = SessionInterface()
 
 # ─── Settings ─────────────────────────────────────────────────────────────────
 
@@ -219,6 +231,18 @@ SETTINGS_PAGES = {
             S("HISTORY_KEEP_DAYS", "Keep history entries visible (days)", "number",
               "The Status page's History hides results and replaces older than this. Nothing is deleted. 0 = always show.",
               "30", scope="user"),
+        ]),
+    ]),
+    "security": ("System", "Login & security", [
+        ("Sign-in methods", [
+            S("AUTH_PASSWORD_LOGIN", "Sign in with user name and password", "bool",
+              "Can only be turned off while another sign-in method is set up, so you can't lock yourself out. "
+              "The environment variable AUTH_PASSWORD_LOGIN=1 turns it back on whatever is set here.", "1", env=True),
+        ]),
+        ("Sessions", [
+            S("AUTH_SESSION_DAYS", "Stay signed in for (days)", "number",
+              "How long \"Keep me signed in\" lasts on a device without signing in again. "
+              "Without it, the browser forgets the login when it closes. 0 = until the browser closes, always.", "30"),
         ]),
     ]),
     "about": ("System", "About", []),
@@ -884,17 +908,212 @@ app.jinja_env.globals.update(csrf_token=csrf_token, scan_state=SCAN, now=datetim
                              app_version=enc.__version__)
 
 
+# Reachable without a login: what the login pages themselves need, the Docker health check and
+# the installable app's files (none of them shows any data)
+PUBLIC_ENDPOINTS = {"static", "health", "manifest", "service_worker", "offline", "login", "setup", "logout"}
+
+
 @app.before_request
 def before():
-    if request.method == "POST":
-        sent, expected = request.form.get("csrf", ""), session.get("csrf", "")
-        if not expected or not secrets.compare_digest(sent, expected):   # no session = no token (a cross-site POST)
-            abort(400, "Invalid form token. Reload the page and try again.")
     g.config_error = None
     try:
         enc.apply_config(enc.load_config())
     except SystemExit as e:
         g.config_error = str(e)
+    app.permanent_session_lifetime = timedelta(days=session_days() or 1)   # also checked when a cookie is read
+    if request.endpoint not in PUBLIC_ENDPOINTS and not signed_in():
+        return login_required()
+    if request.method == "POST":
+        sent, expected = request.form.get("csrf", ""), session.get("csrf", "")
+        if not expected or not secrets.compare_digest(sent, expected):
+            abort(400, "Invalid form token. Reload the page and try again.")
+
+
+# ─── Login ────────────────────────────────────────────────────────────────────
+# One account (auth.py, auth.json in the data folder). A session counts while its user name and
+# generation match the account's; a new password or "Sign out everywhere" raises the generation.
+
+def other_sign_in_methods():
+    """Sign-in methods besides the password that are set up (OIDC comes later)."""
+    return []
+
+
+def password_login():
+    """Whether the password login is offered. AUTH_PASSWORD_LOGIN=1 in the environment is the
+    break-glass switch; turned off in the settings, it still stays on without another method."""
+    if os.environ.get("AUTH_PASSWORD_LOGIN", "").strip() == "1":
+        return True
+    return (enc.CONFIG.get("AUTH_PASSWORD_LOGIN") or "1").strip() != "0" or not other_sign_in_methods()
+
+
+def session_days():
+    try:
+        return max(0, int((enc.CONFIG.get("AUTH_SESSION_DAYS") or "30").strip()))
+    except ValueError:
+        return 30
+
+
+def signed_in():
+    acc = auth.account()
+    return bool(acc) and session.get("auth_user") == acc["user"] and session.get("auth_gen") == acc["generation"]
+
+
+def wants_page():
+    """True for a page the browser navigates to, False for the pages' own background requests."""
+    mode = request.headers.get("Sec-Fetch-Mode")
+    if mode:
+        return mode == "navigate"
+    return request.method == "GET" and "text/html" in request.headers.get("Accept", "")
+
+
+def login_required():
+    """Not signed in: pages go to the login (or the setup page while there is no account) and come
+    back afterwards; background requests get 401, and static/session.js opens the login."""
+    target = url_for("setup") if auth.account() is None else url_for("login")
+    if wants_page():
+        nxt = request.full_path.rstrip("?") if request.method == "GET" else ""
+        return redirect(target + ("?" + urllib.parse.urlencode({"next": nxt}) if nxt and nxt != "/" else ""))
+    resp = app.response_class(json.dumps({"error": "login", "login": target}), status=401, mimetype="application/json")
+    resp.headers["X-Login"] = target
+    return resp
+
+
+def start_session(acc, remember):
+    """A fresh session for the account (nothing of the session before it carries over)."""
+    session.clear()
+    days = session_days()
+    session.permanent = bool(remember and days)
+    session.update(auth_user=acc["user"], auth_gen=acc["generation"], csrf=secrets.token_urlsafe(32))
+
+
+def client():
+    return request.remote_addr or "?"
+
+
+def throttled():
+    """The message for a client that has to wait before the next attempt, or None."""
+    wait = auth.wait_seconds(client())
+    return f"Too many failed attempts. Try again in {auth.describe_wait(wait)}." if wait else None
+
+
+def local_next(default):
+    """The ?next= page to return to after signing in: only paths on this site."""
+    nxt = request.values.get("next", "")
+    if nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt:
+        return nxt
+    return default
+
+
+_ANNOUNCED = set()
+
+
+def announce_setup_code():
+    """Write the setup code to the log (stderr: docker compose logs, logs/webui.log natively), once
+    per code and process."""
+    code = auth.setup_code()
+    if code not in _ANNOUNCED:
+        _ANNOUNCED.add(code)
+        print(f"No account yet. Open the web UI and create one with the setup code {code} "
+              f"(also in {auth.SETUP_CODE_FILE}).", file=sys.stderr, flush=True)
+    return code
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if auth.account() is None:
+        return redirect(url_for("setup"))
+    if signed_in():
+        return redirect(local_next(url_for("status")))
+    error = None
+    if not password_login():
+        error = "Password login is turned off."
+    elif request.method == "POST":
+        error = throttled()
+        if not error:
+            password = request.form.get("password", "")
+            acc = auth.verify(request.form.get("user", ""), password)
+            if acc:
+                auth.succeeded(client())
+                if auth.needs_rehash():
+                    auth.rehash(password)
+                    acc = auth.account()
+                start_session(acc, request.form.get("remember"))
+                return redirect(local_next(url_for("status")))
+            auth.failed(client())
+            error = throttled() or "Wrong user name or password."
+    return render_template("login.html", mode="login", error=error, user=request.form.get("user", ""),
+                           remember=request.method == "GET" or bool(request.form.get("remember")),
+                           days=session_days(), password_login=password_login(), next=local_next("")), 401 if error else 200
+
+
+@app.route("/setup", methods=["GET", "POST"])
+def setup():
+    """Create the account while there is none, unlocked by the setup code from the log."""
+    if auth.account() is not None:
+        return redirect(url_for("login"))
+    announce_setup_code()
+    error, form = None, request.form
+    if request.method == "POST":
+        error = throttled()
+        if not error and not auth.setup_code_ok(form.get("code")):
+            auth.failed(client())
+            error = throttled() or "That isn't the setup code. It is in the web UI's log and in the file named below."
+        error = error or auth.user_problem(form.get("user")) or auth.password_problem(form.get("password", ""), form.get("confirm", ""))
+        if not error:
+            auth.succeeded(client())
+            auth.set_account(form["user"], form["password"])
+            start_session(auth.account(), True)
+            flash(f"Account {auth.account()['user']} created. You're signed in.", "ok")
+            return redirect(local_next(url_for("status")))
+    return render_template("login.html", mode="setup", error=error, user=form.get("user", ""),
+                           code=form.get("code", ""), code_file=auth.SETUP_CODE_FILE, in_docker=Path("/.dockerenv").exists(),
+                           next=local_next("")), 400 if error else 200
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.clear()
+    flash("You're signed out.", "ok")
+    return redirect(url_for("login"))
+
+
+def security_context():
+    acc = auth.account() or {}
+    return {"user": acc.get("user"), "changed": acc.get("changed"), "days": session_days(),
+            "remembered": session.permanent, "method": acc.get("hash", "").split(":")[0]}
+
+
+def security_done(message, kind="ok"):
+    flash(message, kind)
+    return redirect(url_for("settings", section="security"))
+
+
+@app.route("/settings/security/account", methods=["POST"])
+def security_account():
+    """Change the user name and/or the password; both need the current password."""
+    form = request.form
+    if throttled():
+        return security_done(throttled(), "error")
+    if not auth.check_password(form.get("current", "")):
+        auth.failed(client())
+        return security_done("The current password is wrong. Nothing was changed.", "error")
+    auth.succeeded(client())
+    user = form.get("user", "").strip() or auth.account()["user"]
+    new = form.get("password", "")
+    problem = auth.user_problem(user) or (auth.password_problem(new, form.get("confirm", "")) if new or form.get("confirm") else None)
+    if problem:
+        return security_done(problem + " Nothing was changed.", "error")
+    gen = auth.set_account(user, new or None)
+    session.update(auth_user=user, auth_gen=gen)    # this device stays signed in
+    if new:
+        return security_done("Password changed. Every other device has to sign in again.")
+    return security_done(f"User name changed to {user}.")
+
+
+@app.route("/settings/security/signout", methods=["POST"])
+def security_signout_others():
+    session["auth_gen"] = auth.bump_generation()
+    return security_done("Every other device and browser is signed out.")
 
 
 @app.after_request
@@ -933,7 +1152,7 @@ def inject():
     return {"config_error": g.get("config_error"), "offline": offline, "worker_wait": wait,
             "date_format": date_format(), "ui": appearance(),
             "keep_originals": (enc.CONFIG.get("KEEP_ORIGINALS") or "1").strip() != "0",
-            "in_docker": Path("/.dockerenv").exists()}
+            "in_docker": Path("/.dockerenv").exists(), "account_user": session.get("auth_user")}
 
 
 # Display names for ffprobe codec names; anything else is shown in upper case
@@ -2862,12 +3081,23 @@ def page_fields(section):
             if fields]
 
 
+def setting_locks():
+    """Settings that can't be changed right now: key -> reason shown on the field."""
+    locks = {}
+    if not other_sign_in_methods():
+        locks["AUTH_PASSWORD_LOGIN"] = ("Password login is the only sign-in method, so it stays on. "
+                                        "It can be turned off once another method (OIDC) is set up.")
+    return locks
+
+
 def check_setting(s, form, cfg, errors):
     """The value to store for setting s from the submitted form, or None to leave it as it is;
     problems go into errors[key]."""
     key, kind = s["key"], s["kind"]
     if key in ENV_OVERRIDES and key in os.environ:
         return None                             # the environment variable wins; the field is locked
+    if key in setting_locks():
+        return None
     if kind == "bool":
         return "1" if form.get(key) else "0"
     if kind == "event_groups":
@@ -2993,6 +3223,7 @@ def settings(section, index=False):
         files_settings=files_settings_context(files_rows, request.form if files_rows is not None else None)
         if section == "pages" else None,
         about=about_info() if section == "about" else None,
+        security=security_context() if section == "security" else None, locks=setting_locks(),
         config_file=enc.CONFIG_FILE, config_exists=enc.CONFIG_FILE.exists(),
         env_overrides={k: os.environ[k] for k in ENV_OVERRIDES if k in os.environ})
 
@@ -3037,19 +3268,60 @@ def settings_problems():
             sorted(k for k in covered if k not in template))
 
 
+def set_password_cli(user=None):
+    """python3 webui.py --set-password [--user NAME]: asks for the password twice in a terminal, or
+    reads one line from stdin when it isn't one (e.g. docker compose exec -T … < file). Also turns
+    the password login back on, so it is the one way back in whatever went wrong."""
+    import getpass
+    acc = auth.account()
+    user = (user or (acc or {}).get("user") or "").strip()
+    if not user:
+        if not sys.stdin.isatty():
+            print("There is no account yet: name it with --user NAME.", file=sys.stderr)
+            return 2
+        user = input("User name: ").strip()
+    problem = auth.user_problem(user)
+    if problem:
+        print(problem, file=sys.stderr)
+        return 2
+    if sys.stdin.isatty():
+        password = getpass.getpass(f"New password for {user}: ")
+        problem = auth.password_problem(password, getpass.getpass("Again: "))
+    else:
+        password = sys.stdin.readline().rstrip("\r\n")
+        problem = auth.password_problem(password)
+    if problem:
+        print(problem, file=sys.stderr)
+        return 2
+    auth.set_account(user, password)
+    if enc.CONFIG_FILE.exists() and raw_config().get("AUTH_PASSWORD_LOGIN", "1").strip() == "0":
+        enc.write_config({"AUTH_PASSWORD_LOGIN": "1"})      # the way back in after a lock-out
+        print("Password login was turned off; it is on again.")
+    print(f"{'Password set' if acc else 'Account created'} for {user}. "
+          f"{'Every device has to sign in again.' if acc else 'Sign in on the web UI.'}")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description="Handlebreaks web UI")
     ap.add_argument("--host", default=os.environ.get("WEB_HOST", "127.0.0.1"))
     ap.add_argument("--port", type=int, default=int(os.environ.get("WEB_PORT", "7979")))
     ap.add_argument("--check-settings", action="store_true",
                     help="list config.example.env keys without a settings field and settings missing from it, then exit")
+    ap.add_argument("--set-password", action="store_true",
+                    help="create the account or set a new password (signs out every device), then exit")
+    ap.add_argument("--user", help="with --set-password: the user name (default: the current one)")
     args = ap.parse_args()
+    if args.set_password:
+        sys.exit(set_password_cli(args.user))
     if args.check_settings:
         uncovered, missing = settings_problems()
         print("Keys without a settings field:", ", ".join(uncovered) or "none")
         print("Settings missing from config.example.env:", ", ".join(missing) or "none")
         sys.exit(1 if uncovered or missing else 0)
     print(f"Handlebreaks web UI: http://{args.host}:{args.port}", file=sys.stderr)
+    if auth.account() is None:
+        announce_setup_code()
     threading.Thread(target=auto_scan_loop, daemon=True).start()
     threading.Thread(target=replace_sync_loop, daemon=True).start()
     threading.Thread(target=originals_purge_loop, daemon=True).start()

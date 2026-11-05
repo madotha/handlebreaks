@@ -12,6 +12,8 @@ handbrake-worker.json
 presets/
 config.env.v2.bak
 .secret_key
+auth.json
+.setup-code
 queue/
 processing/
 cancelled.txt

@@ -29,6 +29,7 @@ Handlebreaks converts movies and TV episodes in a Plex library from H.264 (and o
 - **Safe replacing:** **Replace…** puts an encode into the library in place of its original, keeps the original as a backup by default and never overwrites another file.
 - **Plex stays in sync:** after a replace, Plex rescans the folder and Handlebreaks checks that it picked up the new file.
 - **Every HandBrake setting:** presets per share, edited in the web UI with every setting of the newest HandBrake app, or imported from it.
+- **Login:** every page needs a user name and password; a one-time setup code from the log creates the account, so nobody who merely reaches the page can claim it.
 - **Live status:** queue with drag-and-drop order, progress, history, statistics and notifications when encodes, replaces and scans finish.
 - **On your phone:** a layout made for phones, and it installs as an app on the home screen.
 - **Looks the way you like:** light or dark, six accent colors, text size, a compact layout and more contrast.
@@ -86,10 +87,11 @@ open http://127.0.0.1:7979                         # Linux: xdg-open, or just op
 
 **5. First run** in the web UI:
 
-1. **Settings → Shares & scans**: replace the two example shares with your folders. A library folder `/Volumes/Media/Movies` is `/media/Movies` inside the container. Each folder needs a green ✓.
-2. **Scan now.** The Status page shows that it's running.
-3. **Files**: tick files or whole folders and click **Queue for encoding**. Progress is on the **Status** page.
-4. Check the finished files in the output folder, then put them into the library with **Replace…** (see below) or move them yourself.
+1. **Create the account.** The first visit asks for a setup code: `docker compose logs encoding | grep "setup code"` shows it. Then choose a user name and password.
+2. **Settings → Shares & scans**: replace the two example shares with your folders. A library folder `/Volumes/Media/Movies` is `/media/Movies` inside the container. Each folder needs a green ✓.
+3. **Scan now.** The Status page shows that it's running.
+4. **Files**: tick files or whole folders and click **Queue for encoding**. Progress is on the **Status** page.
+5. Check the finished files in the output folder, then put them into the library with **Replace…** (see below) or move them yourself.
 
 <details>
 <summary><b>How long does the first scan take?</b></summary>
@@ -133,7 +135,7 @@ If you use an AI coding agent that can run commands on your machine (e.g. Claude
 > 3. The output folder for finished encodes. Check that it exists or can be created and tell me how much free space it has.
 > 4. Optional settings: Obsidian notes folder, time zone, web UI port, automatic rescan interval, and whether to connect Plex (PLEX_URL). If I want Plex, tell me how to find my Plex token, but let me enter it myself under Settings → Plex in the web UI. Never print, log or repeat the token.
 >
-> Then install the missing requirements for the chosen setup (ask before installing anything), create `.env` and/or `config.env` from the templates with my answers, start the tool, and verify it: the web UI opens, every folder under Settings shows a green check mark, and a first scan starts. Don't queue encodes, replace files or change anything in my library; show me how to do that myself instead. Finish with a short summary: what you set up, where the config files are, and how to stop, update and uninstall it.
+> Then install the missing requirements for the chosen setup (ask before installing anything), create `.env` and/or `config.env` from the templates with my answers, start the tool, and verify it: the web UI opens, every folder under Settings shows a green check mark, and a first scan starts. The web UI first asks for an account: show me where the setup code is, but let me choose and enter the user name and password myself, and never print, log or repeat the password. Don't queue encodes, replace files or change anything in my library; show me how to do that myself instead. Finish with a short summary: what you set up, where the config files are, and how to stop, update and uninstall it.
 </details>
 
 ## FAQ
@@ -151,7 +153,7 @@ H.265 files are usually 30–60 % smaller than H.264 originals at the same quali
 The Docker image runs on Linux (Intel and ARM) the same way as on macOS, but that setup isn't documented yet. Windows isn't tested.
 
 **Can I open it from other devices?**
-Yes, with `WEB_BIND=0.0.0.0` in `.env` (Docker) or `webui.py --host 0.0.0.0` (native), but the web UI has no login yet, so only do that on a network you trust and never expose it to the internet. See [Security](#security).
+Yes, with `WEB_BIND=0.0.0.0` in `.env` (Docker) or `webui.py --host 0.0.0.0` (native), and with a strong password: the web UI asks everyone to sign in, but it serves plain `http`, so only do that on a network you trust and never expose it to the internet directly (use a VPN or a reverse proxy with HTTPS). See [Security](#security).
 
 ## Documentation
 
@@ -166,7 +168,7 @@ What changed in each version is in [CHANGELOG.md](CHANGELOG.md).
 
 ## Updating
 
-Check [CHANGELOG.md](CHANGELOG.md) for what changed. Your data is kept, and database and config changes are migrated automatically on the first run. Releases that need manual steps are described under [Updating](https://github.com/madotha/handlebreaks/wiki/Updating) in the wiki, including updating from versions 1.x and 2.x, and switching a Docker install from before version 3.21 (which built its image itself) to the prebuilt image.
+Check [CHANGELOG.md](CHANGELOG.md) for what changed. Your data is kept, and database and config changes are migrated automatically on the first run. Releases that need manual steps are described under [Updating](https://github.com/madotha/handlebreaks/wiki/Updating) in the wiki, including updating to 4.0 (the new login: Docker installs switch the image tag from `3` to `4`), updating from versions 1.x and 2.x, and switching a Docker install from before version 3.21 (which built its image itself) to the prebuilt image.
 
 ```bash
 # Docker (Setup B), in the handlebreaks folder
@@ -191,7 +193,7 @@ docker compose -f docker-compose.yml -f docker-compose.hybrid.yml up -d
 
 ## Security
 
-The web UI has **no login** yet. It only listens on `127.0.0.1` by default (natively and through Docker's port mapping), so only the machine itself can reach it. Don't open it to your network unless you trust it, and never expose it to the internet. `config.env` and `.env` may contain your Plex token; both are gitignored. The tool never modifies originals unless you click **Replace…**, and even then it keeps the original by default. More in [Security](https://github.com/madotha/handlebreaks/wiki/Security).
+Every page of the web UI needs a login; the account is created with a one-time setup code from the log, and passwords are stored only as a hash. The web UI still only listens on `127.0.0.1` by default (natively and through Docker's port mapping), so only the machine itself can reach it. It serves plain `http`: open it to your network only if you trust it, and never expose it to the internet directly. `config.env` and `.env` may contain your Plex token; both are gitignored. The tool never modifies originals unless you click **Replace…**, and even then it keeps the original by default. More in [Security](https://github.com/madotha/handlebreaks/wiki/Security).
 
 ## License
 

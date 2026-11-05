@@ -7,6 +7,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+**Major release: the web UI now needs a login.** After updating, the web UI asks once for a setup code (from its log) to create the account. Docker installs only get it after switching the image tag from `3` to `4`. See [Updating to version 4.0](https://github.com/madotha/handlebreaks/wiki/Updating#updating-to-version-40).
+
+### Added
+- **Login** ([details](https://github.com/madotha/handlebreaks/wiki/Web-UI#signing-in)): every page needs a user name and password. Until the account exists, the web UI only shows **Create the account**, which asks for a one-time setup code printed to the web UI's log and stored in `.setup-code` in the data folder, so nobody who merely reaches the page can claim the install. The password is stored only as a hash in `auth.json` in the data folder. **Keep me signed in** lasts 30 days after the last visit (`AUTH_SESSION_DAYS`). Pages you open while signed out come back after signing in, and pages left open go to the sign-in page once their login ends. Failed sign-ins are slowed down per address.
+- **Settings → Login & security**: change the user name or password (a new password signs out every other device), **Sign out everywhere else** and **Sign out**; the person icon at the top right opens it. The password login (`AUTH_PASSWORD_LOGIN`) can't be turned off yet: it is the only sign-in method until single sign-on (OIDC) arrives.
+- `python3 webui.py --set-password [--user NAME]` sets a new password when it's forgotten (in Docker: `docker compose exec encoding python3 webui.py --set-password`), creates the account without the setup code, and turns the password login back on.
+
+### Changed
+- Docker: `docker-compose.yml` uses the image tag `4` (`HANDLEBREAKS_TAG`).
+
+### Security
+- The session cookie is marked secure when the web UI is reached over HTTPS.
+
 ## [3.24.0] - 2026-11-05
 
 ### Added

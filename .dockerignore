@@ -21,6 +21,8 @@ done/
 logs/
 .lock
 .secret_key
+auth.json
+.setup-code
 .scan.lock
 .replace.lock
 .migrate.lock

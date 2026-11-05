@@ -6,9 +6,9 @@
 #   open http://127.0.0.1:7979
 #
 # Update: docker compose pull && docker compose up -d
-# The tag 3 follows every 3.x release; a new major version (which may need manual steps,
+# The tag 4 follows every 4.x release; a new major version (which may need manual steps,
 # see the wiki's Updating page) never arrives on its own. HANDLEBREAKS_TAG in .env pins a
-# version (e.g. 3.21.0). To build the image from this folder instead, add
+# version (e.g. 4.0.0). To build the image from this folder instead, add
 # docker-compose.build.yml. To keep encoding natively on the Mac, add docker-compose.hybrid.yml.
 #
 # Shares inside HOST_MEDIA_DIR appear as /media/<folder>. Shares elsewhere: mount
@@ -19,7 +19,7 @@
 #         - /Volumes/Archive/Shows:/media/Archive:ro
 services:
   encoding:
-    image: ghcr.io/madotha/handlebreaks:${HANDLEBREAKS_TAG:-3}
+    image: ghcr.io/madotha/handlebreaks:${HANDLEBREAKS_TAG:-4}
     container_name: ${CONTAINER_NAME:-handlebreaks}   # another name only to run a second instance next to it
     init: true
     restart: unless-stopped
@@ -34,7 +34,7 @@ services:
     environment:
       TZ: ${TZ:-UTC}                           # local time for logs and stored times (the web UI shows your browser's time anyway)
     ports:
-      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-7979}:7979"   # local only by default: there is no login yet
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-7979}:7979"   # local only by default (WEB_BIND in .env)
     volumes:
       - data:/data                             # config.env, encoding.db, queue/, logs/
       - ${HOST_MEDIA_DIR:?set HOST_MEDIA_DIR in .env}:/media:ro   # folder with your shares

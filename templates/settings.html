@@ -38,7 +38,7 @@
 
 {# One setting: label with its config.env key, the control, hint, default, problems #}
 {% macro field(s) %}
-  {% set key = s.key %}{% set kind = s.kind %}{% set locked = key in env_overrides %}{% set value = cfg.get(key, '') %}
+  {% set key = s.key %}{% set kind = s.kind %}{% set locked = key in env_overrides or key in locks %}{% set value = cfg.get(key, '') %}
   <div class="field" data-field="{{ key }}" data-kind="{{ kind }}" {% if s.default is not none %}data-default="{{ s.default }}"{% endif %}>
     {% if kind == 'bool' %}
       <label class="check"><input type="checkbox" name="{{ key }}" value="1" {% if value == '1' %}checked{% endif %} {% if locked %}disabled{% endif %}>
@@ -98,7 +98,8 @@
       <p class="flash info" data-theme-device hidden>This browser uses its own theme from the header button (<span></span>).
         <button type="button" class="link-btn" data-theme-follow>Follow this setting</button></p>
     {% endif %}
-    {% if locked %}<p class="flash info">Set by the environment variable <code>{{ key }}={{ env_overrides[key] }}</code> (e.g. in docker-compose.hybrid.yml). The value here is ignored.</p>{% endif %}
+    {% if key in locks and key not in env_overrides %}<p class="flash info">{{ locks[key] }}</p>
+    {% elif locked %}<p class="flash info">Set by the environment variable <code>{{ key }}={{ env_overrides[key] }}</code> (e.g. in docker-compose.hybrid.yml). The value here is ignored.</p>{% endif %}
     {% if errors.get(key) %}<p class="flash error">{{ errors[key] }}</p>{% endif %}
     {% if kind == 'paths' %}
       <ul class="checks" data-checks>{% for p, ok in checks.get(key, []) %}<li class="{{ 'ok' if ok else 'missing' }}">{{ '✓' if ok else '✗' }} {{ p }}</li>{% endfor %}</ul>
@@ -202,6 +203,52 @@
         <dt>Shares</dt><dd>{{ about.shares }}</dd>
         {% if about.env %}<dt>Environment</dt><dd>{% for k, v in about.env.items() %}<code>{{ k }}={{ v }}</code>{{ ' ' }}{% endfor %}</dd>{% endif %}
       </dl>
+    </section>
+    {% endif %}
+
+    {% if section == 'security' %}
+    <section class="panel">
+      <h3 class="panel-title">Account</h3>
+      <p class="hint">Signed in as <strong>{{ security.user }}</strong>{% if security.changed %} · password set {{ security.changed|localtime }}{% endif %}.</p>
+      <form method="post" action="{{ url_for('security_account') }}" class="account-form" autocomplete="on">
+        <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+        <div class="field">
+          <label for="acc-user">User name</label>
+          <input id="acc-user" name="user" value="{{ security.user }}" autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="64">
+        </div>
+        <div class="field">
+          <label for="acc-new">New password</label>
+          <input id="acc-new" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="256">
+          <p class="hint">Leave empty to keep the current one. At least 8 characters; a few random words make a long password that is easy to type. A new password signs out every other device.</p>
+        </div>
+        <div class="field">
+          <label for="acc-confirm">New password again</label>
+          <input id="acc-confirm" name="confirm" type="password" autocomplete="new-password" maxlength="256">
+        </div>
+        <div class="field">
+          <label for="acc-current">Current password</label>
+          <input id="acc-current" name="current" type="password" autocomplete="current-password" required>
+          <p class="hint">Needed for any change here.</p>
+        </div>
+        <button>Save account</button>
+      </form>
+      <p class="hint">Forgot the password? On the machine running Handlebreaks, run
+        {% if in_docker %}<code>docker compose exec encoding python3 webui.py --set-password</code>{% else %}<code>python3 webui.py --set-password</code> in the install folder{% endif %}.</p>
+    </section>
+    <section class="panel">
+      <h3 class="panel-title">Devices</h3>
+      <p class="hint">{% if security.remembered %}This browser stays signed in for {{ security.days }} days after its last visit.{% else %}This browser forgets the login when it closes.{% endif %}
+        Signing out everywhere ends the login on every other device and browser; this one stays signed in.</p>
+      <div class="account-actions">
+        <form method="post" action="{{ url_for('security_signout_others') }}" onsubmit="return confirm('Sign out every other device and browser?')">
+          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+          <button class="secondary">Sign out everywhere else</button>
+        </form>
+        <form method="post" action="{{ url_for('logout') }}">
+          <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+          <button class="secondary">Sign out</button>
+        </form>
+      </div>
     </section>
     {% endif %}
 

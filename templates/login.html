@@ -1,0 +1,73 @@
+<!doctype html>
+{# The sign-in page (mode "login") and, while there is no account yet, the setup page (mode "setup").
+   Its own small page: base.html would poll /events and show data that needs a login. #}
+<html lang="en" data-theme-default="{{ ui.theme }}" data-accent="{{ ui.accent }}" data-text="{{ ui.text_size }}"
+      data-density="{{ ui.density }}" data-contrast="{{ ui.contrast }}" data-motion="{{ ui.motion }}">
+<head>
+  <meta charset="utf-8">
+{% include "_app_head.html" %}
+  <title>{{ 'Create the account' if mode == 'setup' else 'Sign in' }} · Handlebreaks</title>
+</head>
+<body>
+  <main class="auth-page">
+    <img class="offline-mark" src="{{ url_for('static', filename='favicon.svg') }}" alt="">
+    {% if mode == 'setup' %}
+      <h1>Create the account</h1>
+      <p class="muted">Handlebreaks needs an account before anyone can use it. Enter the setup code to prove that you run this
+        install, then choose a user name and password.</p>
+    {% else %}
+      <h1>Sign in to Handlebreaks</h1>
+    {% endif %}
+    {% for cat, msg in get_flashed_messages(with_categories=true) %}<p class="flash {{ cat }}">{{ msg }}</p>{% endfor %}
+    {% if error %}<p class="flash error" role="alert">{{ error }}</p>{% endif %}
+
+    {% if mode == 'setup' %}
+    <form method="post" class="auth-form">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+      <div class="field">
+        <label for="code">Setup code</label>
+        <input id="code" name="code" value="{{ code }}" required autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" class="mono" placeholder="XXXX-XXXX-XXXX">
+        <p class="hint">It is in the web UI's log and in the file <code>{{ code_file }}</code>.
+          {% if in_docker %}Show it with <code>docker compose logs encoding | grep "setup code"</code>.{% else %}Natively it is also in <code>logs/webui.log</code>.{% endif %}</p>
+      </div>
+      <div class="field">
+        <label for="user">User name</label>
+        <input id="user" name="user" value="{{ user }}" required maxlength="64" autocomplete="username" autocapitalize="none" spellcheck="false">
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required minlength="8" maxlength="256" autocomplete="new-password">
+        <p class="hint">At least 8 characters; a few random words make a long password that is easy to type.</p>
+      </div>
+      <div class="field">
+        <label for="confirm">Password again</label>
+        <input id="confirm" name="confirm" type="password" required maxlength="256" autocomplete="new-password">
+      </div>
+      <button>Create account</button>
+    </form>
+    {% elif password_login %}
+    <form method="post" class="auth-form">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+      <div class="field">
+        <label for="user">User name</label>
+        <input id="user" name="user" value="{{ user }}" required autocomplete="username" autocapitalize="none" spellcheck="false" {% if not user %}autofocus{% endif %}>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" required autocomplete="current-password" {% if user %}autofocus{% endif %}>
+      </div>
+      {% if days %}
+      <div class="field">
+        <label class="check"><input type="checkbox" name="remember" value="1" {% if remember %}checked{% endif %}> Keep me signed in for {{ days }} days</label>
+      </div>
+      {% endif %}
+      <button>Sign in</button>
+    </form>
+    <p class="muted small">Forgot the password? Set a new one on the machine running Handlebreaks with
+      <code>python3 webui.py --set-password</code> (in Docker: <code>docker compose exec encoding python3 webui.py --set-password</code>).</p>
+    {% endif %}
+  </main>
+</body>
+</html>

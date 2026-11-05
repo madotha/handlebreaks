@@ -12,6 +12,7 @@
 <head>
   <meta charset="utf-8">
 {% include "_app_head.html" %}
+  <script src="{{ url_for('static', filename='session.js') }}"></script>
   {% block head %}{% endblock %}
   <title>{% block title %}{% endblock %} · Handlebreaks</title>
   {# Installed app: keeps the static files and shows a page of its own when the server is unreachable (HTTPS or localhost only) #}
@@ -29,6 +30,7 @@
     </nav>
     <div class="top-end">
       {% if scan_state.running %}<span class="pill busy" title="{{ scan_state.label }}">Scanning<span class="visually-hidden"> since</span> {{ scan_state.started|localtime }}</span>{% endif %}
+      <a class="account-link" href="{{ url_for('settings', section='security') }}" aria-label="Account ({{ account_user }})" data-tip="Signed in as {{ account_user }}">{{ icon('user') }}</a>
       <button type="button" class="theme-toggle" data-theme-toggle aria-label="Color theme">
         <span data-theme-icon="auto">{{ icon('auto') }}</span><span data-theme-icon="light" hidden>{{ icon('sun') }}</span><span data-theme-icon="dark" hidden>{{ icon('moon') }}</span>
       </button>

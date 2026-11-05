@@ -79,9 +79,14 @@ jobs:
             docker exec smoke python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7979/health', timeout=3)" 2>/dev/null && ok=1 && break
             sleep 2
           done
+          # pages need a login: without an account they lead to the setup page, whose code is in the log
+          gated=$(docker exec smoke python3 -c "import urllib.request; print(urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:7979/status', headers={'Sec-Fetch-Mode': 'navigate'}), timeout=3).url)" 2>&1)
           docker logs smoke | tail -20
+          setup_logged=$(docker logs smoke 2>&1 | grep -c 'setup code' || true)
           docker rm -f smoke && docker volume rm smoke-data
           [ "${ok:-0}" = 1 ] || { echo "::error::web UI didn't answer"; exit 1; }
+          case "$gated" in */setup*) ;; *) echo "::error::/status didn't lead to the setup page: $gated"; exit 1;; esac
+          [ "$setup_logged" -ge 1 ] || { echo "::error::the setup code isn't in the log"; exit 1; }
 
       - name: Log in to the registry
         if: github.ref_type == 'tag'
