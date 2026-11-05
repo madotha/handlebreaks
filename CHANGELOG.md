@@ -9,6 +9,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 - Two-factor setup: the QR code was cut off at its right and bottom edge (on phones even more), so authenticator apps couldn't read it. It now scales with the page and is a little larger.
+- `webui.py --set-password` now says when the environment variable `AUTH_PASSWORD_LOGIN=0` still keeps the password login off, and when two-factor authentication stays on.
+
+### Added
+- Wiki: [Locked out of the web UI](https://github.com/madotha/handlebreaks/wiki/Troubleshooting#locked-out-of-the-web-ui) lists every way back in (forgotten password, lost phone, single sign-on not working, too many attempts).
 
 ## [4.1.0] - 2026-11-05
 

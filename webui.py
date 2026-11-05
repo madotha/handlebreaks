@@ -3656,6 +3656,11 @@ def set_password_cli(user=None):
     if enc.CONFIG_FILE.exists() and raw_config().get("AUTH_PASSWORD_LOGIN", "1").strip() == "0":
         enc.write_config({"AUTH_PASSWORD_LOGIN": "1"})      # the way back in after a lock-out
         print("Password login was turned off; it is on again.")
+    if os.environ.get("AUTH_PASSWORD_LOGIN", "").strip() == "0":
+        print("Note: the environment variable AUTH_PASSWORD_LOGIN=0 keeps the password login off once single sign-on "
+              "has worked. Remove it (or set it to 1) and restart, e.g. docker compose up -d.", file=sys.stderr)
+    if auth.mfa():
+        print("Two-factor authentication stays on; python3 webui.py --disable-mfa turns it off.")
     print(f"{'Password set' if acc else 'Account created'} for {user}. "
           f"{'Every device has to sign in again.' if acc else 'Sign in on the web UI.'}")
     return 0
