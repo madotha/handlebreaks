@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-11-05
+
 **Major release: the web UI now needs a login.** After updating, the web UI asks once for a setup code (from its log) to create the account. Docker installs only get it after switching the image tag from `3` to `4`. See [Updating to version 4.0](https://github.com/madotha/handlebreaks/wiki/Updating#updating-to-version-40).
 
 ### Added
