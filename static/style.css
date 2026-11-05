@@ -913,6 +913,9 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
 .auth-form input:not([type=checkbox]), .account-form input { width: 100%; }
 .auth-form button { width: 100%; }
 .account-form { max-width: 26rem; margin: 1rem 0; }
+.auth-sso { width: 100%; margin: .25rem 0 1rem; }
+.auth-or { text-align: center; margin: .5rem 0; }
+code.copyable { display: block; padding: .5rem .65rem; margin: .35rem 0; overflow-wrap: anywhere; user-select: all; }
 .account-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .75rem; }
 
 /* ─── Live state on the page tabs (notify.js) ──────────────────────────────── */

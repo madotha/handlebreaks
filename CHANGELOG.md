@@ -7,6 +7,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- **Single sign-on with OpenID Connect** ([details](https://github.com/madotha/handlebreaks/wiki/Web-UI#single-sign-on-oidc)), e.g. with Pocket ID, Authelia, Authentik or Keycloak: a **Sign in with …** button on the sign-in page. Set it up under Settings → Login & security or with environment variables (`AUTH_OIDC_ENABLED`, `AUTH_OIDC_ISSUER`, `AUTH_OIDC_CLIENT_ID`, `AUTH_OIDC_CLIENT_SECRET`, …); the page shows the redirect URL to register at the provider and has a **Test connection** button that checks the provider and the client's credentials. Only the users or groups you allow may sign in (`AUTH_OIDC_ALLOWED_USERS`, `AUTH_OIDC_ALLOWED_GROUPS`). Authorization code flow with PKCE, state and nonce; the client secret is write-only like the Plex token.
+- The password login can be turned off once single sign-on has worked, in the settings or with the environment variable `AUTH_PASSWORD_LOGIN=0` (`1` turns it on whatever the settings say). If single sign-on stops being set up, the password login comes back by itself, so you can't lock yourself out.
+- Signed in with single sign-on and no password account, Settings → Login & security can create one.
+
+### Changed
+- Settings set by an environment variable show the value in force (secrets only as "set") and can't be edited on the page.
+- Changing the provider, client or who may sign in ends the sessions made with single sign-on; turning the password login off ends the password sessions.
+
+### Fixed
+- Docker image build: HandBrakeCLI's build could stop at random on a compiler message with a typographic quote (seen on arm64); the build now runs with plain ASCII messages.
+
 ## [4.0.0] - 2026-11-05
 
 **Major release: the web UI now needs a login.** After updating, the web UI asks once for a setup code (from its log) to create the account. Docker installs only get it after switching the image tag from `3` to `4`. See [Updating to version 4.0](https://github.com/madotha/handlebreaks/wiki/Updating#updating-to-version-40).

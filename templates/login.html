@@ -21,7 +21,9 @@
     {% for cat, msg in get_flashed_messages(with_categories=true) %}<p class="flash {{ cat }}">{{ msg }}</p>{% endfor %}
     {% if error %}<p class="flash error" role="alert">{{ error }}</p>{% endif %}
 
+    {% macro sso_link() %}{% if sso %}<a class="button auth-sso" href="{{ url_for('oidc_start', next=next or None) }}">{{ sso }}</a>{% endif %}{% endmacro %}
     {% if mode == 'setup' %}
+    {% if sso %}{{ sso_link() }}<p class="muted small auth-or">or create a password account</p>{% endif %}
     <form method="post" class="auth-form">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
@@ -46,7 +48,10 @@
       </div>
       <button>Create account</button>
     </form>
-    {% elif password_login %}
+    {% elif not password_login %}
+    {{ sso_link() }}
+    {% else %}
+    {% if sso %}{{ sso_link() }}<p class="muted small auth-or">or with your password</p>{% endif %}
     <form method="post" class="auth-form">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}

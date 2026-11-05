@@ -27,8 +27,11 @@ RUN curl -fsSL -o hb.tar.bz2 "https://github.com/HandBrake/HandBrake/releases/do
 # against their checksums by HandBrake's build. Without NUMA: x265 built with libnuma creates
 # no thread pool on kernels without NUMA support, such as Docker Desktop's VM on macOS and
 # Windows, and then encodes about 4x slower. Without it x265 simply uses every CPU.
+# LC_ALL=C: compilers then quote with plain ASCII. HandBrake's --launch decodes their output as
+# UTF-8 line by line, and with parallel jobs a typographic quote could be split across lines and
+# stop the build (UnicodeDecodeError, seen on arm64).
 RUN cd "HandBrake-${HANDBRAKE_VERSION}" \
- && ./configure --disable-gtk --disable-numa --launch-jobs="$(nproc)" --launch \
+ && LC_ALL=C ./configure --disable-gtk --disable-numa --launch-jobs="$(nproc)" --launch \
  && install -Dm755 build/HandBrakeCLI /out/bin/HandBrakeCLI \
  && install -Dm644 COPYING /out/doc/COPYING \
  && printf 'HandBrakeCLI %s, built unmodified from\n%s\nSHA-256 %s\nLicense: GPL-2.0 (COPYING)\n' "${HANDBRAKE_VERSION}" \
@@ -58,7 +61,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY auth.py encoding.py funfacts.py plex.py presets.py preset_tips.py webui.py encode.sh status.sh docker-entrypoint.sh preset.json config.example.env ./
+COPY auth.py encoding.py funfacts.py oidc.py plex.py presets.py preset_tips.py webui.py encode.sh status.sh docker-entrypoint.sh preset.json config.example.env ./
 COPY templates/ templates/
 COPY static/ static/
 

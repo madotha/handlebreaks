@@ -52,6 +52,7 @@ from werkzeug.datastructures import MultiDict
 
 import auth
 import encoding as enc
+import oidc
 import funfacts
 import plex
 import presets
@@ -234,10 +235,37 @@ SETTINGS_PAGES = {
         ]),
     ]),
     "security": ("System", "Login & security", [
-        ("Sign-in methods", [
+        ("Password", [
             S("AUTH_PASSWORD_LOGIN", "Sign in with user name and password", "bool",
-              "Can only be turned off while another sign-in method is set up, so you can't lock yourself out. "
-              "The environment variable AUTH_PASSWORD_LOGIN=1 turns it back on whatever is set here.", "1", env=True),
+              "Can only be turned off once single sign-on has worked, so you can't lock yourself out; if single "
+              "sign-on stops being set up, the password login comes back by itself. Turning it off signs out every "
+              "device signed in with the password, this one too if it was. The environment variable "
+              "AUTH_PASSWORD_LOGIN (1 = on, 0 = off) wins over this.", "1", env=True),
+        ]),
+        ("Single sign-on (OIDC)", [
+            S("AUTH_OIDC_ENABLED", "Sign in with an OpenID Connect provider", "bool",
+              "E.g. Pocket ID, Authelia, Authentik or Keycloak. Register Handlebreaks there as a client "
+              "with the redirect URL shown below.", "0", env=True),
+            S("AUTH_OIDC_NAME", "Provider name", "text",
+              "Shown on the sign-in button: \"Sign in with …\".", "", env=True, placeholder="Pocket ID"),
+            S("AUTH_OIDC_ISSUER", "Issuer URL", "text",
+              "The provider's address, as its /.well-known/openid-configuration names it, e.g. "
+              "https://id.example.com. Must use https.", "", env=True, placeholder="https://id.example.com"),
+            S("AUTH_OIDC_CLIENT_ID", "Client ID", "text", "", "", env=True),
+            S("AUTH_OIDC_CLIENT_SECRET", "Client secret", "secret",
+              "Never shown again or sent to the browser; only sent to the provider. A changed issuer or client ID "
+              "needs it again. Leave it empty for a public client (PKCE only).", env=True),
+            S("AUTH_OIDC_SCOPES", "Scopes", "text",
+              "Add groups (Pocket ID, Authelia) if you allow groups below.", "openid profile email", env=True),
+            S("AUTH_OIDC_ALLOWED_USERS", "Allowed users", "text",
+              "User names, e-mail addresses or subject IDs, separated by spaces; * = everyone the provider lets "
+              "sign in to this client. Either this or the groups must be set.", "", env=True),
+            S("AUTH_OIDC_ALLOWED_GROUPS", "Allowed groups", "text",
+              "Members of these groups (the groups claim) may sign in, separated by spaces.", "", env=True),
+            S("AUTH_OIDC_REDIRECT_URL", "Redirect URL", "text",
+              "Only behind a reverse proxy that changes the address: the full address of /login/oidc/callback as "
+              "the browser sees it. Empty = taken from the page's address.", "", env=True,
+              placeholder="https://handlebreaks.example.com/login/oidc/callback"),
         ]),
         ("Sessions", [
             S("AUTH_SESSION_DAYS", "Stay signed in for (days)", "number",
@@ -910,7 +938,8 @@ app.jinja_env.globals.update(csrf_token=csrf_token, scan_state=SCAN, now=datetim
 
 # Reachable without a login: what the login pages themselves need, the Docker health check and
 # the installable app's files (none of them shows any data)
-PUBLIC_ENDPOINTS = {"static", "health", "manifest", "service_worker", "offline", "login", "setup", "logout"}
+PUBLIC_ENDPOINTS = {"static", "health", "manifest", "service_worker", "offline", "login", "setup", "logout",
+                    "oidc_start", "oidc_callback"}
 
 
 @app.before_request
@@ -930,20 +959,71 @@ def before():
 
 
 # ─── Login ────────────────────────────────────────────────────────────────────
-# One account (auth.py, auth.json in the data folder). A session counts while its user name and
-# generation match the account's; a new password or "Sign out everywhere" raises the generation.
+# Two sign-in methods: the password account (auth.py, auth.json in the data folder) and single
+# sign-on with OpenID Connect (oidc.py). A session records its method; it counts while that method
+# is still offered, its generation matches auth.json's (a new password or "Sign out everywhere"
+# raises it) and, for a password session, its user is the account's, for single sign-on, the
+# provider and client are still the configured ones.
+
+def setting(key):
+    """A login setting: the environment variable of the same name wins (env=True settings),
+    else config.env, else the setting's default."""
+    if key in ENV_OVERRIDES and key in os.environ:
+        return os.environ[key].strip()
+    value = enc.CONFIG.get(key)
+    return (value if value is not None else SETTINGS[key]["default"] or "").strip()
+
+
+def oidc_config():
+    return {"enabled": setting("AUTH_OIDC_ENABLED") == "1", "name": setting("AUTH_OIDC_NAME") or "single sign-on",
+            "issuer": setting("AUTH_OIDC_ISSUER").rstrip("/"), "client_id": setting("AUTH_OIDC_CLIENT_ID"),
+            "client_secret": setting("AUTH_OIDC_CLIENT_SECRET"), "scopes": setting("AUTH_OIDC_SCOPES") or "openid",
+            "users": setting("AUTH_OIDC_ALLOWED_USERS").split(), "groups": setting("AUTH_OIDC_ALLOWED_GROUPS").split()}
+
+
+def oidc_policy(cfg):
+    """Fingerprint of the single sign-on settings a session depends on: changing the provider,
+    client or who may sign in ends the sessions made with the old ones."""
+    raw = "\n".join([cfg["issuer"], cfg["client_id"], " ".join(sorted(cfg["users"])), " ".join(sorted(cfg["groups"]))])
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def oidc_ready(cfg=None):
+    """Single sign-on is turned on and complete enough to offer the button."""
+    cfg = cfg or oidc_config()
+    return (cfg["enabled"] and bool(cfg["issuer"]) and bool(cfg["client_id"]) and bool(cfg["users"] or cfg["groups"])
+            and "openid" in cfg["scopes"].split() and not oidc.issuer_problem(cfg["issuer"]))
+
 
 def other_sign_in_methods():
-    """Sign-in methods besides the password that are set up (OIDC comes later)."""
-    return []
+    """Sign-in methods besides the password that are set up and have worked at least once."""
+    cfg = oidc_config()
+    return ["oidc"] if oidc_ready(cfg) and auth.oidc_verified(cfg["issuer"], cfg["client_id"]) else []
+
+
+_WARNED = set()
 
 
 def password_login():
-    """Whether the password login is offered. AUTH_PASSWORD_LOGIN=1 in the environment is the
-    break-glass switch; turned off in the settings, it still stays on without another method."""
-    if os.environ.get("AUTH_PASSWORD_LOGIN", "").strip() == "1":
-        return True
-    return (enc.CONFIG.get("AUTH_PASSWORD_LOGIN") or "1").strip() != "0" or not other_sign_in_methods()
+    """Whether the password login is offered: AUTH_PASSWORD_LOGIN from the environment (1 on, 0
+    off) or the settings, but never off while no other method works (no lock-out)."""
+    wanted = setting("AUTH_PASSWORD_LOGIN") != "0"
+    if wanted or other_sign_in_methods():
+        return wanted
+    if "password" not in _WARNED:
+        _WARNED.add("password")
+        print("AUTH_PASSWORD_LOGIN is 0, but single sign-on isn't set up or hasn't worked yet: "
+              "the password login stays on.", file=sys.stderr, flush=True)
+    return True
+
+
+def needs_setup():
+    """No account yet while the password login is on: only the setup page (or single sign-on) is offered."""
+    return password_login() and auth.account() is None
+
+
+def redirect_uri():
+    return setting("AUTH_OIDC_REDIRECT_URL") or url_for("oidc_callback", _external=True)
 
 
 def session_days():
@@ -954,8 +1034,13 @@ def session_days():
 
 
 def signed_in():
+    if session.get("auth_gen") != auth.generation():
+        return False
+    if session.get("auth_method") == "oidc":
+        cfg = oidc_config()
+        return oidc_ready(cfg) and session.get("auth_policy") == oidc_policy(cfg)
     acc = auth.account()
-    return bool(acc) and session.get("auth_user") == acc["user"] and session.get("auth_gen") == acc["generation"]
+    return bool(acc) and password_login() and session.get("auth_user") == acc["user"]
 
 
 def wants_page():
@@ -969,7 +1054,7 @@ def wants_page():
 def login_required():
     """Not signed in: pages go to the login (or the setup page while there is no account) and come
     back afterwards; background requests get 401, and static/session.js opens the login."""
-    target = url_for("setup") if auth.account() is None else url_for("login")
+    target = url_for("setup") if needs_setup() else url_for("login")
     if wants_page():
         nxt = request.full_path.rstrip("?") if request.method == "GET" else ""
         return redirect(target + ("?" + urllib.parse.urlencode({"next": nxt}) if nxt and nxt != "/" else ""))
@@ -978,12 +1063,12 @@ def login_required():
     return resp
 
 
-def start_session(acc, remember):
-    """A fresh session for the account (nothing of the session before it carries over)."""
+def start_session(user, remember, method="password", **extra):
+    """A fresh session (nothing of the session before it carries over)."""
     session.clear()
     days = session_days()
     session.permanent = bool(remember and days)
-    session.update(auth_user=acc["user"], auth_gen=acc["generation"], csrf=secrets.token_urlsafe(32))
+    session.update(auth_user=user, auth_method=method, auth_gen=auth.generation(), csrf=secrets.token_urlsafe(32), **extra)
 
 
 def client():
@@ -1020,12 +1105,12 @@ def announce_setup_code():
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    if auth.account() is None:
-        return redirect(url_for("setup"))
+    if needs_setup():
+        return redirect(url_for("setup", next=request.args.get("next") or None))
     if signed_in():
         return redirect(local_next(url_for("status")))
-    error = None
-    if not password_login():
+    error = session.pop("login_error", None)
+    if request.method == "POST" and not password_login():
         error = "Password login is turned off."
     elif request.method == "POST":
         error = throttled()
@@ -1037,19 +1122,72 @@ def login():
                 if auth.needs_rehash():
                     auth.rehash(password)
                     acc = auth.account()
-                start_session(acc, request.form.get("remember"))
+                start_session(acc["user"], request.form.get("remember"))
                 return redirect(local_next(url_for("status")))
             auth.failed(client())
             error = throttled() or "Wrong user name or password."
     return render_template("login.html", mode="login", error=error, user=request.form.get("user", ""),
                            remember=request.method == "GET" or bool(request.form.get("remember")),
-                           days=session_days(), password_login=password_login(), next=local_next("")), 401 if error else 200
+                           days=session_days(), password_login=password_login(), sso=sso_button(),
+                           next=local_next("")), 401 if error else 200
+
+
+def sso_button():
+    """Label of the single sign-on button, or None when it isn't offered."""
+    cfg = oidc_config()
+    return f"Sign in with {cfg['name']}" if oidc_ready(cfg) else None
+
+
+def sso_failed(message):
+    print(f"Single sign-on failed: {message}", file=sys.stderr, flush=True)
+    session["login_error"] = message
+    return redirect(url_for("login"))
+
+
+@app.route("/login/oidc")
+def oidc_start():
+    """Send the browser to the provider's sign-in page (OpenID Connect, code flow with PKCE)."""
+    cfg = oidc_config()
+    if not oidc_ready(cfg):
+        return sso_failed("Single sign-on isn't set up.")
+    try:
+        state, url = oidc.start(cfg, redirect_uri(), local_next(""))
+    except oidc.OIDCError as e:
+        return sso_failed(str(e))
+    session["oidc_state"] = state                # ties the answer to this browser
+    return redirect(url)
+
+
+@app.route("/login/oidc/callback")
+def oidc_callback():
+    cfg = oidc_config()
+    state = request.args.get("state", "")
+    expected = session.pop("oidc_state", "")
+    if not oidc_ready(cfg):
+        return sso_failed("Single sign-on isn't set up.")
+    if not expected or not secrets.compare_digest(state, expected):
+        return sso_failed("This sign-in didn't start in this browser, or it was already used. Start it again.")
+    if request.args.get("error"):
+        detail = request.args.get("error_description") or request.args["error"]
+        return sso_failed(f"The provider didn't sign you in: {detail[:200]}")
+    try:
+        claims, nxt = oidc.finish(cfg, state, request.args.get("code", ""))
+    except oidc.OIDCError as e:
+        return sso_failed(str(e))
+    name = oidc.display_name(claims)
+    if not oidc.allowed(claims, cfg["users"], cfg["groups"]):
+        print(f"Single sign-on: {name} isn't among the allowed users or groups.", file=sys.stderr, flush=True)
+        session["login_error"] = f"{name} may not use Handlebreaks: ask its owner to add you to the allowed users or groups."
+        return redirect(url_for("login"))
+    auth.record_oidc(cfg["issuer"], cfg["client_id"])
+    start_session(name, True, "oidc", auth_policy=oidc_policy(cfg), auth_sub=str(claims["sub"]))
+    return redirect(nxt or url_for("status"))
 
 
 @app.route("/setup", methods=["GET", "POST"])
 def setup():
     """Create the account while there is none, unlocked by the setup code from the log."""
-    if auth.account() is not None:
+    if not needs_setup():
         return redirect(url_for("login"))
     announce_setup_code()
     error, form = None, request.form
@@ -1062,12 +1200,12 @@ def setup():
         if not error:
             auth.succeeded(client())
             auth.set_account(form["user"], form["password"])
-            start_session(auth.account(), True)
+            start_session(auth.account()["user"], True)
             flash(f"Account {auth.account()['user']} created. You're signed in.", "ok")
             return redirect(local_next(url_for("status")))
     return render_template("login.html", mode="setup", error=error, user=form.get("user", ""),
                            code=form.get("code", ""), code_file=auth.SETUP_CODE_FILE, in_docker=Path("/.dockerenv").exists(),
-                           next=local_next("")), 400 if error else 200
+                           sso=sso_button(), next=local_next("")), 400 if error else 200
 
 
 @app.route("/logout", methods=["POST"])
@@ -1079,8 +1217,12 @@ def logout():
 
 def security_context():
     acc = auth.account() or {}
+    cfg = oidc_config()
     return {"user": acc.get("user"), "changed": acc.get("changed"), "days": session_days(),
-            "remembered": session.permanent, "method": acc.get("hash", "").split(":")[0]}
+            "remembered": session.permanent, "method": acc.get("hash", "").split(":")[0],
+            "session_user": session.get("auth_user"), "session_method": session.get("auth_method", "password"),
+            "provider": cfg["name"], "redirect_uri": redirect_uri(), "password_login": password_login(),
+            "oidc_ready": oidc_ready(cfg), "oidc_verified": auth.oidc_verified(cfg["issuer"], cfg["client_id"])}
 
 
 def security_done(message, kind="ok"):
@@ -1090,10 +1232,19 @@ def security_done(message, kind="ok"):
 
 @app.route("/settings/security/account", methods=["POST"])
 def security_account():
-    """Change the user name and/or the password; both need the current password."""
+    """Change the user name and/or the password; both need the current password. Without an
+    account (single sign-on only), a signed-in user can create one."""
     form = request.form
     if throttled():
         return security_done(throttled(), "error")
+    if auth.account() is None:
+        user = form.get("user", "").strip()
+        problem = auth.user_problem(user) or auth.password_problem(form.get("password", ""), form.get("confirm", ""))
+        if problem:
+            return security_done(problem + " Nothing was changed.", "error")
+        gen = auth.set_account(user, form["password"])
+        session["auth_gen"] = gen
+        return security_done(f"Password account {user} created. Every other device has to sign in again.")
     if not auth.check_password(form.get("current", "")):
         auth.failed(client())
         return security_done("The current password is wrong. Nothing was changed.", "error")
@@ -1104,7 +1255,9 @@ def security_account():
     if problem:
         return security_done(problem + " Nothing was changed.", "error")
     gen = auth.set_account(user, new or None)
-    session.update(auth_user=user, auth_gen=gen)    # this device stays signed in
+    session["auth_gen"] = gen                   # this device stays signed in
+    if session.get("auth_method", "password") == "password":
+        session["auth_user"] = user
     if new:
         return security_done("Password changed. Every other device has to sign in again.")
     return security_done(f"User name changed to {user}.")
@@ -3084,10 +3237,66 @@ def page_fields(section):
 def setting_locks():
     """Settings that can't be changed right now: key -> reason shown on the field."""
     locks = {}
-    if not other_sign_in_methods():
-        locks["AUTH_PASSWORD_LOGIN"] = ("Password login is the only sign-in method, so it stays on. "
-                                        "It can be turned off once another method (OIDC) is set up.")
+    if not other_sign_in_methods() and setting("AUTH_PASSWORD_LOGIN") != "0":
+        locks["AUTH_PASSWORD_LOGIN"] = ("Password login is the only working sign-in method, so it stays on. "
+                                        "Set up single sign-on below and sign in with it once; then it can be turned off.")
     return locks
+
+
+SECRET_KEYS = ("TOKEN", "SECRET", "PASSWORD")
+
+
+def shown_env(key, value):
+    """An environment value as pages may show it: secrets only as "(set)"."""
+    return "(set)" if key != "AUTH_PASSWORD_LOGIN" and any(w in key for w in SECRET_KEYS) else value
+
+
+def stored_oidc():
+    """Issuer, client ID and secret as stored in config.env."""
+    full = enc.parse_config(enc.CONFIG_FILE) if enc.CONFIG_FILE.exists() else {}
+    return (full.get("AUTH_OIDC_ISSUER", "").rstrip("/"), full.get("AUTH_OIDC_CLIENT_ID", ""),
+            full.get("AUTH_OIDC_CLIENT_SECRET", ""))
+
+
+def oidc_secret_for(issuer, client_id, secret=""):
+    """The client secret to use: the one entered, else the stored one, but only for the provider
+    and client it was entered for (so a changed issuer never receives it)."""
+    if secret:
+        return secret
+    if "AUTH_OIDC_CLIENT_SECRET" in os.environ:
+        return os.environ["AUTH_OIDC_CLIENT_SECRET"].strip()
+    old_issuer, old_client, old_secret = stored_oidc()
+    return old_secret if old_secret and issuer.rstrip("/") == old_issuer and client_id == old_client else ""
+
+
+def oidc_secret_rule(updates, errors):
+    """Like the Plex token: a stored secret stays only with the issuer and client ID it was entered for."""
+    if "AUTH_OIDC_CLIENT_SECRET" in updates or "AUTH_OIDC_CLIENT_SECRET" in os.environ:
+        return
+    old_issuer, old_client, old_secret = stored_oidc()
+    issuer = updates.get("AUTH_OIDC_ISSUER", old_issuer).rstrip("/")
+    client = updates.get("AUTH_OIDC_CLIENT_ID", old_client)
+    if old_secret and (issuer != old_issuer or client != old_client):
+        errors["AUTH_OIDC_CLIENT_SECRET"] = ("The issuer or client ID changed: enter the client secret for it again, "
+                                             "or remove it.")
+
+
+def oidc_settings_rule(updates, errors):
+    """Checks of the single sign-on fields that only make sense together."""
+    get = lambda k: updates[k] if k in updates else setting(k)
+    if get("AUTH_OIDC_ENABLED") != "1":
+        return
+    issuer = get("AUTH_OIDC_ISSUER")
+    problem = oidc.issuer_problem(issuer)
+    if problem and "AUTH_OIDC_ISSUER" not in os.environ:
+        errors["AUTH_OIDC_ISSUER"] = problem
+    if not get("AUTH_OIDC_CLIENT_ID") and "AUTH_OIDC_CLIENT_ID" not in os.environ:
+        errors["AUTH_OIDC_CLIENT_ID"] = "Enter the client ID from your provider."
+    if "openid" not in get("AUTH_OIDC_SCOPES").split() and "AUTH_OIDC_SCOPES" not in os.environ:
+        errors["AUTH_OIDC_SCOPES"] = "The scopes must include openid."
+    if not (get("AUTH_OIDC_ALLOWED_USERS").split() or get("AUTH_OIDC_ALLOWED_GROUPS").split()) \
+            and "AUTH_OIDC_ALLOWED_USERS" not in os.environ:
+        errors["AUTH_OIDC_ALLOWED_USERS"] = "Name the users (or * for everyone the provider lets in), or set groups below."
 
 
 def check_setting(s, form, cfg, errors):
@@ -3162,7 +3371,7 @@ def about_info():
         "ffprobe": enc.FFPROBE if getattr(enc, "FFPROBE", None) else None,
         "python": sys.version.split()[0],
         "data_dir": enc.DATA_DIR, "config_file": enc.CONFIG_FILE, "db_file": enc.DB_FILE, "db_size": db_size,
-        "env": {k: ("(set)" if "TOKEN" in k else v) for k, v in os.environ.items()
+        "env": {k: shown_env(k, v) for k, v in os.environ.items()
                 if k in ("ENCODING_DATA_DIR", "ENCODING_DB_FILE", "WEB_HOST", "WEB_PORT") or k in ENV_OVERRIDES},
         "shares": len(enc.ROOT_CANDIDATES),
     }
@@ -3192,7 +3401,8 @@ def settings(section, index=False):
         abort(404)
     group, title, _ = SETTINGS_PAGES[section]
     panels = page_fields(section)
-    cfg = {**SETTING_DEFAULTS, **raw_config()}
+    cfg = {**SETTING_DEFAULTS, **raw_config(),         # fields set by the environment show its value
+           **{k: os.environ[k] for k in ENV_OVERRIDES if k in os.environ and SETTINGS[k]["kind"] != "secret"}}
     errors, files_rows = {}, None
     if request.method == "POST":
         updates = {}
@@ -3204,6 +3414,9 @@ def settings(section, index=False):
                 if val is not None:
                     updates[s["key"]] = val
         plex_token_rule(updates, errors)
+        if section == "security":
+            oidc_secret_rule(updates, errors)
+            oidc_settings_rule(updates, errors)
         if not errors:
             enc.write_config(updates)
             flash(f"{title}: saved.", "ok")
@@ -3215,7 +3428,8 @@ def settings(section, index=False):
         settings_nav=settings_nav(), accents=ACCENTS,
         example=(EXAMPLE_NAME, enc.suggest_name(EXAMPLE_NAME, "x.mkv", "hevc", "rf20", cfg=cfg)) if section == "replace" else None,
         checks={s["key"]: path_checks(cfg.get(s["key"]) or "") for _, f in panels for s in f if s["kind"] == "paths"},
-        secrets_set={s["key"]: bool(stored_plex()[1]) for _, f in panels for s in f if s["kind"] == "secret"},
+        secrets_set={s["key"]: bool(os.environ.get(s["key"]) or (stored_plex()[1] if s["key"] == "PLEX_TOKEN" else stored_oidc()[2]))
+                     for _, f in panels for s in f if s["kind"] == "secret"},
         preset_list=preset_choices(), default_preset=presets.name_of(cfg.get("DEFAULT_PRESET", "")),
         date_formats=DATE_FORMATS, event_groups=EVENT_GROUPS,
         shares=share_list(cfg) if section in ("library", "encoding") else [], open_share=request.args.get("open", ""),
@@ -3225,7 +3439,7 @@ def settings(section, index=False):
         about=about_info() if section == "about" else None,
         security=security_context() if section == "security" else None, locks=setting_locks(),
         config_file=enc.CONFIG_FILE, config_exists=enc.CONFIG_FILE.exists(),
-        env_overrides={k: os.environ[k] for k in ENV_OVERRIDES if k in os.environ})
+        env_overrides={k: shown_env(k, os.environ[k]) for k in ENV_OVERRIDES if k in os.environ})
 
 
 @app.route("/settings/plex/test", methods=["POST"])
@@ -3237,6 +3451,20 @@ def settings_plex_test():
     if not token and not request.form.get("PLEX_TOKEN", "").strip() and stored_plex()[1] and not request.form.get("PLEX_TOKEN__remove"):
         return {"ok": False, "message": "The URL names a server the stored token wasn't entered for. Enter the token to test."}
     ok, message = plex_status(url, token, request.form.get("PLEX_PATH_MAP", ""))
+    return {"ok": ok, "message": message}
+
+
+@app.route("/settings/oidc/test", methods=["POST"])
+def settings_oidc_test():
+    """Connection test with the values on the form (not saved yet); an environment variable wins
+    over its field, an empty secret field uses the stored secret for the same issuer and client."""
+    form = request.form
+    val = lambda k: os.environ[k].strip() if k in os.environ else form.get(k, "").strip()
+    cfg = {"issuer": val("AUTH_OIDC_ISSUER").rstrip("/"), "client_id": val("AUTH_OIDC_CLIENT_ID"),
+           "scopes": val("AUTH_OIDC_SCOPES") or "openid"}
+    cfg["client_secret"] = "" if form.get("AUTH_OIDC_CLIENT_SECRET__remove") else \
+        oidc_secret_for(cfg["issuer"], cfg["client_id"], form.get("AUTH_OIDC_CLIENT_SECRET", "").strip())
+    ok, message = oidc.test(cfg, redirect_uri())
     return {"ok": ok, "message": message}
 
 

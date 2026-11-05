@@ -6,12 +6,16 @@ by `python3 webui.py --set-password`.
 The account lives in auth.json in the data folder (not in config.env: zsh sources that file and
 a hash holds `$` signs):
 
-    {"user": "admin", "hash": "scrypt:…", "generation": 3, "changed": "2026-11-05 14:00"}
+    {"user": "admin", "hash": "scrypt:…", "generation": 3, "changed": "2026-11-05 14:00",
+     "oidc_ok": {"issuer": "https://id.example.com", "client_id": "…"}}
 
 `generation` is stored in every session cookie at login; raising it (new password, "Sign out
-everywhere") ends every session that carries an older one. Until the file holds an account, the
-web UI only shows the setup page, which asks for the setup code in `.setup-code` (also printed to
-the web UI's log at startup), so nobody who merely reaches the page can claim the install.
+everywhere") ends every session that carries an older one. `oidc_ok` records the provider and
+client of the last successful single sign-on: only a sign-on that worked lets the password login be
+turned off. With single sign-on alone the file may hold no account (no user and hash). While the
+password login is on and there is no account, the web UI only shows the setup page, which asks for
+the setup code in `.setup-code` (also printed to the web UI's log at startup), so nobody who
+merely reaches the page can claim the install.
 """
 
 import hashlib
@@ -39,23 +43,53 @@ METHOD = "scrypt" if hasattr(hashlib, "scrypt") else "pbkdf2:sha256:600000"
 _DUMMY = generate_password_hash(secrets.token_hex(16), method=METHOD)
 
 _LOCK = threading.Lock()
-_CACHE = [None, None]                           # [(mtime_ns, size), account]
+_CACHE = [None, {}]                             # [(mtime_ns, size), file content]
 
 
-def account():
-    """The stored account ({"user", "hash", "generation", …}) or None. Cached until the file changes."""
+def _data():
+    """Everything in auth.json ({} without it). Cached until the file changes."""
     try:
         st = AUTH_FILE.stat()
     except FileNotFoundError:
-        return None
+        return {}
     stamp = (st.st_mtime_ns, st.st_size)
     if _CACHE[0] != stamp:
         try:
             data = json.loads(AUTH_FILE.read_text())
         except (OSError, ValueError):
-            data = None
-        _CACHE[:] = [stamp, data if isinstance(data, dict) and data.get("user") and data.get("hash") else None]
+            data = {}
+        _CACHE[:] = [stamp, data if isinstance(data, dict) else {}]
     return _CACHE[1]
+
+
+def account():
+    """The password account ({"user", "hash", "generation", …}) or None."""
+    data = _data()
+    return data if data.get("user") and data.get("hash") else None
+
+
+def generation():
+    """The current session generation (sessions with another one are signed out)."""
+    try:
+        return int(_data().get("generation", 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def oidc_verified(issuer, client_id):
+    """Whether a single sign-on with this provider and client has worked."""
+    ok = _data().get("oidc_ok") or {}
+    return bool(issuer) and ok.get("issuer") == issuer.rstrip("/") and ok.get("client_id") == client_id
+
+
+def record_oidc(issuer, client_id):
+    with _LOCK:
+        data = dict(_data())
+        mark = {"issuer": issuer.rstrip("/"), "client_id": client_id}
+        if data.get("oidc_ok") != mark:
+            data["oidc_ok"] = mark
+            data.setdefault("generation", 1)
+            _write(data)
 
 
 def _write(data):
@@ -93,7 +127,7 @@ def set_account(user, password=None):
     """Create the account or change its name and/or password. A new password raises the
     generation, which signs out every session. Returns the new generation."""
     with _LOCK:
-        old = account() or {}
+        old = _data()
         data = dict(old, user=user.strip())
         if password is not None:
             data["hash"] = generate_password_hash(password, method=METHOD)
@@ -108,10 +142,8 @@ def set_account(user, password=None):
 def bump_generation():
     """Sign out every session; returns the new generation (the caller keeps its own session)."""
     with _LOCK:
-        data = dict(account() or {})
-        if not data:
-            return None
-        data["generation"] = int(data.get("generation", 0)) + 1
+        data = dict(_data())
+        data["generation"] = int(data.get("generation", 1)) + 1
         _write(data)
         return data["generation"]
 
@@ -149,8 +181,8 @@ def needs_rehash():
 
 def rehash(password):
     with _LOCK:
-        data = dict(account() or {})
-        if data:
+        data = dict(_data())
+        if data.get("hash"):
             data["hash"] = generate_password_hash(password, method=METHOD)
             _write(data)
 

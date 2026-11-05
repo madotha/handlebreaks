@@ -1,6 +1,6 @@
 // Settings pages: the save bar (Save only after a change, Discard, a warning when leaving with
 // changes), dots on settings that differ from their default with "Reset to default", live
-// folder checks, the write-only token field, the Plex test, the file name example, a live
+// folder checks, the write-only token field, the connection tests, the file name example, a live
 // preview of the Appearance settings, and the share cards.
 (function () {
   const root = document.documentElement;
@@ -110,16 +110,17 @@
     });
   });
 
-  // ─── Plex test ────────────────────────────────────────────────────────────
-  const test = document.querySelector("[data-plex-test]");
-  if (test) {
-    const out = document.querySelector("[data-plex-result]");
+  // ─── Connection tests (Plex, single sign-on) ───────────────────────────────
+  // A button [data-conn-test="<url>"] posts the form as it is (not saved) and shows the answer
+  // in the [data-conn-result] next to it.
+  document.querySelectorAll("[data-conn-test]").forEach((test) => {
+    const out = test.parentElement.querySelector("[data-conn-result]");
     async function run() {
       const data = new FormData(form);
       test.disabled = true;
       out.hidden = false; out.className = "flash info"; out.textContent = "Testing…";
       try {
-        const r = await fetch("/settings/plex/test", { method: "POST", body: data });
+        const r = await fetch(test.dataset.connTest, { method: "POST", body: data });
         const res = await r.json();
         out.className = "flash " + (res.ok ? "ok" : "error");
         out.textContent = res.message;
@@ -130,8 +131,8 @@
     }
     test.addEventListener("click", run);
     const url = form.querySelector('[name="PLEX_URL"]');
-    if (url && url.value.trim() && form.querySelector(".secret-state")) run();   // saved settings: test right away
-  }
+    if ("autoTest" in test.dataset && url && url.value.trim() && form.querySelector(".secret-state")) run();   // saved settings: test right away
+  });
 
   // ─── File name example ────────────────────────────────────────────────────
   const example = document.querySelector("[data-name-example]");
