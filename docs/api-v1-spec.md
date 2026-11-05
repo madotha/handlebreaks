@@ -344,3 +344,118 @@ The notification feed (the same events as the web UI's popups, kept 7 days).
  "uptime_seconds": 61234}
 ```
 - `mode`: `native`, `docker`, `docker-ui-native-worker`. No paths, no settings values, no environment variables.
+
+---
+
+## 6. Endpoints, phase 2 (write) and the activity page
+
+All write endpoints: `POST` with a JSON body, `Idempotency-Key` supported (1.6), each successful call raises an `api_write` event naming the token, the action and the number of files ("API (Homepage): 3 files queued"), in the notification group `api` (new, on by default).
+
+Answers of bulk operations always list what happened per file, so nothing fails silently:
+```json
+{"done": ["share2/…S02E01.mkv"], "skipped": [{"key": "share2/…S02E02.mkv", "reason": "already_queued"}],
+ "rejected": [{"key": "share9/x.mkv", "reason": "unknown_key"}]}
+```
+A request whose every item is rejected answers **422**; partly successful requests answer **200** with the lists.
+
+### 6.1 Queue: `queue:write`
+- `POST /api/v1/queue` `{"keys": [...], "folders": [...], "filters": {…as 5.7…}, "preset": "id"|null}`. Folders are expanded with the filters, like ticking a folder on the Files page (only files that could be queued: status `offer`, or `skipped`/`bad` when named explicitly by key). `preset` overrides the share's preset for these files; an unknown preset is 422. Skipped reasons: `already_queued`, `encoding`, `already_optimized`, `awaiting_review`, `replace_pending`. Written as one batch through `write_batch()`, the function the web UI and the command line use.
+- `POST /api/v1/queue/remove` `{"keys": [...]}` or `{"all": true}`: waiting entries only (the current encode is stopped with 6.2).
+- `POST /api/v1/queue/move` `{"keys": [...], "op": "top"|"bottom"|"up"|"down"}` or `{"keys": [...], "before": "<key>"}`. Only waiting entries; answers the new order (positions).
+- `POST /api/v1/queue/retry` `{"keys": [...]}` or `{"failed": true}`: queue files again whose last result is FAIL or STOPPED (with the preset of their last batch, like **Queue again**).
+
+### 6.2 Encoding control: `queue:write`
+- `POST /api/v1/encoding/stop` `{"mode": "skip"|"all", "key": "<the current key>"}`: `skip` stops the current file and continues with the next; `all` stops and pauses (the rest goes back to the queue). `key` must match the file being encoded (409 `not_current` otherwise), so a delayed request never stops the wrong file. 409 `not_stoppable` with a worker older than the stop support.
+- `POST /api/v1/encoding/resume` `{}`: ends the pause after **Stop all**.
+
+### 6.3 Scans: `library:scan`
+- `POST /api/v1/scans` `{"share": 2}` or `{"path": "share2/Northwind Station (2018)"}` or `{}` (everything); optional `"force": true` (read every file with ffprobe again). Answers **202** `{"scan": {"running": true, "label": "…", "started": "…"}}`; progress via `GET /api/v1/status` (`scan`). 409 `scan_running` while one runs; 409 `share_offline` for an unreachable share.
+
+### 6.4 Review: `review:write`
+- `POST /api/v1/encodes/delete` `{"keys": [...], "requeue": false, "preset": null}`: deletes the finished encodes in the output folder; with `requeue` the files are queued again (with `preset`, `null` = the share's). Skipped: `replace_pending`, `queued`, `no_encode`.
+- `POST /api/v1/history/dismiss` `{"keys": [...]}` or `{"older_than_days": 30}` or `{"all": true, "status": "FAIL"|null}`: hides History entries (nothing on disk changes), like the Status page.
+
+### 6.5 API activity page (Settings → System → API → Activity)
+- Shows the last 500 API requests (kept 7 days): time, token (name and id, or "unknown token"), address, method, path (without query values for keys, which are shortened), status code, and for writes the action and number of files. Filters: token, failed only, writes only.
+- Failed authentication is listed with the address (and the token id if one was sent), so a misconfigured dashboard or someone guessing shows up.
+- Stored in a new table `api_log` in `encoding.db` (additive, `CREATE TABLE IF NOT EXISTS`; older versions ignore it), pruned hourly with the events.
+- The token list links each token to its activity.
+
+---
+
+## 7. Endpoints, phase 3 (opt-in, library-changing)
+
+### 7.1 Replace: `replace:write`
+- `POST /api/v1/replace` `{"items": [{"key": "…", "new_name": "…"|null, "keep_original": true}]}`: like **Replace…** in the web UI. `new_name: null` = the name Handlebreaks suggests (`suggest_name()`); `keep_original` defaults to the `KEEP_ORIGINALS` setting. Validated completely before any job is created (unknown key, no finished encode, replace pending, invalid or duplicate name, name exists): if anything is invalid, nothing is started (422 with `details.items`). Answers **202** with the job ids; the worker carries them out (`replace/` job files, as today), the web UI tells Plex.
+- `GET /api/v1/replace/progress`: the progress bar's data (`waiting`, `moving`, `checking`, `done`, `failed`, `cancelled` with the jobs), scope `review:read`.
+- `DELETE /api/v1/replace/{id}`: cancels a job the worker hasn't started; 409 `already_started` otherwise.
+- `GET /api/v1/replace/suggest?key=`: the suggested name (scope `review:read`).
+
+### 7.2 Kept originals: `originals:read` / `originals:write`
+- `GET /api/v1/originals`: `{"items": [{"path": "<path inside .replaced/>", "size", "kept_since", "replaced_by": {…File…}|null, "warning": null|"missing"|"offline"|"unknown"|"plex", "saved_bytes"}]}`.
+- `POST /api/v1/originals/delete` `{"paths": [...], "force": false}` or `{"older_than_days": 30}`: deletes kept originals, held back like in the web UI when their replacement is missing or offline (unless `force`) or Plex hasn't confirmed it (always held back). Answers done/skipped lists with `freed_bytes`.
+
+---
+
+## 8. Implementation plan
+
+### 8.1 Structure
+- **`api.py`**: Flask blueprint at `/api/v1`, registered by `webui.py`. Its `before_request` does: API enabled → rate limit for the address (failed auth) → token lookup → expiry/revoked → allowed networks → rate limit for the token → scope of the route; the result is in `g.token`. `webui.before()` skips the session login and the CSRF check for the blueprint's endpoints (they never use cookies; the blueprint also rejects requests that send none of the above but carry the session cookie, just by ignoring it).
+- **`apitokens.py`**: `api-tokens.json` (create, list, revoke, verify, last use), the same atomic 0600 writing as `auth.py`.
+- **Route registry**: each API route is declared with `@api_route("GET", "/queue", scope="queue:read", params=…, response=…, summary=…)`. From it come the scope check, the OpenAPI 3.1 document (`GET /api/v1/openapi.json`, needs a token), the reference page in the web UI and the wiki tables; the image workflow fails if a route has no scope, no summary or no response schema (`python3 webui.py --check-api`, like `--check-settings`).
+- **Shared service functions** (the main refactor, phase 1 and 2): the logic in today's web UI routes moves into functions that take plain values and return plain results, used by both the web UI routes and the API:
+  - phase 1: `status_snapshot()`, `queue_list()`, `library_level()`/`file_search()` (wrapping `tree_level()` and `filter_sql()`), `review_list()`, `history_list()`, `stats_data()` (split out of the Stats page's chart building), `system_info()` (from `about_info()` without paths)
+  - phase 2: `queue_add()`, `queue_remove()`, `queue_move()`, `queue_retry()`, `stop_encoding()`, `start_scan()`, `delete_encodes()`, `dismiss_history()`
+  - phase 3: `replace_start()` (validation of `/replace/bulk`), `kept_delete()`
+  The web UI's pages must behave exactly as before; each moved route is checked in Chromium and WebKit.
+- **Settings → System → API** (new settings page): `API_ENABLED`, `API_TRUSTED_PROXIES`; token list (name, `hb_<id>_…`, scopes, created, expires, last used and address, opt-in marker), **New token** dialog (name, bundles, single scopes with descriptions, opt-in warning + confirmation, expiry, allowed networks, password/two-factor check), token shown once with copy button, edit name/networks, revoke, revoke all; **Reference** (rendered from the registry: every endpoint with scope, parameters, example answer) and, from phase 2, **Activity**.
+- New settings keys: `API_ENABLED`, `API_TRUSTED_PROXIES` (config.example.env, settings registry, `--check-settings`).
+- New files in the data folder: `api-tokens.json` (and its temp file) in `.gitignore`, `.dockerignore`, Files-and-Data.
+
+### 8.2 Tests (per phase, in a scratch data folder with the demo data)
+- Authentication: no header, wrong scheme, unknown id, wrong secret, expired, revoked, address not allowed, trusted proxy header handling, session cookie alone (must be 401), throttling after failed attempts.
+- A **scope matrix**: every route called with a token lacking its scope (403 `missing_scope`) and with exactly that scope (2xx); generated from the registry so new routes are covered automatically.
+- Validation: unknown and malicious keys (`..`, absolute paths, other shares), oversized bodies, too many keys, wrong content type, idempotent replays.
+- No secrets in any response: every endpoint's answer searched for the Plex token, the OIDC secret, password hashes and the session key set in the test config.
+- Rate limit headers and 429.
+- The web UI unchanged after the refactor (Files, Status tabs, Stats, Settings), Chromium and WebKit.
+- Homepage: a real Homepage container with the `customapi` example of the docs, showing the summary.
+- Image workflow: `--check-api`; a token created with `--create-token` in the smoke container answers `GET /api/v1/status` and is refused on `POST /api/v1/queue`.
+
+### 8.3 Documentation
+- Wiki page **API**: overview, security concept (from sections 2 and 4), scopes with bundles, every endpoint (generated tables plus `curl` examples), errors, rate limits, idempotency, versioning, Homepage example, troubleshooting (401/403/address).
+- Wiki: Security (API section), Configuration (`API_*`), Files-and-Data (`api-tokens.json`), Command-Line (token commands), Web-UI (Settings → API), Home and sidebar (new page).
+- README: Features (API), FAQ ("Can I show Handlebreaks on my dashboard?").
+- CLAUDE.md: architecture of the API, the registry and the shared service functions, the rule that every API route needs a scope, a summary and a schema.
+- CHANGELOG per phase.
+
+### 8.4 Homepage example (wiki)
+```yaml
+- Handlebreaks:
+    icon: https://<host>/static/icons/icon-192.png
+    href: https://<host>/status
+    description: H.265 encoding
+    widget:
+      type: customapi
+      url: http://<host>:7979/api/v1/summary
+      refreshInterval: 15000
+      headers:
+        Authorization: Bearer hb_xxxxxxxx_…
+      mappings:
+        - field: encoding.percent
+          label: Encoding
+          format: percent
+        - field: queue.waiting
+          label: Queued
+        - field: review.waiting
+          label: To review
+        - field: saved.bytes
+          label: Saved
+          format: bytes
+```
+With the dashboard token restricted to Homepage's address (2.4).
+
+### 8.5 Effort (rough)
+- Phase 1: the largest (tokens, settings page, registry/OpenAPI, refactor of the read logic, 16 read endpoints, docs). Several sessions.
+- Phase 2: medium (write refactor, idempotency, activity page).
+- Phase 3: small (the validation already exists in the web UI).
