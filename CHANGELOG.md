@@ -7,6 +7,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+- Two-factor setup: the QR code was cut off at its right and bottom edge (on phones even more), so authenticator apps couldn't read it. It now scales with the page and is a little larger.
+
 ## [4.1.0] - 2026-11-05
 
 ### Added

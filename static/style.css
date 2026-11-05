@@ -918,7 +918,8 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
 code.copyable { display: block; padding: .5rem .65rem; margin: .35rem 0; overflow-wrap: anywhere; user-select: all; }
 .mfa-setup { display: flex; flex-wrap: wrap; gap: 1rem 1.5rem; align-items: flex-start; margin: .75rem 0; }
 .mfa-qr { flex: none; line-height: 0; border-radius: var(--radius-sm); overflow: hidden; }
-.mfa-qr svg { width: 11rem; height: auto; display: block; }
+.mfa-qr { width: min(15rem, 100%); }
+.mfa-qr svg { width: 100%; height: auto; display: block; }
 .mfa-setup > div:last-child { flex: 1 1 14rem; min-width: 0; }
 .mfa-key { font-size: 1rem; letter-spacing: .04em; }
 .mfa-steps { margin: .25rem 0 .5rem; padding-left: 1.25rem; }

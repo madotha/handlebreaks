@@ -1272,7 +1272,8 @@ def qr_svg(text):
         import segno
     except ImportError:
         return None
-    return Markup(segno.make(text, error="m").svg_inline(scale=5, border=3, dark="#000", light="#fff",
+    # viewBox instead of a fixed size, so the code scales with its box (CSS) instead of being cut off
+    return Markup(segno.make(text, error="m").svg_inline(scale=5, border=3, dark="#000", light="#fff", omitsize=True,
                                                           title="QR code for the authenticator app"))
 
 
