@@ -1,6 +1,7 @@
 """
-Demo data for the README screenshot (docs/screenshot-files.png): a made-up library
-(Blender open movies and invented shows), so no real titles end up in the repo.
+Demo data for the screenshots of the README and the wiki: a made-up library (Blender open
+movies and invented shows), so no real titles end up in them. docs/screenshots.py sets up
+the demo and runs this script; by hand:
 
     mkdir -p /tmp/demo/data /tmp/demo/lib/{Movies,Shows,Anime} /tmp/demo/out
     touch /tmp/demo/lib/{Movies,Shows,Anime}/.keep    # empty share folders count as offline
@@ -11,8 +12,8 @@ Demo data for the README screenshot (docs/screenshot-files.png): a made-up libra
 
 ffprobe must be on PATH for the web UI (a stub is enough; the demo never scans),
 otherwise the page shows a "ffprobe is not installed" notice. The script also puts finished
-encodes into the output folder and an encode in progress into the data folder, for the phone
-screenshot (docs/screenshot-phone.png): the Status page at 390 px width, dark mode.
+encodes into the output folder and an encode in progress (from a current worker, so the
+Stop buttons show) into the data folder.
 """
 import random
 import sys
@@ -53,7 +54,7 @@ for prefix, lib, weights in (("share2", shows, [30, 45, 12, 2, 3, 6, 2]), ("shar
         for season in range(1, seasons + 1):
             for ep in range(1, random.randint(8, 13)):
                 w = [x * (2 if (i in (0, 4)) == (bias > 0.5) else 1) for i, x in enumerate(weights)]
-                add(f"{prefix}/{s}/Season {season:02d}/{name}.S{season:02d}E{ep:02d}.1080p.WEB.mkv", random.uniform(1300, 2700), w)
+                add(f"{prefix}/{s}/Season {season:02d}/{name}.S{season:02d}E{ep:02d}.1080p.WEB.h264-NTB.mkv", random.uniform(1300, 2700), w)
 enc.save_files(infos)
 st = enc.load_state(); st["last_scan"] = "2026-10-24 09:00"; enc.save_state(st)
 import sqlite3
@@ -71,5 +72,7 @@ logs = enc.DATA_DIR / "logs"
 logs.mkdir(exist_ok=True)
 current = next(k for k in infos if k.startswith("share1/Sintel "))
 (logs / "current.txt").write_text(f"{current}\t3\t9\t{int(LAST_SCAN)}\n")
+(enc.WORKER_LOCK).mkdir(exist_ok=True)              # a current worker: the Stop buttons show
+(enc.WORKER_LOCK / "stoppable").touch()
 (logs / "progress.log").write_text("Encoding: task 1 of 1, 64.20 % (41.80 fps, avg 38.60 fps, ETA 00h07m12s)\r")
 print(len(infos), "demo files")
