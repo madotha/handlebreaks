@@ -34,7 +34,7 @@
         <span class="hbar-label">{{ row.label }}</span>
         <span class="hbar-track">
           <span class="hbar-fill" style="width: {{ '%.2f'|format(row.pct) }}%">
-            {% for seg in row.segments %}<span class="seg viz-{{ seg.cls }}" style="flex-grow: {{ seg.value }}" title="{{ tip(row, seg) }}"></span>{% endfor %}
+            {% for seg in row.segments %}<span class="bar-seg viz-{{ seg.cls }}" style="flex-grow: {{ seg.value }}" title="{{ tip(row, seg) }}"></span>{% endfor %}
           </span>
           <span class="hbar-value">{{ row.display }}</span>
         </span>
@@ -51,7 +51,7 @@
         <div class="col" title="{{ row.label }}: {{ row.display }}">
           <span class="col-value" style="bottom: {{ '%.2f'|format(row.pct) }}%">{% if row.total %}{{ row.display }}{% endif %}</span>
           <span class="col-fill" style="height: {{ '%.2f'|format(row.pct) }}%">
-            {% for seg in row.segments|reverse %}<span class="seg viz-{{ seg.cls }}" style="flex-grow: {{ seg.value }}" title="{{ tip(row, seg) }}"></span>{% endfor %}
+            {% for seg in row.segments|reverse %}<span class="bar-seg viz-{{ seg.cls }}" style="flex-grow: {{ seg.value }}" title="{{ tip(row, seg) }}"></span>{% endfor %}
           </span>
         </div>
       {% endfor %}

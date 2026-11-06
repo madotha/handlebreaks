@@ -693,8 +693,8 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
 .hbar-label { color: var(--text); overflow-wrap: anywhere; }
 .hbar-track { display: flex; align-items: center; gap: .45rem; min-width: 0; }
 .hbar-fill { display: flex; gap: 2px; height: 18px; min-width: 2px; }
-.hbar-fill .seg { min-width: 2px; }
-.hbar-fill .seg:last-child { border-radius: 0 4px 4px 0; }
+.hbar-fill .bar-seg { min-width: 2px; }
+.hbar-fill .bar-seg:last-child { border-radius: 0 4px 4px 0; }
 .hbar-value { color: var(--muted); font-size: .8rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .columns { --plot-h: 180px; }
 .col-plot { position: relative; height: var(--plot-h); display: flex; align-items: flex-end; gap: 8px; margin: 1.2rem 0 0 2.8rem; border-bottom: 1px solid var(--axis); }
@@ -702,8 +702,8 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
 .gridline .tick { position: absolute; right: calc(100% + 6px); transform: translateY(-50%); font-size: .75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .col { position: relative; flex: 1; height: 100%; display: flex; align-items: flex-end; justify-content: center; }
 .col-fill { width: min(100%, 24px); display: flex; flex-direction: column; gap: 2px; min-height: 0; }
-.col-fill .seg { min-height: 2px; }
-.col-fill .seg:first-child { border-radius: 4px 4px 0 0; }
+.col-fill .bar-seg { min-height: 2px; }
+.col-fill .bar-seg:first-child { border-radius: 4px 4px 0 0; }
 .col-value { position: absolute; transform: translateY(-2px); font-size: .75rem; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .col-labels { display: flex; gap: 8px; margin-left: 2.8rem; margin-top: .35rem; }
 .col-labels span { flex: 1; text-align: center; font-size: .75rem; color: var(--muted); white-space: nowrap; }

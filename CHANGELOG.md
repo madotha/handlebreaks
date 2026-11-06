@@ -7,6 +7,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [4.5.1] - 2026-11-06
+
+### Fixed
+- Stats: the charts' bars were drawn without color (white) since version 3.24.0, because the segmented controls added to the settings shared their class name.
+
 ## [4.5.0] - 2026-11-06
 
 ### Changed
