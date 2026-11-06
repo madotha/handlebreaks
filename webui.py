@@ -95,7 +95,7 @@ EVENT_GROUPS = {
     "scans": "Scans finished or failed (automatic scans only when they find new files)",
     "shares": "Shares or the output folder going offline and coming back",
     "cleanup": "Kept originals deleted automatically",
-    "api": "API tokens about to expire",
+    "api": "API: tokens about to expire, changes made through the API",
 }
 
 # DATE_FORMAT values: the label is the stored value, the strftime pattern renders the server's
@@ -793,6 +793,7 @@ EVENT_KINDS = {
     "online": ("shares", "success", "Reachable again", "library"),
     "purge": ("cleanup", "info", "Old originals deleted", "originals"),
     "api_token_expiring": ("api", "warn", "API token expires soon", "api"),
+    "api_write": ("api", "info", "Changed through the API", "api"),
 }
 # Several events of these kinds in one poll become one notification
 EVENT_PLURALS = {"encode_ok": "{n} encodes finished", "encode_fail": "{n} encodes failed",
@@ -886,6 +887,7 @@ def event_loop():
             event_tick()
             if time.monotonic() - pruned > 3600:
                 enc.prune_events()
+                enc.prune_api_log()
                 for t in apitokens.warn_expiring(days=7):
                     notify("api_token_expiring", None, f"{t['name']} expires {t['expires'][:10]}; create a new one under Settings → API.")
                 pruned = time.monotonic()
@@ -2288,25 +2290,42 @@ def safe_next(default):
     return redirect(nxt if nxt.startswith("/") and not nxt.startswith("//") else default)
 
 
+def select_files(keys, folders, filters, statuses=None):
+    """The files of a selection (web UI and API): keys as given (known ones only) plus every file
+    of the folders that matches the filters (and, if given, one of the statuses), in the order of
+    the Files page. Returns (keys, unknown keys, folders that are unknown or have no match)."""
+    out, unknown, bad = [], [], []
+    with closing(db()) as con:
+        if keys:
+            known = set()
+            for i in range(0, len(keys), 900):
+                part = keys[i:i + 900]
+                known |= {k for (k,) in con.execute(f"SELECT key FROM files WHERE key IN ({', '.join('?' * len(part))})", part)}
+            unknown = [k for k in keys if k not in known]
+            out = [k for k in keys if k in known]
+        for folder in folders:
+            clause, params = filter_sql(filters, folder)
+            if statuses:
+                clause += (" AND " if clause else " WHERE ") + f"status IN ({', '.join('?' * len(statuses))})"
+                params = params + list(statuses)
+            found = [k for (k,) in con.execute(f"SELECT key FROM files{clause}", params)] if folder else []
+            if not found:
+                bad.append(folder)
+            out += sorted(found, key=natural)
+    return list(dict.fromkeys(out)), unknown, bad
+
+
 @app.route("/queue", methods=["POST"])
 def queue():
     """Queue the selected files, plus every file (matching the active filters) in the
     selected folders."""
-    keys = request.form.getlist("key")
-    folders = [f.strip("/") for f in request.form.getlist("folder")]
-    filters = file_filters(request.form)
-    with closing(db()) as con:
-        if keys:
-            marks = ", ".join("?" * len(keys))
-            known = {k for (k,) in con.execute(f"SELECT key FROM files WHERE key IN ({marks})", keys)}
-            if set(keys) - known:                   # only files from the last scan can be queued
-                abort(400, "Unknown file selected. Scan again and retry.")
-        for folder in folders:
-            clause, params = filter_sql(filters, folder)
-            found = [k for (k,) in con.execute(f"SELECT key FROM files{clause}", params)]
-            if not folder or not found:
-                abort(400, "Unknown folder selected. Scan again and retry.")
-            keys += sorted(found, key=natural)
+    keys, unknown, bad_folders = select_files(request.form.getlist("key"),
+                                              [f.strip("/") for f in request.form.getlist("folder")],
+                                              file_filters(request.form))
+    if unknown:                                 # only files from the last scan can be queued
+        abort(400, "Unknown file selected. Scan again and retry.")
+    if bad_folders:
+        abort(400, "Unknown folder selected. Scan again and retry.")
     preset = request.form.get("preset", "").strip() or None
     if preset and not presets.exists(preset):
         abort(400, "Unknown preset.")
@@ -2689,20 +2708,17 @@ def replace_preview():
     return {"items": items, "left_out": len(keys) - len(items), "limit": BULK_REPLACE_MAX}
 
 
-@app.route("/replace/bulk", methods=["POST"])
-def replace_bulk():
-    """Replace several originals at once (key and new_name lists in the same order). All
-    rows are checked first; with any problem nothing is started (JSON: errors per key)."""
-    keys, names = request.form.getlist("key"), [n.strip() for n in request.form.getlist("new_name")]
-    if not keys or len(keys) != len(names) or len(keys) > BULK_REPLACE_MAX:
-        return {"error": "Nothing to replace."}, 400
+def check_replaces(items):
+    """Check replace requests [(key, new name)] (web UI and API) before any job is created.
+    Returns ({key: problem}, [(key, encoded file name, new name)])."""
+    keys = [k for k, _ in items]
     with closing(db()) as con:
         marks = ", ".join("?" * len(keys))
-        known = {k for (k,) in con.execute(f"SELECT key FROM files WHERE key IN ({marks})", keys)}
+        known = {k for (k,) in con.execute(f"SELECT key FROM files WHERE key IN ({marks})", keys)} if keys else set()
     encoded = enc.encoded_files(enc.first_existing(enc.ENCODED_CANDIDATES))
     pending = enc.pending_replaces()
     errors, targets, jobs = {}, {}, []
-    for key, name in zip(keys, names):
+    for key, name in items:
         enc_name = encoded.get(Path(key).stem.lower())
         target = (key.rsplit("/", 1)[0], name.lower())
         problem = ("Unknown file. Scan again and retry." if key not in known else
@@ -2714,6 +2730,17 @@ def replace_bulk():
             errors[key] = problem
         targets[target] = key
         jobs.append((key, enc_name, name))
+    return errors, jobs
+
+
+@app.route("/replace/bulk", methods=["POST"])
+def replace_bulk():
+    """Replace several originals at once (key and new_name lists in the same order). All
+    rows are checked first; with any problem nothing is started (JSON: errors per key)."""
+    keys, names = request.form.getlist("key"), [n.strip() for n in request.form.getlist("new_name")]
+    if not keys or len(keys) != len(names) or len(keys) > BULK_REPLACE_MAX:
+        return {"error": "Nothing to replace."}, 400
+    errors, jobs = check_replaces(list(zip(keys, names)))
     if errors:
         return {"errors": errors}, 400
     keep = bool(request.form.get("keep_original"))
@@ -2776,6 +2803,36 @@ def replace_cancel():
     return safe_next(url_for("status", view="review"))
 
 
+def delete_encodes(keys, requeue=False, preset=None):
+    """Delete the finished encodes of these files (web UI and API); with requeue queue them again
+    (preset None = the share's). Files with a pending replace or in the queue are left out.
+    Returns {"deleted": keys, "freed": bytes, "queued": keys, "skipped": [(key, reason)]}."""
+    with closing(db()) as con:
+        marks = ", ".join("?" * len(keys))
+        known = {k for (k,) in con.execute(f"SELECT key FROM files WHERE key IN ({marks})", keys)} if keys else set()
+    encoded = enc.encoded_files(enc.first_existing(enc.ENCODED_CANDIDATES))
+    replacing, pending = enc.pending_replaces(), enc.pending_keys()
+    names, skipped = {}, []
+    for k in keys:
+        name = encoded.get(Path(k).stem.lower())
+        reason = ("unknown_key" if k not in known else "replace_pending" if k in replacing else
+                  "queued" if k in pending else "no_encode" if not name else None)
+        if reason:
+            skipped.append((k, reason))
+        else:
+            names[k] = name
+    deleted = enc.delete_encoded(names.values())
+    gone = [k for k, n in names.items() if n in deleted]
+    skipped += [(k, "no_encode") for k, n in names.items() if n not in deleted]
+    queued = []
+    if gone and requeue:
+        queued = enc.write_batch(gone, preset)
+        enc.unwait([k for k in gone if k not in queued])
+    elif gone:
+        enc.unwait(gone)
+    return {"deleted": gone, "freed": sum(deleted.values()), "queued": list(queued), "skipped": skipped}
+
+
 @app.route("/encodes/delete", methods=["POST"])
 def encodes_delete():
     """Permanently delete the finished encodes of the selected files (key values) from the
@@ -2795,27 +2852,16 @@ def encodes_delete():
         return back("Unknown preset.", "error")
     if not keys:
         return back("No entries selected.", "error")
-    with closing(db()) as con:
-        marks = ", ".join("?" * len(keys))
-        known = {k for (k,) in con.execute(f"SELECT key FROM files WHERE key IN ({marks})", keys)}
-    encoded = enc.encoded_files(enc.first_existing(enc.ENCODED_CANDIDATES))
-    busy = enc.pending_replaces() | enc.pending_keys()
-    names = {k: encoded.get(Path(k).stem.lower()) for k in keys if k in known and k not in busy}
-    names = {k: n for k, n in names.items() if n}
-    deleted = enc.delete_encoded(names.values())
-    gone = [k for k, n in names.items() if n in deleted]
-    left = len(keys) - len(gone)
+    res = delete_encodes(keys, requeue, preset)
+    gone, queued = res["deleted"], res["queued"]
+    left = len(res["skipped"])
     if not gone:
         return back("Nothing deleted: no finished encode found for the selected files (or they are being "
                     "replaced or are already in the queue).", "error")
-    msg = f"{len(gone):,} encode{'' if len(gone) == 1 else 's'} deleted, {fmt_size(sum(deleted.values()))} freed."
+    msg = f"{len(gone):,} encode{'' if len(gone) == 1 else 's'} deleted, {fmt_size(res['freed'])} freed."
     if requeue:
-        queued = enc.write_batch(gone, preset)
         msg += (f" {len(queued):,} file(s) queued again" +
                 (f' with preset "{presets.name_of(preset)}".' if preset else " with the share's preset."))
-        enc.unwait([k for k in gone if k not in queued])
-    else:
-        enc.unwait(gone)
     if left:
         msg += f" {left:,} left out (no encode in the output folder, a replace pending, or already queued)."
     return back(msg, "warn" if left else "ok")

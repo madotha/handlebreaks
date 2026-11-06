@@ -36,11 +36,19 @@ SCOPES = {
     "events:read": (1, "The notification feed"),
     "system:read": (1, "Versions, HandBrakeCLI, free space in the output folder (no paths or settings)"),
     "logs:read": (1, "HandBrake's logs of failed encodes"),
+    "originals:read": (3, "The originals Replace… kept"),
+    "queue:write": (2, "Queue files and folders, remove, reorder, queue failed files again, stop and resume encoding"),
+    "library:scan": (2, "Start scans of everything, a share or a folder"),
+    "review:write": (2, "Delete finished encodes (optionally queue them again), hide History entries"),
+    "replace:write": (3, "Replace originals in the library with their encodes, cancel waiting replaces"),
+    "originals:write": (3, "Delete kept originals permanently"),
 }
-OPT_IN = set()                                  # scopes that change the library (phase 3)
+OPT_IN = {"replace:write", "originals:write"}   # change or delete files in the library: never in a bundle
 BUNDLES = {
     "dashboard": ("Dashboard (read-only)", ["status:read", "queue:read", "review:read", "stats:read", "system:read"]),
-    "read": ("Read everything", [s for s in SCOPES if s.endswith(":read")]),
+    "read": ("Read everything", [s for s in SCOPES if s.endswith(":read") and s != "originals:read"]),
+    "automation": ("Automation", [s for s in SCOPES if s.endswith(":read") and s != "originals:read"]
+                   + ["queue:write", "library:scan", "review:write"]),
 }
 EXPIRY_DAYS = (30, 90, 365, 0)                  # 0 = never
 DEFAULT_EXPIRY = 90
@@ -145,15 +153,18 @@ def address_allowed(t, address):
     return any(ip in ipaddress.ip_network(n) for n in t["allowed"])
 
 
-def create(name, scopes, expires_days=DEFAULT_EXPIRY, allowed=(), created_by=""):
+def create(name, scopes, expires_days=DEFAULT_EXPIRY, allowed=(), created_by="", opt_in=False):
     """A new token: returns (the full token, shown only now, and its record). Raises ValueError
-    with a message for invalid input."""
+    with a message for invalid input. Scopes in OPT_IN need opt_in=True (an extra confirmation)."""
     problem = name_problem(name)
     if problem:
         raise ValueError(problem)
     scopes = [s for s in SCOPES if s in set(scopes)]
     if not scopes:
         raise ValueError("Choose at least one scope.")
+    if OPT_IN & set(scopes) and not opt_in:
+        raise ValueError("Scopes that change files in the library (" + ", ".join(sorted(OPT_IN & set(scopes)))
+                         + ") need the extra confirmation.")
     if expires_days not in EXPIRY_DAYS:
         raise ValueError("Choose an expiry of 30, 90 or 365 days, or never.")
     with _LOCK:

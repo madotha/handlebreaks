@@ -1,5 +1,6 @@
 """
-The Handlebreaks API, version 1 (phase 1: reading). Specification: docs/api-v1-spec.md and the
+The Handlebreaks API, version 1: reading (phase 1), writing (phase 2) and the opt-in scopes that
+change the library (phase 3). Specification: docs/api-v1-spec.md and the
 wiki page "API"; the OpenAPI description is generated from the route registry below
 (GET /api/v1/openapi.json).
 
@@ -175,6 +176,7 @@ def authenticate():
     if wait:
         raise APIError(429, "rate_limited", "Too many failed attempts from this address.", retry_after=wait)
     token = apitokens.verify(request.headers.get("Authorization"))
+    g.token = token
     if not token:
         _failed(addr)
         raise APIError(401, "unauthenticated", "A valid API token is needed (Authorization: Bearer hb_…).")
@@ -194,6 +196,7 @@ def authenticate():
 
 @bp.after_request
 def headers(resp):
+    log_request(resp.status_code)
     resp.headers["X-Request-Id"] = g.get("request_id", "")
     resp.headers["Cache-Control"] = "no-store"
     if g.get("rate"):
@@ -207,6 +210,23 @@ def headers(resp):
             resp = Response(status=304, headers={k: v for k, v in resp.headers.items()
                                                  if k.lower() not in ("content-length", "content-type")})
     return resp
+
+
+def log_request(status):
+    """One line of the activity page per request (Settings → API → Activity)."""
+    if g.get("logged"):
+        return
+    g.logged = True
+    t = g.get("token")
+    token_id = t["id"] if t else None
+    if not t:                                   # name the id a failed request claimed, if it had one
+        m = re.search(r"hb_([a-z2-7]{8})_", request.headers.get("Authorization", ""))
+        token_id = m.group(1) if m else None
+    try:
+        enc.log_api(token_id, t["name"] if t else None, g.get("api_address") or request.remote_addr,
+                    request.method, request.path, status, g.get("action"))
+    except Exception as e:                      # the log must never break a request
+        print(f"API log failed: {e}", file=sys.stderr)
 
 
 def error_response(status, code, message, **details):
@@ -223,7 +243,9 @@ def error_response(status, code, message, **details):
 
 @bp.errorhandler(APIError)
 def api_error(e):
-    return error_response(e.status, e.code, e.message, **e.details)
+    resp = error_response(e.status, e.code, e.message, **e.details)
+    log_request(e.status)
+    return resp
 
 
 def init(webui_module):
@@ -542,7 +564,7 @@ def summary():
                         "of": int(cur["n"]) if cur and cur["n"].isdigit() else None},
            "worker": {"state": worker_state(), "paused": enc.is_paused()},
            "queue": None, "review": None, "history": None, "library": None, "saved": None,
-           "offline": ui.offline_now(), "scanning": bool(ui.SCAN["running"])}
+           "offline": ui.offline_now(), "scanning": bool(ui.SCAN["running"] or enc.scan_progress())}
     if "queue:read" in scopes:
         items = [i for i in enc.queue_items() if i["state"] == "waiting"]
         out["queue"] = {"waiting": len(items), "next_run": sum(not i["run"] for i in items)}
@@ -564,7 +586,9 @@ def summary():
 
 @route("GET", "/status", "status:read", "Current encode, worker, offline shares, scans and replaces",
        response={"current": None, "worker": {"state": "idle", "paused": False, "stoppable": False, "waiting_for": None},
-                 "offline": [], "scan": {"running": False, "label": None, "started": None, "last_finished": None},
+                 "offline": [], "scan": {"running": True, "label": "Scan of all shares", "started": "2026-11-06T09:00+01:00",
+                                         "phase": "Reading files", "percent": 42.0, "detail": "1,204 of 2,866 files read",
+                                         "time_left": "about 6 min", "last_finished": None},
                  "replaces": {"waiting": 0, "moving": 0, "checking": 0}})
 def status():
     wait = enc.worker_wait()
@@ -578,10 +602,17 @@ def status():
                        "waiting_for": {"kind": wait["kind"], "share": share_ref(wait["prefix"]) if wait.get("prefix") else None,
                                        "error": wait.get("error") or None} if wait else None},
             "offline": offline,
-            "scan": {"running": bool(ui.SCAN["running"]), "label": ui.SCAN.get("label") if ui.SCAN["running"] else None,
-                     "started": iso(ui.SCAN.get("started")) if ui.SCAN["running"] else None,
-                     "last_finished": iso(enc.last_scan())},
+            "scan": scan_obj(),
             "replaces": {k: rp.get(k, 0) for k in ("waiting", "moving", "checking")}}
+
+
+def scan_obj():
+    """The running scan (web UI or command line) with its phase and progress (webui.scan_view)."""
+    v = ui.scan_view()
+    return {"running": bool(v), "label": v["label"] if v else None, "started": v["started"] or None if v else None,
+            "phase": v["phase"] or None if v else None, "percent": v["pct"] if v else None,
+            "detail": v["detail"] or None if v else None, "time_left": v["eta"] or None if v else None,
+            "last_finished": iso(enc.last_scan())}
 
 
 @route("GET", "/queue", "queue:read", "The queue in the worker's order",
@@ -1045,3 +1076,455 @@ def openapi_doc(prefix):
 @route("GET", "/openapi.json", None, "This API's OpenAPI 3.1 description", response={"openapi": "3.1.0"})
 def openapi():
     return openapi_doc(request.script_root + bp.url_prefix)
+
+
+# ─── Writing: request bodies, safe retries, audit ─────────────────────────────
+MAX_BODY = 1024 * 1024
+MAX_KEYS = 5000
+IDEMPOTENCY_TTL = 24 * 3600
+_IDEMPOTENT = {}                                # (token id, key) -> (body hash, status, body, time)
+
+
+def body():
+    """The JSON object of a write request (415 without JSON, 413 when too large)."""
+    if request.mimetype != "application/json":
+        raise APIError(415, "unsupported_media_type", "Send the request as JSON (Content-Type: application/json).")
+    if (request.content_length or 0) > MAX_BODY:
+        raise APIError(413, "too_large", "The request body is larger than 1 MB.")
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        raise APIError(400, "invalid_json", "The body must be a JSON object.")
+    return data
+
+
+def str_list(data, name, required=False):
+    value = data.get(name, [])
+    if value is None:
+        value = []
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise APIError(422, "validation_failed", f"{name} must be a list of strings.", fields={name: "list of strings"})
+    if len(value) > MAX_KEYS:
+        raise APIError(413, "too_large", f"At most {MAX_KEYS} entries per request.")
+    if required and not value:
+        raise APIError(422, "validation_failed", f"{name} is empty.", fields={name: "required"})
+    return list(dict.fromkeys(v.strip() for v in value if v.strip()))
+
+
+def preset_arg(data):
+    pid = data.get("preset")
+    if pid in (None, ""):
+        return None
+    if not isinstance(pid, str) or not presets.exists(pid):
+        raise APIError(422, "validation_failed", "Unknown preset.", fields={"preset": "unknown"})
+    return pid
+
+
+def outcome(done, skipped=(), rejected=(), **extra):
+    """The answer of a bulk operation; 422 when everything was rejected."""
+    out = dict({"done": list(done), "skipped": [{"key": k, "reason": r} for k, r in skipped],
+                "rejected": [{"key": k, "reason": r} for k, r in rejected]}, **extra)
+    if rejected and not done and not skipped:
+        raise APIError(422, "validation_failed", "Nothing could be done.", items=out["rejected"])
+    return out
+
+
+def audit(action, count=None):
+    """Record a write: activity page (action) and a notification naming the token."""
+    g.action = action if count is None else f"{action} ({count:,})"
+    try:
+        ui.notify("api_write", None, f"API ({g.token['name']}): {g.action}")
+    except Exception as e:
+        print(f"API notification failed: {e}", file=sys.stderr)
+
+
+def idempotent(fn):
+    """Idempotency-Key: the first answer for a key is kept 24 hours per token and given again for
+    a retry with the same body (header Idempotent-Replayed); another body with it is 422."""
+    def wrapper(*args, **kwargs):
+        key = request.headers.get("Idempotency-Key", "").strip()
+        if not key:
+            return fn(*args, **kwargs)
+        if len(key) > 100:
+            raise APIError(400, "invalid_request", "Idempotency-Key can have at most 100 characters.")
+        digest = hashlib.sha256(request.get_data()).hexdigest()
+        slot = (g.token["id"], key)
+        now = time.time()
+        with _LOCK:
+            for k in [k for k, v in _IDEMPOTENT.items() if now - v[3] > IDEMPOTENCY_TTL]:
+                del _IDEMPOTENT[k]
+            hit = _IDEMPOTENT.get(slot)
+        if hit:
+            if hit[0] != digest:
+                raise APIError(422, "idempotency_key_reused", "This Idempotency-Key was used with another request body.")
+            resp = Response(hit[2], status=hit[1], mimetype="application/json")
+            resp.headers["Idempotent-Replayed"] = "true"
+            return resp
+        result = fn(*args, **kwargs)
+        resp = result if isinstance(result, Response) else ui.app.make_response(result)
+        if resp.status_code < 500:
+            with _LOCK:
+                _IDEMPOTENT[slot] = (digest, resp.status_code, resp.get_data(), now)
+        return resp
+    wrapper.__name__ = fn.__name__
+    return wrapper
+
+
+BULK = {"done": ["share2/…S02E01.mkv"], "skipped": [{"key": "share2/…S02E02.mkv", "reason": "already_queued"}],
+        "rejected": [{"key": "share9/x.mkv", "reason": "unknown_key"}]}
+
+
+# ─── Phase 2: queue, encoding, scans, review ──────────────────────────────────
+
+@route("POST", "/queue", "queue:write", "Queue files and folders (folders expanded with the filters, offered files only)",
+       params=[("keys", "body: list", "File keys"), ("folders", "body: list", "share<N>/<folder> (recursive)"),
+               ("filters", "body: object", "The filters of GET /files (codec, status, added, q …)"),
+               ("preset", "body: string", "Preset id; null = the share's preset")],
+       response=BULK)
+@idempotent
+def queue_add():
+    data = body()
+    keys, folders = str_list(data, "keys"), str_list(data, "folders")
+    if not keys and not folders:
+        raise APIError(422, "validation_failed", "Name keys or folders.", fields={"keys": "required"})
+    preset = preset_arg(data)
+    filters = data.get("filters") or {}
+    if not isinstance(filters, dict):
+        raise APIError(422, "validation_failed", "filters must be an object.", fields={"filters": "object"})
+    args = MultiDict()
+    for k, v in filters.items():
+        for item in (v if isinstance(v, list) else [v]):
+            args.add(k, str(item))
+    if args.get("added_from") or args.get("added_to"):
+        args["added"], args["from"], args["to"] = "custom", args.get("added_from", ""), args.get("added_to", "")
+    for f in folders:
+        if f.split("/", 1)[0] not in enc.ROOT_CANDIDATES or any(p in ("", ".", "..") for p in f.split("/")):
+            raise APIError(422, "validation_failed", f"Unknown folder {f}.", fields={"folders": f})
+    picked, unknown, bad = ui.select_files(keys, folders, ui.file_filters(args), statuses=("offer",))
+    rejected = [(k, "unknown_key") for k in unknown] + [(f, "no_matching_files") for f in bad]
+    rows = file_rows(picked)
+    pending = {i["key"]: i["state"] for i in enc.queue_items() if i["state"] in ("waiting", "encoding")}
+    replacing = enc.pending_replaces()
+    skipped, wanted = [], []
+    for k in picked:
+        st = rows.get(k, {}).get("status")
+        reason = ("encoding" if pending.get(k) == "encoding" else "already_queued" if k in pending else
+                  "replace_pending" if k in replacing else "already_optimized" if st == "h265" else
+                  "awaiting_review" if st == "waiting" else None)
+        (skipped.append((k, reason)) if reason else wanted.append(k))
+    done = enc.write_batch(wanted, preset) if wanted else []
+    skipped += [(k, "already_queued") for k in wanted if k not in set(done)]
+    if done:
+        audit("queued" + (f" with preset {presets.name_of(preset)}" if preset else ""), len(done))
+    return outcome(done, skipped, rejected)
+
+
+@route("POST", "/queue/remove", "queue:write", "Remove waiting entries from the queue",
+       params=[("keys", "body: list", "File keys"), ("all", "body: true", "Every waiting entry")],
+       response={"done": ["share2/…S02E01.mkv"], "skipped": [], "rejected": []})
+@idempotent
+def queue_remove():
+    data = body()
+    if data.get("all") is True:
+        removed = enc.remove_queued(None)
+        keys = []
+    else:
+        keys = str_list(data, "keys", required=True)
+        removed = enc.remove_queued(keys)
+    removed = list(removed)
+    if removed:
+        audit("removed from the queue", len(removed))
+    return outcome(removed, [(k, "not_waiting") for k in keys if k not in set(removed)])
+
+
+@route("POST", "/queue/move", "queue:write", "Reorder waiting entries",
+       params=[("keys", "body: list", "File keys"), ("op", "body: string", "top, bottom, up, down"),
+               ("before", "body: string", "Instead of op: put the keys in front of this key (\"\" = at the end)")],
+       response={"order": ["share2/…S02E03.mkv", "share2/…S02E01.mkv"], "moved": 1})
+@idempotent
+def queue_move():
+    data = body()
+    keys = str_list(data, "keys", required=True)
+    if "before" in data:
+        op, target = "before", data.get("before") or ""
+        if not isinstance(target, str):
+            raise APIError(422, "validation_failed", "before must be a key or \"\".", fields={"before": "string"})
+    else:
+        op, target = data.get("op"), ""
+        if op not in ("top", "bottom", "up", "down"):
+            raise APIError(422, "validation_failed", "op must be top, bottom, up or down.", fields={"op": "invalid"})
+    waiting = [i["key"] for i in enc.queue_items() if i["state"] == "waiting"]
+    moved = [k for k in keys if k in waiting]
+    if not moved:
+        raise APIError(409, "conflict", "None of these entries is waiting.", reason="not_waiting")
+    n = enc.reorder_queued(enc.moved_order(waiting, op, moved, target))
+    if n:
+        audit("reordered the queue", len(moved))
+    return {"order": [i["key"] for i in enc.queue_items() if i["state"] == "waiting"], "moved": len(moved) if n else 0}
+
+
+@route("POST", "/queue/retry", "queue:write", "Queue failed or stopped files again (with their last preset)",
+       params=[("keys", "body: list", "File keys"), ("failed", "body: true", "Every file whose last result is FAIL or STOPPED")],
+       response=BULK)
+@idempotent
+def queue_retry():
+    data = body()
+    if data.get("failed") is True:
+        keys = [h["key"] for h in enc.history_entries() if h["can_retry"]]
+    else:
+        keys = str_list(data, "keys", required=True)
+    queued, _ = enc.requeue(keys) if keys else ([], 0)
+    queued = list(queued)
+    if queued:
+        audit("queued again", len(queued))
+    return outcome(queued, [(k, "not_failed_or_pending") for k in keys if k not in set(queued)])
+
+
+@route("POST", "/encoding/stop", "queue:write", "Stop the current encode (skip: go on with the next file; all: pause the queue)",
+       params=[("mode", "body: string", "skip or all"), ("key", "body: string", "The key of the file being encoded (required)")],
+       response={"stopping": "share2/…S02E03.mkv", "mode": "skip"})
+@idempotent
+def encoding_stop():
+    data = body()
+    mode, key = data.get("mode"), data.get("key")
+    if mode not in ("skip", "all"):
+        raise APIError(422, "validation_failed", "mode must be skip or all.", fields={"mode": "invalid"})
+    cur = enc.current_progress()
+    if not cur:
+        raise APIError(409, "conflict", "Nothing is being encoded.", reason="not_encoding")
+    if key != cur["key"]:
+        raise APIError(409, "conflict", "That file isn't the one being encoded.", reason="not_current", current=cur["key"])
+    if not enc.worker_can_stop():
+        raise APIError(409, "conflict", "The running worker is too old to stop an encode; wait until its run ends.",
+                       reason="not_stoppable")
+    problem = enc.request_stop(mode, key)
+    if problem:
+        raise APIError(409, "conflict", problem, reason="not_stoppable")
+    audit("stopped the encode" + (" and paused the queue" if mode == "all" else ""))
+    return {"stopping": key, "mode": mode}
+
+
+@route("POST", "/encoding/resume", "queue:write", "End the pause after stopping everything",
+       response={"paused": False})
+@idempotent
+def encoding_resume():
+    body()
+    was = enc.is_paused()
+    enc.resume_queue()
+    if was:
+        audit("resumed the queue")
+    return {"paused": False}
+
+
+@route("POST", "/scans", "library:scan", "Start a scan: everything, one share or one folder",
+       params=[("share", "body: integer", "Share number"), ("path", "body: string", "share<N>/<folder or file>"),
+               ("force", "body: boolean", "Read every file with ffprobe again")],
+       response={"scan": {"running": True, "label": "Scan of all shares", "started": "2026-11-06T09:00:00+01:00"}})
+@idempotent
+def scan_start():
+    data = body()
+    if g.get("config_error"):
+        raise APIError(409, "conflict", "The configuration is incomplete.", reason="config_error")
+    if ui.SCAN["running"] or enc.scan_progress():
+        raise APIError(409, "conflict", "A scan is already running.", reason="scan_running")
+    force = data.get("force") is True
+    offline = set(ui.offline_now())
+    if data.get("path"):
+        path = str(data["path"]).strip().strip("/")
+        if path.split("/", 1)[0] not in enc.ROOT_CANDIDATES or any(p in ("", ".", "..") for p in path.split("/")):
+            raise APIError(422, "validation_failed", "Unknown file or folder.", fields={"path": "unknown"})
+        if enc.SHARE_NAMES.get(path.split("/", 1)[0]) in offline:
+            raise APIError(409, "conflict", "The share can't be reached.", reason="share_offline")
+        label = f"Check of {enc.short(path) if '/' in path else enc.SHARE_NAMES[path]}"
+        thread = ui.start_background_scan(label, force=True, path=path)
+    elif data.get("share") is not None:
+        prefix = f"share{data['share']}"
+        if not isinstance(data["share"], int) or prefix not in enc.ROOT_CANDIDATES:
+            raise APIError(422, "validation_failed", "Unknown share.", fields={"share": "unknown"})
+        if enc.SHARE_NAMES.get(prefix) in offline:
+            raise APIError(409, "conflict", "The share can't be reached.", reason="share_offline")
+        label = f"{'Full rescan' if force else 'Scan'} of {enc.SHARE_NAMES.get(prefix, prefix)}"
+        thread = ui.start_background_scan(label, [prefix], force)
+    else:
+        label = "Scan of all shares"
+        thread = ui.start_background_scan(label, None, force)
+    if thread is None:
+        raise APIError(409, "conflict", "A scan is already running.", reason="scan_running")
+    audit(label.lower() + (" (full)" if force and not data.get("path") else ""))
+    resp = ui.app.make_response({"scan": {"running": True, "label": label, "started": iso(ui.SCAN.get("started"))}})
+    resp.status_code = 202
+    return resp
+
+
+@route("POST", "/encodes/delete", "review:write", "Delete finished encodes from the output folder (optionally queue the files again)",
+       params=[("keys", "body: list", "File keys"), ("requeue", "body: boolean", "Queue the files again"),
+               ("preset", "body: string", "With requeue: preset id; null = the share's")],
+       response=dict(BULK, freed_bytes=734003200, queued=[]))
+@idempotent
+def encodes_delete():
+    data = body()
+    keys = str_list(data, "keys", required=True)
+    requeue = data.get("requeue") is True
+    preset = preset_arg(data) if requeue else None
+    res = ui.delete_encodes(keys, requeue, preset)
+    if res["deleted"]:
+        audit("deleted encodes" + (" and queued them again" if requeue else ""), len(res["deleted"]))
+    rejected = [(k, r) for k, r in res["skipped"] if r == "unknown_key"]
+    skipped = [(k, r) for k, r in res["skipped"] if r != "unknown_key"]
+    return outcome(res["deleted"], skipped, rejected, freed_bytes=res["freed"], queued=res["queued"])
+
+
+@route("POST", "/history/dismiss", "review:write", "Hide History entries (nothing on disk changes)",
+       params=[("keys", "body: list", "File keys"), ("older_than_days", "body: integer", "Every entry older than this"),
+               ("all", "body: true", "Every entry History shows"), ("status", "body: string", "With all: only this result")],
+       response={"hidden": 12})
+@idempotent
+def history_dismiss():
+    data = body()
+    if isinstance(data.get("older_than_days"), int) and data["older_than_days"] >= 0:
+        rows = enc.history_entries(data.get("status") or "", older_than=data["older_than_days"])
+        upto = {}
+        for r in rows:
+            upto[r["key"]] = max(upto.get(r["key"], ""), r["at"])
+        enc.dismiss(upto, upto)
+        n = len(upto)
+    elif data.get("all") is True:
+        status = data.get("status") or ""
+        keys = list({h["key"] for h in enc.history_entries(result=status)})
+        if keys:
+            enc.dismiss(keys)
+        n = len(keys)
+    else:
+        keys = str_list(data, "keys", required=True)
+        enc.dismiss(keys)
+        n = len(keys)
+    if n:
+        audit("hid History entries", n)
+    return {"hidden": n}
+
+
+# ─── Phase 3 (opt-in scopes): replace, kept originals ─────────────────────────
+
+@route("POST", "/replace", "replace:write", "Replace originals with their finished encodes (all checked before any starts)",
+       params=[("items", "body: list", "[{key, new_name (null = suggested), keep_original (default: setting)}], at most 500")],
+       response={"jobs": [{"key": "share2/…S02E01.mkv", "id": "20261106-090000-123456", "new_name": "…x265.mkv"}]})
+@idempotent
+def replace_start():
+    data = body()
+    items = data.get("items")
+    if not isinstance(items, list) or not items or len(items) > ui.BULK_REPLACE_MAX:
+        raise APIError(422, "validation_failed", f"items must be a list of 1–{ui.BULK_REPLACE_MAX} objects.",
+                       fields={"items": "invalid"})
+    default_keep = (enc.CONFIG.get("KEEP_ORIGINALS") or "1").strip() != "0"
+    pairs, keeps = [], []
+    for it in items:
+        if not isinstance(it, dict) or not isinstance(it.get("key"), str):
+            raise APIError(422, "validation_failed", "Every item needs a key.", fields={"items": "key"})
+        name = it.get("new_name")
+        if name is None:
+            name = suggested_name(it["key"])
+        if not isinstance(name, str) or not name.strip():
+            name = ""
+        pairs.append((it["key"], name.strip()))
+        keep = it.get("keep_original", default_keep)
+        keeps.append(keep if isinstance(keep, bool) else default_keep)
+    errors, jobs = ui.check_replaces(pairs)
+    if errors:
+        raise APIError(422, "validation_failed", "Nothing was started; fix these items.",
+                       items=[{"key": k, "reason": v} for k, v in errors.items()])
+    out = []
+    for (key, enc_name, name), keep in zip(jobs, keeps):
+        out.append({"key": key, "id": enc.request_replace(key, enc_name, name, keep), "new_name": name,
+                    "keep_original": keep})
+    audit("started replaces", len(out))
+    resp = ui.app.make_response({"jobs": out})
+    resp.status_code = 202
+    return resp
+
+
+def suggested_name(key):
+    enc_dir = enc.first_existing(enc.ENCODED_CANDIDATES)
+    encoded = enc.encoded_files(enc_dir).get(Path(key).stem.lower()) if enc_dir else None
+    if not encoded:
+        return None
+    codec = enc.probe(enc_dir / encoded)["video_codec"] if enc.FFPROBE else None
+    return enc.suggest_name(key.rsplit("/", 1)[-1], encoded, codec, enc.encode_quality(key))
+
+
+@route("GET", "/replace/suggest", "review:read", "The file name Replace… would suggest for a file",
+       params=[("key", "string", "The file's key")], response={"key": "share2/…S02E01.mkv", "name": "…x265-NTB.rf20.mkv"})
+def replace_suggest():
+    key = request.args.get("key", "")
+    if key not in file_rows([key]):
+        raise APIError(404, "not_found", "No file with this key.")
+    name = suggested_name(key)
+    if not name:
+        raise APIError(404, "not_found", "No finished encode of this file in the output folder.")
+    return {"key": key, "name": name}
+
+
+@route("GET", "/replace/progress", "review:read", "The replace progress bar's data: jobs of the current wave by stage",
+       response={"active": True, "waiting": 1, "moving": 0, "checking": 0, "done": 3, "failed": 0, "cancelled": 0,
+                 "items": [{"id": "20261106-090000-123456", "name": "…", "stage": "waiting"}]})
+def replace_progress():
+    rp = ui.replace_progress()
+    return {"active": rp.get("active", False), **{k: rp.get(k, 0) for k in ("waiting", "moving", "checking", "done", "failed", "cancelled")},
+            "items": [{"id": i["id"], "name": i["name"], "stage": i["stage"]} for i in rp.get("items", [])]}
+
+
+@route("DELETE", "/replace/{job_id}", "replace:write", "Cancel a replace the worker hasn't started",
+       response={"cancelled": "20261106-090000-123456"})
+def replace_cancel(job_id):
+    if not re.fullmatch(r"[\d-]{6,40}", job_id):
+        raise APIError(404, "not_found", "Unknown job.")
+    st = enc.replace_status(job_id)
+    if st.get("message") == "Unknown job.":
+        raise APIError(404, "not_found", "Unknown job.")
+    done, late = enc.cancel_replaces(ids=[job_id])
+    if not done:
+        raise APIError(409, "conflict", "The worker has already started this replace, or it is finished.", reason="already_started")
+    audit("cancelled a replace")
+    return {"cancelled": job_id}
+
+
+def original_obj(o, files):
+    return {"path": o["key"], "size": o["size"], "kept_since": iso(o.get("kept")),
+            "replaced_by": files.get(o.get("new_key")) if o.get("new_key") else None,
+            "warning": o.get("warn") or None, "saved_bytes": o.get("saved")}
+
+
+@route("GET", "/originals", "originals:read", "The originals Replace… kept (paths inside .replaced/)",
+       params=PAGING, response={"items": [{"path": "Northwind Station (2018)/Season 02/…S02E01.mkv", "size": 2147483648,
+                                           "kept_since": "2026-11-05T14:00:00+01:00", "replaced_by": FILE_EXAMPLE,
+                                           "warning": None, "saved_bytes": 1413480448}], "total": 1, "next": None})
+def originals():
+    rows = [dict(r) for r in ui.kept_list()]
+    ui.kept_info(rows)                          # adds the replacement's state as warn
+    files = files_for([r["new_key"] for r in rows if r.get("new_key")])
+    return page([original_obj(r, files) for r in rows])
+
+
+@route("POST", "/originals/delete", "originals:write", "Delete kept originals permanently",
+       params=[("paths", "body: list", "Paths inside .replaced/"), ("older_than_days", "body: integer", "Every original kept longer"),
+               ("force", "body: boolean", "With paths: also when the replacement is missing or offline")],
+       response=dict(BULK, freed_bytes=24696061952))
+@idempotent
+def originals_delete():
+    data = body()
+    if isinstance(data.get("older_than_days"), int):
+        if data["older_than_days"] < 1:
+            raise APIError(422, "validation_failed", "older_than_days must be at least 1.", fields={"older_than_days": "min 1"})
+        count, freed, held = enc.purge_kept(data["older_than_days"])
+        ui._KEPT_GEN[0] += 1
+        if count:
+            audit("deleted kept originals", count)
+        return {"done": count, "skipped": held, "rejected": [], "freed_bytes": freed}
+    paths = str_list(data, "paths", required=True)
+    kept = {o["key"]: o for o in enc.kept_originals()}
+    rejected = [(p, "not_found") for p in paths if p not in kept]
+    ok, held = enc.split_kept([kept[p] for p in paths if p in kept], force=data.get("force") is True)
+    count, freed = enc.delete_kept([o["key"] for o in ok])
+    ui._KEPT_GEN[0] += 1
+    if count:
+        audit("deleted kept originals", count)
+    return outcome([o["key"] for o in ok], [(o["key"], "replacement_missing_or_unconfirmed") for o in held], rejected,
+                   freed_bytes=freed)

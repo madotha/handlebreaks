@@ -418,6 +418,10 @@ CREATE TABLE IF NOT EXISTS dismissed (key TEXT PRIMARY KEY, at TEXT);  -- hidden
 CREATE TABLE IF NOT EXISTS events (                             -- notifications of the web UI (webui.event_loop)
     id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, kind TEXT, key TEXT, detail TEXT, level TEXT
 );
+CREATE TABLE IF NOT EXISTS api_log (                            -- API requests (Settings -> API -> Activity)
+    id INTEGER PRIMARY KEY AUTOINCREMENT, at TEXT, token_id TEXT, token_name TEXT, address TEXT,
+    method TEXT, path TEXT, status INTEGER, action TEXT
+);
 CREATE TABLE IF NOT EXISTS files (                              -- inventory from the last scan
     key TEXT PRIMARY KEY, size INTEGER, mtime REAL,
     video_codec TEXT, width INTEGER, height INTEGER, duration REAL, bitrate INTEGER,
@@ -747,6 +751,41 @@ def prune_events():
         con.execute("DELETE FROM events WHERE at < ?", (cutoff,))
         con.execute("DELETE FROM events WHERE id <= (SELECT id FROM events ORDER BY id DESC LIMIT 1 OFFSET ?)",
                     (EVENTS_KEEP_ROWS,))
+
+
+API_LOG_KEEP_DAYS, API_LOG_KEEP_ROWS = 7, 500
+
+
+def log_api(token_id, token_name, address, method, path, status, action=None):
+    with closing(connect()) as con, con:
+        con.execute("INSERT INTO api_log (at, token_id, token_name, address, method, path, status, action) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), token_id,
+                                                        token_name, address, method, path, status, action))
+
+
+def api_log(token_id=None, failed=False, writes=False, limit=API_LOG_KEEP_ROWS):
+    """The newest API requests: [{"at", "token_id", "token_name", "address", "method", "path", "status", "action"}]."""
+    where, params = [], []
+    if token_id:
+        where.append("token_id = ?")
+        params.append(token_id)
+    if failed:
+        where.append("status >= 400")
+    if writes:
+        where.append("method != 'GET'")
+    cols = ("at", "token_id", "token_name", "address", "method", "path", "status", "action")
+    with closing(connect()) as con:
+        return [dict(zip(cols, r)) for r in con.execute(
+            f"SELECT {', '.join(cols)} FROM api_log{' WHERE ' + ' AND '.join(where) if where else ''} "
+            "ORDER BY id DESC LIMIT ?", params + [limit])]
+
+
+def prune_api_log():
+    cutoff = (datetime.now() - timedelta(days=API_LOG_KEEP_DAYS)).strftime("%Y-%m-%d %H:%M:%S")
+    with closing(connect()) as con, con:
+        con.execute("DELETE FROM api_log WHERE at < ?", (cutoff,))
+        con.execute("DELETE FROM api_log WHERE id <= (SELECT id FROM api_log ORDER BY id DESC LIMIT 1 OFFSET ?)",
+                    (API_LOG_KEEP_ROWS,))
 
 
 def new_results():
