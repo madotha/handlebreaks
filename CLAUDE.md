@@ -72,7 +72,6 @@ python3 webui.py --set-password [--user NAME]    # set the web UI account's pass
 python3 webui.py --disable-mfa                   # turn off two-factor authentication (lost phone)
 python3 webui.py --create-token NAME --scopes dashboard|read|a,b [--expires 30|90|365|never] [--allow NETS]   # API token, printed once
 python3 webui.py --list-tokens | --revoke-token ID|all | --check-api
-python3 webui.py --check-settings                # config.example.env keys vs. settings fields (run by the image workflow)
 python3 webui.py --check-settings                # config.example.env keys without a settings field, settings missing from it (image workflow)
 docker compose up -d                             # Docker: everything in one container (pulls ghcr.io/madotha/handlebreaks:4)
 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build   # Docker with an image built from this folder (local changes)
