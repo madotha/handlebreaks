@@ -232,7 +232,8 @@
             <td class="name"><strong>{{ t.name }}</strong><br><code class="small">hb_{{ t.id }}_…</code>
               {% if t.state != 'active' %}<span class="badge">{{ t.state }}</span>{% endif %}
               {% if t.allowed %}<br><span class="small muted">only from {{ t.allowed|join(', ') }}</span>{% endif %}</td>
-            <td class="small api-scopes">{{ t.scopes|join(' ') }}</td>
+            <td class="small api-scopes">{{ t.scopes|join(' ') }}{% if t.scopes|select('in', ai.opt_in)|list %} <span class="badge badge-warn">changes the library</span>{% endif %}
+              <br><a class="small" href="{{ url_for('settings', section='api', token=t.id) }}#activity">Activity</a></td>
             <td class="small nowrap"><span class="phone-label">Expires </span>{% if t.expires %}{{ t.expires[:16]|replace('T', ' ')|localtime }}{% else %}never{% endif %}</td>
             <td class="small"><span class="phone-label">Last used </span>{% if t.last_used %}{{ t.last_used[:16]|replace('T', ' ')|localtime }}<br><span class="muted">{{ t.last_address }}</span>{% else %}<span class="muted">never</span>{% endif %}</td>
             <td class="nowrap">{% if t.state == 'active' %}
@@ -267,8 +268,12 @@
           <legend>Scopes</legend>
           <p class="hint">Ready-made: {% for bid, (blabel, bscopes) in ai.bundles.items() %}<button type="button" class="link-btn" data-bundle="{{ bscopes|join(' ') }}">{{ blabel }}</button>{{ ' · ' if not loop.last }}{% endfor %}</p>
           {% for sc, (phase, desc) in ai.scopes.items() %}
-            <label class="check"><input type="checkbox" name="scope" value="{{ sc }}"> <code>{{ sc }}</code> <span class="muted small">{{ desc }}</span></label>
+            <label class="check"><input type="checkbox" name="scope" value="{{ sc }}" {% if sc in ai.opt_in %}data-opt-in{% endif %}> <code>{{ sc }}</code> <span class="muted small">{{ desc }}</span>{% if sc in ai.opt_in %} <span class="badge badge-warn">changes the library</span>{% endif %}</label>
           {% endfor %}
+          <div class="flash warn" data-opt-in-warning hidden>
+            <p>This token will be able to <strong>change files in your library</strong> (replace originals with their encodes) or <strong>delete kept originals</strong>. Anyone who gets hold of it can do the same. Give it only to programs you trust, limit it to their address, and keep its expiry short.</p>
+            <label class="check"><input type="checkbox" name="opt_in" value="1" data-opt-in-confirm> I understand; create the token with these scopes</label>
+          </div>
         </fieldset>
         <div class="field"><label for="tok-exp">Expires after</label>
           <select id="tok-exp" name="expires">{% for d in ai.expiry %}<option value="{{ d }}" {% if d == ai.default_expiry %}selected{% endif %}>{{ d ~ ' days' if d else 'never' }}</option>{% endfor %}</select></div>
@@ -285,6 +290,32 @@
         {% endif %}
         <button>Create token</button>
       </form>
+    </section>
+    <section class="panel" id="activity">
+      <h3 class="panel-title">Activity</h3>
+      <p class="hint">The newest API requests (kept 7 days, at most 500), failed attempts included.
+        {% if ai.activity.token %}Token <code>hb_{{ ai.activity.token }}_…</code> only. {% endif %}
+        <a href="{{ url_for('settings', section='api') }}#activity">All</a> ·
+        <a href="{{ url_for('settings', section='api', failed=1) }}#activity">Failed only</a> ·
+        <a href="{{ url_for('settings', section='api', writes=1) }}#activity">Changes only</a></p>
+      {% if ai.activity.rows %}
+      <div class="table-wrap">
+      <table class="api-tokens api-activity">
+        <thead><tr><th>Time</th><th>Token</th><th>Address</th><th>Request</th><th>Answer</th></tr></thead>
+        <tbody>{% for r in ai.activity.rows %}
+          <tr class="{{ 'is-error' if r.status >= 400 }}">
+            <td class="small nowrap">{{ r.at[:16]|localtime }}</td>
+            <td class="small">{% if r.token_name %}{{ r.token_name }}{% elif r.token_id %}<span class="muted">unknown hb_{{ r.token_id }}_…</span>{% else %}<span class="muted">no token</span>{% endif %}</td>
+            <td class="small">{{ r.address }}</td>
+            <td class="small"><code>{{ r.method }} {{ r.path }}</code>{% if r.action %}<br>{{ r.action }}{% endif %}</td>
+            <td class="small"><span class="phone-label">Answer </span>{{ r.status }}</td>
+          </tr>
+        {% endfor %}</tbody>
+      </table>
+      </div>
+      {% else %}
+      <p class="muted">No requests{{ ' matching' if ai.activity.token or ai.activity.failed or ai.activity.writes }} yet.</p>
+      {% endif %}
     </section>
     <section class="panel">
       <h3 class="panel-title">Reference</h3>

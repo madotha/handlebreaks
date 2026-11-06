@@ -3670,7 +3670,7 @@ def api_token_create():
     try:
         expires = int(form.get("expires", apitokens.DEFAULT_EXPIRY))
         token, rec = apitokens.create(form.get("name", ""), form.getlist("scope"), expires, allowed,
-                                      created_by=session.get("auth_user", ""))
+                                      created_by=session.get("auth_user", ""), opt_in=form.get("opt_in") == "1")
     except ValueError as e:
         return api_done(str(e), "error")
     now = time.time()
@@ -3713,7 +3713,16 @@ def api_context():
     return {"tokens": apitokens.tokens(), "scopes": apitokens.SCOPES, "bundles": apitokens.BUNDLES,
             "opt_in": apitokens.OPT_IN, "expiry": apitokens.EXPIRY_DAYS, "default_expiry": apitokens.DEFAULT_EXPIRY,
             "new_token": shown, "base": base, "routes": api.ROUTES, "oidc_session": session.get("auth_method") == "oidc",
-            "mfa": bool(auth.mfa()), "client": client()}
+            "mfa": bool(auth.mfa()), "client": client(), "activity": api_activity()}
+
+
+def api_activity():
+    """The Activity panel: the newest API requests, filtered by ?token=, ?failed=1, ?writes=1."""
+    args = request.args
+    rows = enc.api_log(token_id=args.get("token") or None, failed=args.get("failed") == "1",
+                       writes=args.get("writes") == "1", limit=200)
+    return {"rows": rows, "token": args.get("token", ""), "failed": args.get("failed") == "1",
+            "writes": args.get("writes") == "1"}
 
 
 def settings_nav():
@@ -3888,7 +3897,8 @@ def create_token_cli(args):
         print(problem, file=sys.stderr)
         return 2
     try:
-        token, rec = apitokens.create(args.create_token, scopes, expires, allowed, created_by="command line")
+        token, rec = apitokens.create(args.create_token, scopes, expires, allowed, created_by="command line",
+                                      opt_in=args.opt_in)
     except ValueError as e:
         print(e, file=sys.stderr)
         return 2
@@ -3914,6 +3924,8 @@ def main():
                     f"({', '.join(apitokens.BUNDLES)})")
     ap.add_argument("--expires", default=str(apitokens.DEFAULT_EXPIRY), help="with --create-token: 30, 90, 365 or never")
     ap.add_argument("--allow", default="", help="with --create-token: allowed addresses or networks, separated by commas")
+    ap.add_argument("--opt-in", action="store_true", help="with --create-token: confirm scopes that change files in "
+                    f"the library ({', '.join(sorted(apitokens.OPT_IN))})")
     ap.add_argument("--list-tokens", action="store_true", help="list the API tokens, then exit")
     ap.add_argument("--revoke-token", metavar="ID", help="revoke an API token (or all with --revoke-token all), then exit")
     ap.add_argument("--check-api", action="store_true", help="list API routes without scope, summary or example answer, then exit")

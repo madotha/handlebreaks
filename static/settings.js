@@ -122,6 +122,20 @@
     btn.closest("form").querySelectorAll('input[name="scope"]').forEach((box) => { box.checked = want.has(box.value); });
   }));
 
+  // Scopes that change the library: show the warning and require its confirmation
+  document.querySelectorAll("[data-api-new]").forEach((f) => {
+    const warn = f.querySelector("[data-opt-in-warning]"), confirm = f.querySelector("[data-opt-in-confirm]");
+    const sync = () => {
+      const on = [...f.querySelectorAll("input[data-opt-in]")].some((b) => b.checked);
+      warn.hidden = !on;
+      confirm.required = on;
+      if (!on) confirm.checked = false;
+    };
+    f.addEventListener("change", sync);
+    f.querySelectorAll("[data-bundle]").forEach((b) => b.addEventListener("click", sync));
+    sync();
+  });
+
   // ─── Connection tests (Plex, single sign-on) ───────────────────────────────
   // A button [data-conn-test="<url>"] posts the form as it is (not saved) and shows the answer
   // in the [data-conn-result] next to it.
