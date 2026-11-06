@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [4.4.0] - 2026-11-06
+
 ### Added
 - **API: changes** ([details](https://github.com/madotha/handlebreaks/wiki/API#endpoints-for-changes)): queue files and folders (with a preset, folders expanded with the Files page's filters), remove and reorder queue entries, queue failed files again, stop the current encode or everything and resume, start scans of everything, a share or a folder, delete finished encodes (optionally queuing them again with another preset) and hide History entries. New scopes `queue:write`, `library:scan`, `review:write`, and the token set **Automation**. Bulk answers list what was done, skipped and rejected per file; an `Idempotency-Key` header makes retries safe.
 - **API: opt-in scopes that change the library**: `replace:write` (replace originals with their encodes, all checked before any starts; cancel waiting replaces; suggested names) and `originals:read` / `originals:write` (list and delete kept originals). They are in no token set and need an extra confirmation when the token is created (`--opt-in` on the command line); the token list marks such tokens.
