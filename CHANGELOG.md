@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [4.5.0] - 2026-11-06
+
 ### Changed
 - Info texts: the web UI shows far less explanation text at once (about half as much on the pages, a fifth in the settings). Explanations moved into ⓘ buttons next to page titles, section headings and settings fields, which open a small panel (a sheet from the bottom on phones) with a link to the matching wiki page. What stays visible is one short line, plus warnings and state.
   - Status: the long help under each tab's list is now the ⓘ next to the tabs (on phones next to More); the Encoding and Scan panels have one too.
