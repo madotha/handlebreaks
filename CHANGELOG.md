@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [4.2.0] - 2026-11-06
+
 ### Added
 - **API** ([details](https://github.com/madotha/handlebreaks/wiki/API)): a JSON API under `/api/v1/` for dashboards such as Homepage, scripts and other tools. Version 1 reads: a summary for dashboards, the current encode and worker, the queue, shares, folders and files (with the Files page's filters), encodes awaiting review, history, presets, statistics, notifications, failure logs and system information (versions, free space in the output folder). OpenAPI 3.1 description at `/api/v1/openapi.json`.
 - **API tokens** (Settings → API, or `python3 webui.py --create-token`): nothing works without one. Each token has scopes (ready-made: *Dashboard (read-only)*, *Read everything*), expires after 90 days by default, can be limited to certain addresses, is shown only once and stored only as a hash (`api-tokens.json` in the data folder). Creating one needs the password (and two-factor code) again. The token list shows when and from where each was last used; revoke one or all at once. A notification warns 7 days before a token expires (new notification group `api`).
