@@ -14,8 +14,8 @@
     </div>
     <div class="field" data-de-preset-field>
       <label for="de-preset">Preset for the new encode</label>
-      <select id="de-preset" name="preset" data-de-preset disabled>
-        <option value="">Share's preset</option>
+      <select id="de-preset" name="preset" data-de-preset disabled data-share-presets="{{ share_presets_json() }}">
+        <option value="" data-share-preset>Share's preset</option>
         {% for pid, name in preset_list %}<option value="{{ pid }}">{{ name }}</option>{% endfor %}
       </select>
       <p class="hint">The files go to the end of the queue and the worker encodes them with this preset (<a href="{{ url_for('presets_page') }}">presets</a>).</p>

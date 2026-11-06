@@ -113,8 +113,8 @@
       <div class="sel-actions" data-sel-actions>{# phones: a bar above the tab bar, only while something is selected #}
         <span class="selected-count"><strong data-selected-count>0</strong> selected</span>
         <label class="inline">Preset
-          <select name="preset" aria-label="Preset for this queue">
-            <option value="">Share's preset</option>
+          <select name="preset" aria-label="Preset for this queue" data-share-presets="{{ share_presets_json() }}">
+            <option value="" data-share-preset>Share's preset</option>
             {% for pid, name in preset_list %}<option value="{{ pid }}">{{ name }}</option>{% endfor %}
           </select>
         </label>

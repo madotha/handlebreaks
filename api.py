@@ -393,6 +393,15 @@ def preset_ref(pid):
     return {"id": pid, "name": _PRESET_NAMES[pid]}
 
 
+def effective_preset(key, pid):
+    """The preset that applies: the chosen one (source "chosen"), else the share's ("share") or the
+    default preset ("default")."""
+    if pid:
+        return dict(preset_ref(pid), source="chosen")
+    sp = ui.share_preset(key)
+    return {"id": sp["id"] or None, "name": sp["name"], "source": sp["source"]}
+
+
 def file_rows(keys):
     keys = list(dict.fromkeys(keys))
     rows = {}
@@ -620,7 +629,8 @@ def scan_obj():
                ("q", "string", "Words that must all be part of the file's key"),
                ("sort", "string", "order (default), file, codec, resolution, bitrate, preset, state"),
                ("dir", "string", "asc or desc")] + PAGING,
-       response={"items": [{"position": 4, "state": "waiting", "run": True, "file": FILE_EXAMPLE, "preset": None}],
+       response={"items": [{"position": 4, "state": "waiting", "run": True, "file": FILE_EXAMPLE, "preset": None,
+                            "effective_preset": {"id": "1080p-x265", "name": "1080p x265 (Ger/Eng) RF20", "source": "share"}}],
                  "total": 1, "next": None})
 def queue():
     states = set(request.args.getlist("state")) or {"waiting", "encoding", "removed"}
@@ -628,8 +638,8 @@ def queue():
         raise APIError(400, "invalid_request", "state must be waiting, encoding or removed.", field="state")
     items = [(n, i) for n, i in enumerate(enc.queue_items(), 1) if i["state"] in states and words_match(i["key"])]
     files = files_for([i["key"] for _, i in items])
-    rows = [{"position": n, "state": i["state"], "run": i["run"], "file": files[i["key"]], "preset": preset_ref(i["preset"])}
-            for n, i in items]
+    rows = [{"position": n, "state": i["state"], "run": i["run"], "file": files[i["key"]], "preset": preset_ref(i["preset"]),
+             "effective_preset": effective_preset(i["key"], i["preset"])} for n, i in items]
     rows = sorted_by(rows, {"order": lambda r: r["position"], "file": lambda r: r["file"]["name"].lower(),
                             "codec": lambda r: r["file"]["video"]["codec"], "resolution": lambda r: r["file"]["video"]["width"],
                             "bitrate": lambda r: r["file"]["video"]["bitrate"],

@@ -442,6 +442,49 @@ def plex_status(url, token, mapping):
                   + (f", matching your shares: {', '.join(shared)}." if shared else "; none matches a share path."))
 
 
+def share_presets():
+    """Key prefix -> {"id", "name", "source", "share"}: the preset a share's files get when no
+    preset is chosen ("Share's preset"): the share's own (source "share") or DEFAULT_PRESET
+    ("default"). Read once per request."""
+    if "share_presets" in g:
+        return g.share_presets
+    cfg = enc.parse_config(enc.CONFIG_FILE) if enc.CONFIG_FILE.exists() else {}
+    default = cfg.get("DEFAULT_PRESET", "")
+    out = {}
+    for sh in enc.shares(cfg):
+        pid = sh["preset"] or default
+        out[sh["prefix"]] = {"id": pid, "name": presets.name_of(pid) if pid else "no preset",
+                             "source": "share" if sh["preset"] else "default", "share": sh["name"]}
+    g.share_presets = out
+    return out
+
+
+@app.template_global()
+def share_preset(key):
+    """The preset "Share's preset" means for this file (see share_presets())."""
+    return share_presets().get(key.split("/", 1)[0], {"id": "", "name": "?", "source": "default", "share": ""})
+
+
+@app.template_global()
+def share_presets_json():
+    """For static/sharepreset.js: prefix -> [share name, preset name, source]."""
+    return json.dumps({p: [v["share"], v["name"], v["source"]] for p, v in share_presets().items()})
+
+
+def preset_phrase(keys, preset=None):
+    """'with preset "X"' for messages; without a chosen preset the share's (or default) preset by name."""
+    if preset:
+        return f'with preset "{presets.name_of(preset)}"'
+    used = {}
+    for k in keys:
+        sp = share_preset(k)
+        used.setdefault(sp["name"], sp["source"])
+    if len(used) == 1:
+        name, source = next(iter(used.items()))
+        return f'with "{name}" (the ' + ("share's" if source == "share" else "default") + ' preset)'
+    return "with each share's preset (" + ", ".join(f'"{n}"' for n in used) + ")"
+
+
 def preset_choices():
     """[(id, name)] of all presets, for dropdowns."""
     return [(pid, p.get("PresetName", pid)) for pid, p in presets.all_presets()]
@@ -2334,7 +2377,7 @@ def queue():
     else:
         chosen = enc.write_batch(keys, preset)
         skipped = len(set(keys)) - len(chosen)
-        msg = f"{len(chosen):,} file(s) queued" + (f" with preset \"{presets.name_of(preset)}\"." if preset else ".")
+        msg = f"{len(chosen):,} file(s) queued {preset_phrase(chosen, preset)}."
         if skipped:
             msg += f" {skipped:,} already in the queue."
         flash(msg, "ok" if chosen else "error")
@@ -2860,8 +2903,7 @@ def encodes_delete():
                     "replaced or are already in the queue).", "error")
     msg = f"{len(gone):,} encode{'' if len(gone) == 1 else 's'} deleted, {fmt_size(res['freed'])} freed."
     if requeue:
-        msg += (f" {len(queued):,} file(s) queued again" +
-                (f' with preset "{presets.name_of(preset)}".' if preset else " with the share's preset."))
+        msg += f" {len(queued):,} file(s) queued again {preset_phrase(queued, preset)}."
     if left:
         msg += f" {left:,} left out (no encode in the output folder, a replace pending, or already queued)."
     return back(msg, "warn" if left else "ok")

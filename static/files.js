@@ -117,6 +117,11 @@
     button.dataset.count = n;
     bulkButton.disabled = n === 0;
     form.classList.toggle("has-selection", n > 0);     // phones: shows the selection bar above the tab bar
+    if (window.sharePresetFor) {                       // name the preset "Share's preset" means for the ticked files
+      const picked = [...form.querySelectorAll('.dir-toggle:checked:not(:disabled), input[name="key"]:checked:not(:disabled)')]
+        .map((i) => i.value);
+      window.sharePresetFor(form.querySelector("select[data-share-presets]"), picked);
+    }
   }
 
   // Folders only open when clicked: every page load starts collapsed. Open folders are

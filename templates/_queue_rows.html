@@ -12,7 +12,7 @@
     {{ codec_cell(r) }}
     {{ res_cell(r) }}
     {{ bitrate_cell(r) }}
-    <td class="small wrap">{{ r.preset_name or "Share's preset" }}</td>
+    <td class="small wrap">{% if r.preset_name %}{{ r.preset_name }}{% else %}{% set sp = share_preset(r.key) %}<span class="nw">{{ sp.name }}</span> <span class="muted nw preset-source" data-tip="{{ 'The preset of the share ' ~ sp.share if sp.source == 'share' else 'No preset chosen for the share ' ~ sp.share ~ ': the default preset (Settings → Encoding)' }}">· {{ "share's" if sp.source == 'share' else 'default' }}</span>{% endif %}</td>
     <td><span class="qstate qstate-{{ r.state|lower }}">{{ states.get(r.state, r.state) }}</span>{% if r.next_run and r.state == 'waiting' and not can_move %} <span class="qrun muted small">next run</span>{% endif %}</td>
     <td class="move">{% if r.state == 'waiting' and can_move %}<button type="button" class="icon-btn" data-move="up" aria-label="Move up" data-tip="Move up">{{ icon('up') }}</button><button type="button" class="icon-btn" data-move="down" aria-label="Move down" data-tip="Move down">{{ icon('down') }}</button>{% endif %}</td>
   </tr>

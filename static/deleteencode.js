@@ -42,6 +42,7 @@
     used.textContent = one && one.preset ? `Encoded with the preset "${one.preset}".` : "";
     dialog.querySelector('input[name="requeue"][value="0"]').checked = true;
     preset.value = "";
+    if (window.sharePresetFor) window.sharePresetFor(preset, keys);
     update();
     window.returnFocusOnClose(dialog);
     dialog.showModal();
