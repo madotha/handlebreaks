@@ -1,14 +1,15 @@
 # Handlebreaks API v1: specification (draft)
 
-Status: phase 1 implemented in 4.2.0 (user docs: wiki page **API**; the OpenAPI description is generated from
-the route registry in `api.py`). Phases 2 and 3 are still planned as written here; keep this file until they are done.
+Status: implemented: phase 1 in 4.2.0, phases 2 and 3 in 4.4.0. The user docs are the wiki page **API**, the OpenAPI
+description is generated from the route registry in `api.py`. This file stays as the design record (security
+concept, threat model); where it differs from the code, the code and the wiki are right.
 
 Phases:
 
 | Phase | Version | Content |
 |---|---|---|
 | 1 | 4.2.0 | Tokens (web UI, command line), allowed networks per token, every read endpoint, `/summary` for dashboards, `system:read`, `logs:read`, OpenAPI, reference page, wiki |
-| 2 | 4.3.0 | Write endpoints: queue, scans, stop/resume, delete encodes, dismiss history; idempotency; API activity page |
+| 2 | 4.4.0 | Write endpoints: queue, scans, stop/resume, delete encodes, dismiss history; idempotency; API activity page |
 | 3 | 4.4.0 | Library-changing scopes (opt-in): `replace:write`, `originals:write` |
 
 ---
