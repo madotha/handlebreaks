@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [4.4.1] - 2026-11-06
+
 ### Changed
 - Wherever "Share's preset" was shown, the preset it stands for is now named: Status → Queue shows the name with a note *share's* or *default* (a share without a preset of its own uses the default preset); the preset choice on the Files page and in the delete dialog says e.g. "Share's preset: 1080p x265 (Ger/Eng) RF20" for the ticked files, or lists the presets of the shares when they differ; messages after queueing name the preset.
 - API: queue entries have `effective_preset` (`source`: `chosen`, `share` or `default`), the preset that actually applies.
