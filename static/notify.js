@@ -148,8 +148,70 @@
       a.classList.toggle("encoding", nav.pct !== null);
       a.style.setProperty("--p", nav.pct === null ? 0 : nav.pct);
     });
-    document.querySelectorAll("[data-nav-dot]").forEach((d) => { d.hidden = !nav.scanning; d.title = "Scanning"; });
+    window.renderScanProgress(nav.scan || null, nav.scanning);
   }
+
+  // The running scan's progress in every [data-scan-progress] (templates/_scan_progress.html).
+  // Also called by static/status.js with its faster live updates. Once a scan seen here ends,
+  // the box offers a reload, since the page shows the data from before the scan.
+  // The page tabs and the header pill follow it too: the dot on Files (its tooltip: phase and
+  // percentage), on phones a ring around the Files icon while the percentage is known.
+  const seenScan = new WeakSet();
+  window.renderScanProgress = function (scan, scanning, result) {
+    scanning = scanning === undefined ? !!scan : scanning;
+    const pct = scan && scan.pct !== null && scan.pct !== undefined ? scan.pct : null;
+    document.querySelectorAll("[data-nav-dot]").forEach((d) => {
+      d.hidden = !scanning;
+      d.title = !scan ? "Scanning" : `${scan.label}: ${scan.phase}${pct === null ? "" : `, ${pct} %`}`;
+    });
+    document.querySelectorAll('[data-nav="files"]').forEach((a) => {
+      a.classList.toggle("scanning", pct !== null);
+      a.style.setProperty("--p", pct === null ? 0 : pct);
+    });
+    document.querySelectorAll("[data-scan-pill]").forEach((pill) => {
+      pill.hidden = !scanning;
+      pill.querySelector("[data-scan-pill-pct]").textContent = pct === null ? "" : ` ${pct} %`;
+      if (scan) pill.dataset.tip = `${scan.label}: ${scan.phase}${scan.detail ? ` (${scan.detail})` : ""}`;
+    });
+    document.querySelectorAll("[data-scan-progress]").forEach((box) => {
+      const q = (sel) => box.querySelector(sel);
+      if (!box.dataset.init) {                         // a scan rendered by the server counts as seen
+        box.dataset.init = "1";
+        if (!box.hidden) seenScan.add(box);
+      }
+      box.querySelectorAll("[data-sp-running]").forEach((el) => { el.hidden = !scan; });
+      q("[data-sp-meter]").hidden = !scan;
+      if (scan) {
+        seenScan.add(box);
+        box.dataset.own = scan.own ? "1" : "";
+        box.hidden = false;
+        q("[data-sp-done]").hidden = true;
+        q("[data-sp-result]").hidden = true;
+        const known = scan.pct !== null && scan.pct !== undefined;
+        q("[data-sp-label]").textContent = scan.label;
+        q("[data-sp-phase]").textContent = scan.phase;
+        q("[data-sp-pct]").textContent = known ? `${scan.pct} %` : "";
+        q("[data-sp-meter]").classList.toggle("indeterminate", !known);
+        q("[data-sp-bar]").style.width = (known ? scan.pct : 0) + "%";
+        q("[data-sp-detail]").textContent = scan.detail || "";
+        q("[data-sp-eta]").textContent = scan.eta ? ` · ${scan.eta}` : "";
+        q("[data-sp-since]").textContent = scan.started ? ` · running since ${window.formatLocalTime(scan.started)}` : "";
+      } else if (seenScan.has(box)) {
+        const res = box.dataset.own && result && (result.summary || result.error) ? result : null;
+        const shown = q("[data-sp-result]");             // the Status page knows how its own scan went
+        if (!result && !shown.hidden) return;            // the slower poll here knows nothing about it
+        q("[data-sp-done]").hidden = !!res;
+        q("[data-sp-reload]").href = location.href;
+        shown.hidden = !res;
+        if (res) {
+          shown.className = "sp-done flash " + (res.error ? "error" : "ok");
+          shown.textContent = res.error || `Finished: ${res.summary}`;
+        }
+      } else {
+        box.hidden = true;
+      }
+    });
+  };
 
   let busy = false;
   async function poll() {

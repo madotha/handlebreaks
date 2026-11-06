@@ -1,0 +1,12 @@
+{#- The running scan (webui.scan_view()); kept up to date by window.renderScanProgress (static/notify.js) -#}
+{%- set sv = scan_view() -%}
+<div class="scan-progress{{ ' compact' if compact }}" data-scan-progress role="status" {% if not sv %}hidden{% endif %} data-own="{{ '1' if sv and sv.own }}">
+  <div class="sp-line" data-sp-running {% if not sv %}hidden{% endif %}>
+    <span class="sp-label"><strong data-sp-label>{{ sv.label if sv }}</strong> · <span data-sp-phase>{{ sv.phase if sv }}</span></span>
+    <span class="sp-pct" data-sp-pct>{% if sv and sv.pct is not none %}{{ sv.pct }} %{% endif %}</span>
+  </div>
+  <span class="meter{{ ' indeterminate' if sv and sv.pct is none }}" data-sp-meter {% if not sv %}hidden{% endif %}><span data-sp-bar style="width: {{ sv.pct if sv and sv.pct is not none else 0 }}%"></span></span>
+  <p class="sp-detail muted" data-sp-running {% if not sv %}hidden{% endif %}><span data-sp-detail>{{ sv.detail if sv }}</span><span data-sp-eta>{% if sv and sv.eta %} · {{ sv.eta }}{% endif %}</span><span data-sp-since>{% if sv and sv.started %} · running since <time datetime="{{ sv.started }}">{{ sv.started }}</time>{% endif %}</span></p>
+  <p class="sp-done" data-sp-done hidden>Scan finished. <a href="" data-sp-reload>Reload</a> to see the new data.</p>
+  <p class="sp-done flash" data-sp-result hidden></p>
+</div>

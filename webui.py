@@ -466,6 +466,58 @@ def start_background_scan(label, only=None, force=False, path=None, auto=False):
         return thread
 
 
+def about_minutes(seconds):
+    """'about 5 min' / 'about 1 h 20 min' / 'less than a minute'."""
+    minutes = round(seconds / 60)
+    if minutes < 1:
+        return "less than a minute"
+    return f"about {minutes // 60} h {minutes % 60} min" if minutes >= 60 else f"about {minutes} min"
+
+
+def scan_view():
+    """The running scan for the pages (web UI or command line): label, phase, percentage of the
+    phase (None = unknown), details, time left and own (started by this web UI, so SCAN will hold
+    its result); None when no scan runs."""
+    p = enc.scan_progress()
+    if not p:
+        if not SCAN["running"]:
+            return None
+        started = to_datetime(SCAN["started"])
+        return {"label": SCAN["label"], "phase": "Checking files", "pct": None, "detail": "", "eta": "", "own": True,
+                "started": started.isoformat(timespec="minutes") if started else ""}
+    shares = p.get("shares") or []
+    if SCAN["running"] and SCAN["label"]:
+        label = SCAN["label"]
+    elif set(shares) >= set(enc.ROOT_CANDIDATES):
+        label = "Scan of all shares"
+    else:
+        label = "Scan of " + ", ".join(enc.SHARE_NAMES.get(x, x) for x in shares)
+    now = time.time()
+    view = {"label": label, "phase": "", "pct": None, "detail": "", "eta": "", "own": SCAN["running"],
+            "started": datetime.fromtimestamp(p["started"]).astimezone().isoformat(timespec="minutes")}
+    if p["phase"] == "listing":
+        expected, found, checked = p.get("expected") or 0, p.get("found") or 0, p.get("checked") or 0
+        view["phase"] = "Listing files"
+        if checked:
+            view["detail"] = f"{checked:,} of {found:,} files checked"
+        else:
+            view["detail"] = f"{found:,} of about {expected:,} files found" if expected else f"{found:,} files found"
+        if expected:
+            view["pct"] = min(int((found + checked) * 50 / max(expected, found)), 99)
+    elif p["phase"] == "probing":
+        done, total = p.get("probed") or 0, p.get("to_probe") or 0
+        view["phase"] = "Reading files with ffprobe"
+        view["detail"] = f"{done:,} of {total:,} file{'s' if total != 1 else ''} read"
+        view["pct"] = min(int(done * 100 / total), 99) if total else 0
+        took = now - (p.get("probe_started") or now)
+        if done and took > 10:
+            view["eta"] = about_minutes((total - done) * took / done) + " left"
+    else:
+        view["phase"] = "Saving the results"
+        view["pct"] = 99
+    return view
+
+
 def scan_interval(cfg):
     """SCAN_INTERVAL in minutes; 0 (off) if missing or invalid."""
     try:
@@ -901,7 +953,8 @@ def nav_state():
         review = len(awaiting_review())
     except Exception:                           # output folder offline: no badge rather than an error
         review = 0
-    return {"review": review, "pct": pct, "scanning": bool(SCAN["running"])}
+    scan = scan_view()
+    return {"review": review, "pct": pct, "scanning": bool(scan), "scan": scan}
 
 
 def path_summary(path):
@@ -951,7 +1004,7 @@ def csrf_token():
     return session["csrf"]
 
 
-app.jinja_env.globals.update(csrf_token=csrf_token, scan_state=SCAN, now=datetime.now,
+app.jinja_env.globals.update(csrf_token=csrf_token, scan_state=SCAN, scan_view=scan_view, now=datetime.now,
                              app_version=enc.__version__)
 
 
@@ -2585,8 +2638,8 @@ def live_status():
                    "queue": states["encoding"] + states["waiting"],
                    "review": len(awaiting_review()), "history": len(enc.history_entries()),
                    "originals": len(kept_list())},
-        "scan": dict({k: SCAN[k] for k in ("running", "label", "summary", "error")},
-                     started=(to_datetime(SCAN["started"]) or datetime.now()).isoformat() if SCAN["started"] else None),
+        "scan": scan_view(),
+        "scan_result": None if SCAN["running"] else {"summary": SCAN["summary"], "error": SCAN["error"]},
     }
 
 

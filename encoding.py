@@ -136,6 +136,7 @@ CURRENT_FILE = LOG_DIR / "current.txt"
 RUN_FILE     = LOG_DIR / "run.txt"            # batch file names of the worker's current run, in order
 ENCODES_FILE = LOG_DIR / "encodes.tsv"        # date, key, preset id, quality of every finished encode
 PROGRESS_LOG = LOG_DIR / "progress.log"
+SCAN_PROGRESS = LOG_DIR / "scan.json"        # progress of the running scan (ScanProgress), gone when it ends
 
 # Find ffprobe even when launchd or another caller sets a minimal PATH
 FFPROBE = shutil.which("ffprobe", path=os.pathsep.join(
@@ -1576,6 +1577,74 @@ def probe(path):
     return info
 
 
+class ScanProgress:
+    """Writes how far a scan of whole shares is to SCAN_PROGRESS (read by scan_progress()), at most
+    once a second. Phases: listing (walk the shares, then read size and date of each file; expected
+    = the files of the last scan of those shares), probing (ffprobe), saving."""
+
+    def __init__(self, prefixes):
+        with closing(connect()) as con:
+            expected = sum(con.execute("SELECT COUNT(*) FROM files WHERE key >= ? AND key < ?",
+                                       (p + "/", p + "0")).fetchone()[0] for p in prefixes)
+        self.data = {"pid": os.getpid(), "started": time.time(), "shares": list(prefixes), "phase": "listing",
+                     "expected": expected, "found": 0, "checked": 0, "to_probe": 0, "probed": 0,
+                     "probe_started": None}
+        self.written = 0.0
+        self.write(force=True)
+
+    def update(self, force=False, **values):
+        self.data.update(values)
+        self.write(force)
+
+    def write(self, force=False):
+        now = time.time()
+        if not force and now - self.written < 1:
+            return
+        self.written = now
+        try:
+            LOG_DIR.mkdir(parents=True, exist_ok=True)
+            write_text_atomic(SCAN_PROGRESS, json.dumps(dict(self.data, updated=now)))
+        except OSError:                         # progress is only shown, never needed
+            pass
+
+    def listed(self, entries):
+        """Passes the entries of walk_library() through, counting them."""
+        for n, entry in enumerate(entries, 1):
+            self.data["found"] = n
+            self.write()
+            yield entry
+
+    def close(self):
+        try:
+            SCAN_PROGRESS.unlink()
+        except OSError:
+            pass
+
+
+class _NoProgress:
+    """Stand-in for ScanProgress when one file or folder is scanned."""
+    def update(self, force=False, **values): pass
+    def listed(self, entries): return entries
+    def close(self): pass
+
+
+SCAN_PROGRESS_STALE = 15 * 60   # seconds without an update after which a progress file counts as left behind
+
+
+def scan_progress():
+    """Progress of the running scan (any process: web UI or command line), or None."""
+    try:
+        data = json.loads(SCAN_PROGRESS.read_text(encoding="utf-8"))
+        os.kill(int(data["pid"]), 0)            # raises if the scanning process is gone
+    except PermissionError:                     # alive, but another user's process
+        pass
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    if time.time() - float(data.get("updated") or 0) > SCAN_PROGRESS_STALE:
+        return None
+    return data
+
+
 CHECKPOINT_EVERY = 200      # files probed between saves, so an interrupted scan keeps its progress
 
 
@@ -1591,16 +1660,18 @@ def save_checkpoint(infos):
             [(i["key"], *(i.get(c) for c in cols)) for i in infos])
 
 
-def inventory(entries, probe_files, force=False, first_scan=()):
+def inventory(entries, probe_files, force=False, first_scan=(), progress=None):
     """Size, modification time and (if wanted) ffprobe data per file.
     ffprobe only runs for new or changed files and files whose last probe failed (all files
     with force); the rest comes from the database. "added" is when a file was first seen: kept from the database,
     the scan time for a new file, or its modification date on the first scan of its
     share (prefix in first_scan), when "now" would say nothing."""
+    progress = progress or _NoProgress()
     cached = load_files()
     now = time.time()
     infos, todo = {}, []
-    for key, _, _, full in entries:
+    for n, (key, _, _, full) in enumerate(entries, 1):
+        progress.update(checked=n)
         try:
             st = full.stat()
         except OSError:
@@ -1619,11 +1690,13 @@ def inventory(entries, probe_files, force=False, first_scan=()):
 
     if todo:
         print(f"ffprobe: {len(todo)} new, changed or previously failed file(s) …", file=sys.stderr)
+        progress.update(force=True, phase="probing", to_probe=len(todo), probed=0, probe_started=time.time())
         with ThreadPoolExecutor(PROBE_WORKERS) as pool:
             for start in range(0, len(todo), CHECKPOINT_EVERY):
                 chunk = todo[start:start + CHECKPOINT_EVERY]
-                for (key, _), data in zip(chunk, pool.map(probe, [f for _, f in chunk])):
+                for n, ((key, _), data) in enumerate(zip(chunk, pool.map(probe, [f for _, f in chunk])), start + 1):
                     infos[key].update(data)
+                    progress.update(probed=n)
                 save_checkpoint([infos[k] for k, _ in chunk])
                 print(f"ffprobe: {start + len(chunk)}/{len(todo)}", file=sys.stderr)
     return infos
@@ -1636,7 +1709,11 @@ def scan(state, probe_files=True, only=None, force=False, path=None):
     if path:
         only = [path.split("/", 1)[0]]
     with scan_lock():
-        return _scan(state, probe_files, only, force, path)
+        progress = _NoProgress() if path else ScanProgress(only or list(ROOT_CANDIDATES))
+        try:
+            return _scan(state, probe_files, only, force, path, progress)
+        finally:
+            progress.close()
 
 
 def share_scans():
@@ -1646,7 +1723,7 @@ def share_scans():
             "SELECT key, value FROM meta WHERE key LIKE 'share_scan:%'")}
 
 
-def _scan(state, probe_files, only=None, force=False, path=None):
+def _scan(state, probe_files, only=None, force=False, path=None, progress=None):
     enc_dir = first_existing(ENCODED_CANDIDATES)
     done_stems = encoded_stems(enc_dir)
     in_queue = pending_keys()                   # not the finished entries of the current run: they leave the queue
@@ -1655,10 +1732,13 @@ def _scan(state, probe_files, only=None, force=False, path=None):
     skipped = state["skipped"]
     known = set(state["known"])
 
-    entries = list(walk_library(only, path))
+    progress = progress or _NoProgress()
+    entries = list(progress.listed(walk_library(only, path)))
+    progress.update(force=True, found=len(entries), expected=len(entries))
     scanned_before = share_scans()
     infos = inventory(entries, probe_files, force,
-                      first_scan={p for p in ROOT_CANDIDATES if p not in scanned_before})
+                      first_scan={p for p in ROOT_CANDIDATES if p not in scanned_before}, progress=progress)
+    progress.update(force=True, phase="saving")
 
     offer, waiting, queued, bad, hid_skip, hid_base = [], [], [], [], [], []
     n_total = n_encoded = 0

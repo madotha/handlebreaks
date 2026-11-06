@@ -174,11 +174,11 @@
     The list shows 100 entries at a time; progress and counts update every few seconds, the list whenever the next file starts.</p>
 </section>
 
-<section class="panel">
+<section class="panel" id="scan">
   <h2>Scan</h2>
   <p>Last scan: {{ last_scan|localtime }}</p>
   <p class="muted">Automatic rescan: {% if auto_interval %}every {{ auto_interval }} min, next {{ 'now' if auto_next <= now() else 'at ' ~ auto_next|localtime }}{% else %}off{% endif %} · <a href="{{ url_for('settings', section='scans') }}">change</a></p>
-  <p data-scan-running {% if not scan_state.running %}hidden{% endif %}><span data-scan-label>{{ scan_state.label }}</span>: running since <span data-scan-started>{{ scan_state.started|localtime }}</span> …</p>
+  {% include "_scan_progress.html" %}
   {% if scan_state.summary %}<p class="flash ok">Finished ({{ scan_state.finished|localtime }}): {{ scan_state.summary }}</p>{% endif %}
   {% if scan_state.error %}<p class="flash error">{{ scan_state.error }}</p>{% endif %}
 </section>

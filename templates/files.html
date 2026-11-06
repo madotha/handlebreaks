@@ -13,6 +13,7 @@
     <button {% if scan_state.running %}disabled{% endif %}>Scan now</button>
   </form>
 </div>
+{% with compact=True %}{% include "_scan_progress.html" %}{% endwith %}
 
 {% if not total %}
   <p class="empty">No data yet. Start a scan to read the library.</p>

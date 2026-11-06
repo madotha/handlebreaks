@@ -7,6 +7,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- Scan progress: a scan of whole shares now shows how far it is, in the Status page's Scan panel, at the top of the Files page and in the header's "Scanning" pill: the phase (listing the files, reading them with ffprobe, saving), a percentage with a progress bar, the file counts and, while files are read, the time left. Listing compares against the number of files the last scan of those shares found. On phones a ring around the Files tab's icon fills up while a scan runs. Scans started from the command line show up too. When the scan ends, the Files page offers a reload, the Status page shows the result.
+
 ## [4.2.0] - 2026-11-06
 
 ### Added

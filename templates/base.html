@@ -29,7 +29,8 @@
       {% endfor %}
     </nav>
     <div class="top-end">
-      {% if scan_state.running %}<span class="pill busy" title="{{ scan_state.label }}">Scanning<span class="visually-hidden"> since</span> {{ scan_state.started|localtime }}</span>{% endif %}
+      {%- set sv = scan_view() %}
+      <a class="pill busy" href="{{ url_for('status') }}#scan" data-scan-pill {% if not sv %}hidden{% endif %} data-tip="{{ sv.label ~ ': ' ~ sv.phase if sv else 'Scan' }}">Scanning<span data-scan-pill-pct>{% if sv and sv.pct is not none %} {{ sv.pct }} %{% endif %}</span></a>
       <a class="account-link" href="{{ url_for('settings', section='security') }}" aria-label="Account ({{ account_user }})" data-tip="Signed in as {{ account_user }}">{{ icon('user') }}</a>
       <button type="button" class="theme-toggle" data-theme-toggle aria-label="Color theme">
         <span data-theme-icon="auto">{{ icon('auto') }}</span><span data-theme-icon="light" hidden>{{ icon('sun') }}</span><span data-theme-icon="dark" hidden>{{ icon('moon') }}</span>

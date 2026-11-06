@@ -31,7 +31,7 @@ Handlebreaks converts movies and TV episodes in a Plex library from H.264 (and o
 - **Every HandBrake setting:** presets per share, edited in the web UI with every setting of the newest HandBrake app, or imported from it.
 - **Login:** every page needs a user name and password (optionally with two-factor codes from an authenticator app), or single sign-on with your OpenID Connect provider (Pocket ID, Authelia, Authentik, Keycloak …); a one-time setup code from the log creates the first account, so nobody who merely reaches the page can claim it.
 - **API for dashboards and scripts:** scoped, read-only tokens for Homepage and other tools; nothing is reachable without a token ([API](https://github.com/madotha/handlebreaks/wiki/API)).
-- **Live status:** queue with drag-and-drop order, progress, history, statistics and notifications when encodes, replaces and scans finish.
+- **Live status:** queue with drag-and-drop order, encode and scan progress, history, statistics and notifications when encodes, replaces and scans finish.
 - **On your phone:** a layout made for phones, and it installs as an app on the home screen.
 - **Looks the way you like:** light or dark, six accent colors, text size, a compact layout and more contrast.
 - **Built for a NAS:** scans resume after an interruption, a share that goes offline pauses the work instead of failing it, and automatic rescans find new files.
@@ -90,7 +90,7 @@ open http://127.0.0.1:7979                         # Linux: xdg-open, or just op
 
 1. **Create the account.** The first visit asks for a setup code: `docker compose logs encoding | grep "setup code"` shows it. Then choose a user name and password.
 2. **Settings → Shares & scans**: replace the two example shares with your folders. A library folder `/Volumes/Media/Movies` is `/media/Movies` inside the container. Each folder needs a green ✓.
-3. **Scan now.** The Status page shows that it's running.
+3. **Scan now.** The Status page shows how far it is.
 4. **Files**: tick files or whole folders and click **Queue for encoding**. Progress is on the **Status** page.
 5. Check the finished files in the output folder, then put them into the library with **Replace…** (see below) or move them yourself.
 

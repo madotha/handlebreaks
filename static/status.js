@@ -274,12 +274,7 @@
       });
       const removeAll = $("[data-remove-all]");
       if (removeAll) removeAll.disabled = !s.counts.waiting;
-      const scanBox = $("[data-scan-running]");
-      scanBox.hidden = !s.scan.running;
-      if (s.scan.running) {
-        setText("[data-scan-label]", s.scan.label || "Scan");
-        setText("[data-scan-started]", s.scan.started ? window.formatLocalTime(s.scan.started) : "");
-      }
+      window.renderScanProgress(s.scan, !!s.scan, s.scan_result);
       const key = cur ? cur.key : "";
       const count = s.counts[view] || 0;
       const changed = viewCount !== null && count !== viewCount;
