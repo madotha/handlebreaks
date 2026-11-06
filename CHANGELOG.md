@@ -7,6 +7,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+- Info texts: the web UI shows far less explanation text at once (about half as much on the pages, a fifth in the settings). Explanations moved into ⓘ buttons next to page titles, section headings and settings fields, which open a small panel (a sheet from the bottom on phones) with a link to the matching wiki page. What stays visible is one short line, plus warnings and state.
+  - Status: the long help under each tab's list is now the ⓘ next to the tabs (on phones next to More); the Encoding and Scan panels have one too.
+  - Settings: each field shows one short line; the ⓘ next to its label holds the details, the config.env key and the default. **Reset to default** only shows when a value differs from its default.
+  - Files, Presets, the preset editor, the Replace dialogs and the API and Login & security pages: shorter texts, details in ⓘ buttons.
+  - Sign-in page: "Forgot the password?" and "No app and no recovery code?" fold out and show only the command for this install (Docker or native).
+- Phones: long hints are no longer cut off behind a "More" button; none are that long any more.
+
 ## [4.4.1] - 2026-11-06
 
 ### Changed

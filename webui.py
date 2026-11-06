@@ -116,7 +116,9 @@ def S(key, label, kind, hint="", default=None, **extra):
     accent. default: shown on the form and used when config.env lacks the key (None = no
     default to show). extra: docker=True (only means something in Docker), env=True (an
     environment variable of the same name wins), scope="user" (a personal preference: per
-    user once there is a login, for everyone until then), placeholder."""
+    user once there is a login, for everyone until then), placeholder, info (the details in the
+    field's ⓘ; hint is one short line under the field, often empty), wiki (page#anchor for "More
+    in the wiki")."""
     return {"key": key, "label": label, "kind": kind, "hint": hint, "default": default, "scope": "instance", **extra}
 
 
@@ -126,165 +128,173 @@ def S(key, label, kind, hint="", default=None, **extra):
 SETTINGS_PAGES = {
     "library": ("Library", "Shares & scans", [
         ("Scanning", [
-            S("SCAN_INTERVAL", "Automatic rescan interval (minutes)", "number",
-              "Rescans all shares when the last scan is this many minutes old; only new or changed "
-              "files are read with ffprobe. 0 = off. Runs while the web UI runs (always in Docker).", "0"),
-            S("FFPROBE_WORKERS", "Parallel ffprobe calls", "number",
-              f"How many files are read at the same time during scans. Empty or 0 = number of CPUs "
-              f"({os.cpu_count()} here). Lower it if the NAS gets slow during scans.", "0"),
+            S("SCAN_INTERVAL", "Automatic rescan interval (minutes)", "number", "0 = off.", "0",
+              info="Rescans all shares once the last scan is this many minutes old. Only new or changed files are "
+                   "read with ffprobe. Runs while the web UI runs (always in Docker).", wiki="Scanning#automatic-rescan"),
+            S("FFPROBE_WORKERS", "Parallel ffprobe calls", "number", f"0 = number of CPUs ({os.cpu_count()} here).", "0",
+              info="How many files a scan reads at the same time. Lower it if the NAS gets slow during scans.",
+              wiki="Scanning#speed-and-resuming"),
         ]),
     ]),
     "encoding": ("Encoding", "Encoding", [
         ("Default preset", [
-            S("DEFAULT_PRESET", "Default preset", "preset",
-              "Used for every share without its own preset; a preset chosen when queueing wins over both."),
+            S("DEFAULT_PRESET", "Default preset", "preset", "For every share without its own preset.",
+              info="A preset chosen when queueing wins over the share's preset, and that one over this default.",
+              wiki="Presets"),
         ]),
         ("Output", [
-            S("ENCODED_DIR", "Output folder", "paths",
-              "Finished files land here and wait for your review. Kept originals go to its .replaced folder."),
+            S("ENCODED_DIR", "Output folder", "paths", "Finished encodes wait here for your review.",
+              info="Kept originals go to its .replaced folder."),
         ]),
         ("Worker", [
-            S("WORKER_ENABLED", "Encode inside the Docker container", "bool",
-              "Turn off when the Mac encodes natively with launchd and encode.sh, "
-              "and the container only runs the web UI and scans.", "1", docker=True, env=True),
+            S("WORKER_ENABLED", "Encode inside the Docker container", "bool", "", "1", docker=True, env=True,
+              info="Turn it off when the Mac encodes natively (launchd and encode.sh) and the container only runs "
+                   "the web UI and scans.", wiki="Setup-C-Docker-and-Native-Encoding"),
         ]),
     ]),
     "replace": ("Review & replace", "Replace", [
         ("File names", [
-            S("RENAME_CODEC_TAGS", "Codec tags in file names", "text",
-              "\"Replace…\" suggests the original name with its codec tag (h264, x264, H.264, AVC, XviD …) "
-              "replaced by the encode's codec. Format: codec=tag pairs, e.g. \"hevc=x265 av1=AV1\". "
-              "Empty = hevc=x265 av1=AV1 vvc=VVC h264=x264.", "", placeholder="hevc=x265 av1=AV1 vvc=VVC h264=x264"),
-            S("RENAME_GROUP", "Your release group", "text",
-              "Optional. Replaces the release group after the codec tag, e.g. \"donm\": "
-              "\"…h264-NTB.mkv\" becomes \"…x265-donm.mkv\". Empty = keep the original group.", ""),
-            S("RENAME_QUALITY", "Add the quality after the release group (e.g. x265-donm.rf20 or x265-donm.avg2000)", "bool",
-              "From the preset the file was encoded with: rf<RF value> for constant quality, avg<kbit/s> for average bitrate.", "1"),
+            S("RENAME_CODEC_TAGS", "Codec tags in file names", "text", "codec=tag pairs, e.g. hevc=x265 av1=AV1.", "",
+              placeholder="hevc=x265 av1=AV1 vvc=VVC h264=x264",
+              info="Replace… suggests the original name with its codec tag (h264, x264, H.264, AVC, XviD …) replaced "
+                   "by the encode's codec. Empty = hevc=x265 av1=AV1 vvc=VVC h264=x264.",
+              wiki="Replacing-Originals"),
+            S("RENAME_GROUP", "Your release group", "text", "Optional. Empty = keep the original group.", "",
+              info="Replaces the release group after the codec tag. With “donm”, “…h264-NTB.mkv” becomes "
+                   "“…x265-donm.mkv”."),
+            S("RENAME_QUALITY", "Add the quality after the release group", "bool", "E.g. x265-donm.rf20 or x265-donm.avg2000.", "1",
+              info="Taken from the preset the file was encoded with: rf<RF value> for constant quality, "
+                   "avg<kbit/s> for an average bitrate."),
         ]),
         ("Originals", [
             S("KEEP_ORIGINALS", "Keep originals when replacing", "bool",
-              "Default of the \"Keep the original\" option in the Replace dialogs (each replace can still change it). "
-              "On: the original goes to the output folder's .replaced folder. Off: it is deleted right after the move.", "1"),
-            S("KEEP_ORIGINALS_DAYS", "Delete kept originals after (days)", "number",
-              "Kept originals (Status → Kept originals) are deleted permanently once they were kept that long, "
-              "checked hourly while the web UI runs. 0 = never.", "0"),
+              "The default of “Keep the original” in the Replace dialogs.", "1",
+              info="On: the original goes to the .replaced folder in the output folder. Off: it's deleted right "
+                   "after the move. Each replace can still change it.", wiki="Replacing-Originals"),
+            S("KEEP_ORIGINALS_DAYS", "Delete kept originals after (days)", "number", "0 = never.", "0",
+              info="Kept originals (Status → Kept originals) are deleted permanently once they were kept that long. "
+                   "Checked hourly while the web UI runs. Originals whose replacement is missing are never deleted."),
         ]),
     ]),
     "plex": ("Integrations", "Plex", [
         ("Connection", [
-            S("PLEX_URL", "Plex server URL", "text",
-              "E.g. http://127.0.0.1:32400; several addresses separated by spaces are tried in order. Used after "
-              "\"Replace…\": Plex scans the file's folder (once for all replaces in it), analyzes files replaced "
-              "under the same name, and the web UI checks that Plex lists the new file. Empty = off.", ""),
-            S("PLEX_TOKEN", "Plex token", "secret",
-              "Your X-Plex-Token. It is stored in config.env and never shown again. When the URL points to a "
-              "new server, enter the token again: it is only sent to servers it was entered for."),
-            S("PLEX_PATH_MAP", "Path mapping to Plex", "text",
-              "Only if Plex sees your library under other paths than the worker, e.g. Plex on the NAS: "
-              "\"/Users/me/nfs/PlexMedia=/volume1/PlexMedia\" (worker path=Plex path; several separated by ;). "
-              "Empty = the same paths.", ""),
+            S("PLEX_URL", "Plex server URL", "text", "E.g. http://127.0.0.1:32400. Empty = off.", "",
+              info="After Replace…, Plex scans the file's folder (once for all replaces in it) and analyzes files "
+                   "replaced under the same name; the web UI then checks that Plex lists the new file. Several "
+                   "addresses separated by spaces are tried in order.", wiki="Replacing-Originals#plex"),
+            S("PLEX_TOKEN", "Plex token", "secret", "Stored in config.env and never shown again.",
+              info="Your X-Plex-Token. It's only sent to the server it was entered for: when the URL points to a "
+                   "new server, enter it again.", wiki="Replacing-Originals#plex"),
+            S("PLEX_PATH_MAP", "Path mapping to Plex", "text", "Only if Plex sees the library under other paths.", "",
+              info="Worker path=Plex path, several separated by ;. E.g. with Plex on the NAS: "
+                   "/Users/me/nfs/PlexMedia=/volume1/PlexMedia. Empty = the same paths."),
         ]),
     ]),
     "obsidian": ("Integrations", "Obsidian", [
         ("Notes", [
-            S("NOTE_DIR", "Notes folder", "paths",
-              "For \"Encoding To-Do.md\" and \"Encoding Status.md\", e.g. a folder in your vault. Empty = no notes."),
+            S("NOTE_DIR", "Notes folder", "paths", "Empty = no notes.",
+              info="Where “Encoding To-Do.md” and “Encoding Status.md” are written, e.g. a folder in your vault."),
             S("STATUS_NOTE_ENABLED", "Update the status note every minute while encoding", "bool", "", "0"),
         ]),
     ]),
     "appearance": ("Interface", "Appearance", [
         ("Theme", [
-            S("UI_THEME", "Theme", "choice", "The header's theme button changes it for one browser only.", "auto",
-              choices=[("auto", "Follow the system"), ("light", "Light"), ("dark", "Dark")], scope="user"),
-            S("UI_ACCENT", "Accent color", "accent",
-              "The color of buttons, links and selections. Status and codec colors stay the same.", "amber",
-              choices=list(ACCENTS.items()), scope="user"),
+            S("UI_THEME", "Theme", "choice", "", "auto",
+              choices=[("auto", "Follow the system"), ("light", "Light"), ("dark", "Dark")], scope="user",
+              info="The theme button in the header changes it for one browser only."),
+            S("UI_ACCENT", "Accent color", "accent", "", "amber", choices=list(ACCENTS.items()), scope="user",
+              info="The color of buttons, links and selections. Status and codec colors stay the same."),
         ]),
         ("Text and layout", [
-            S("UI_TEXT_SIZE", "Text size", "choice", "Scales text, buttons and tables together.", "normal",
-              choices=[("small", "Small"), ("normal", "Normal"), ("large", "Large")], scope="user"),
-            S("UI_DENSITY", "Density", "choice", "Compact fits more rows of the Files and Status lists on the screen.",
-              "comfortable", choices=[("comfortable", "Comfortable"), ("compact", "Compact")], scope="user"),
-            S("DATE_FORMAT", "Date format", "choice",
-              "How dates are shown everywhere in the web UI, always followed by the time (24 h).", DEFAULT_DATE_FORMAT,
-              choices=[(f, f) for f in DATE_FORMATS], scope="user"),
+            S("UI_TEXT_SIZE", "Text size", "choice", "", "normal",
+              choices=[("small", "Small"), ("normal", "Normal"), ("large", "Large")], scope="user",
+              info="Scales text, buttons and tables together."),
+            S("UI_DENSITY", "Density", "choice", "", "comfortable",
+              choices=[("comfortable", "Comfortable"), ("compact", "Compact")], scope="user",
+              info="Compact fits more rows of the Files and Status lists on the screen. Phones keep their larger rows."),
+            S("DATE_FORMAT", "Date format", "choice", "", DEFAULT_DATE_FORMAT,
+              choices=[(f, f) for f in DATE_FORMATS], scope="user",
+              info="How dates are shown everywhere in the web UI, always followed by the time (24 h)."),
         ]),
         ("Accessibility", [
-            S("UI_CONTRAST", "Contrast", "choice", "More contrast makes secondary text and borders darker (lighter in dark mode).",
-              "normal", choices=[("normal", "Normal"), ("more", "More contrast")], scope="user"),
-            S("UI_MOTION", "Animations", "choice", "Reduced turns off sliding bars, popups and spinners.",
-              "system", choices=[("system", "Follow the system"), ("reduce", "Reduced")], scope="user"),
+            S("UI_CONTRAST", "Contrast", "choice", "", "normal",
+              choices=[("normal", "Normal"), ("more", "More contrast")], scope="user",
+              info="More contrast makes secondary text and borders darker (lighter in dark mode)."),
+            S("UI_MOTION", "Animations", "choice", "", "system",
+              choices=[("system", "Follow the system"), ("reduce", "Reduced")], scope="user",
+              info="Reduced turns off sliding bars, popups and spinners."),
         ]),
     ]),
     "notifications": ("Interface", "Notifications", [
         ("Popups", [
-            S("NOTIFY_SECONDS", "Hide notifications after (seconds)", "number",
-              "Notifications pop up in the corner of every page of the web UI that is open. "
-              "Hovering one keeps it open. 0 = keep them until you close them.", "8", scope="user"),
-            S("NOTIFY_ERRORS_STAY", "Keep errors until closed", "bool",
-              "Failed encodes, replaces and scans stay until you close them, whatever the time above.", "1", scope="user"),
+            S("NOTIFY_SECONDS", "Hide notifications after (seconds)", "number", "0 = keep them until closed.", "8",
+              scope="user", info="Notifications pop up in a corner of every open page of the web UI. Hovering one "
+                                 "keeps it open.", wiki="Web-UI#notifications"),
+            S("NOTIFY_ERRORS_STAY", "Keep errors until closed", "bool", "", "1", scope="user",
+              info="Failed encodes, replaces and scans stay until you close them, whatever the time above."),
         ]),
         ("Events", [
-            S("NOTIFY_EVENTS", "Notify about", "event_groups",
-              "Your own actions (queueing, removing, deleting) aren't notified: the page confirms them right away.",
-              " ".join(EVENT_GROUPS), scope="user"),
+            S("NOTIFY_EVENTS", "Notify about", "event_groups", "", " ".join(EVENT_GROUPS), scope="user",
+              info="Your own actions (queueing, removing, deleting) aren't notified: the page confirms them right away.",
+              wiki="Web-UI#notifications"),
         ]),
     ]),
     "pages": ("Interface", "Pages", [
         ("Status page", [
-            S("HISTORY_KEEP_DAYS", "Keep history entries visible (days)", "number",
-              "The Status page's History hides results and replaces older than this. Nothing is deleted. 0 = always show.",
-              "30", scope="user"),
+            S("HISTORY_KEEP_DAYS", "Keep history entries visible (days)", "number", "0 = always show.", "30",
+              scope="user", info="The Status page's History hides results and replaces older than this. "
+                                 "Nothing is deleted."),
         ]),
     ]),
     "security": ("System", "Login & security", [
         ("Password", [
             S("AUTH_PASSWORD_LOGIN", "Sign in with user name and password", "bool",
-              "Can only be turned off once single sign-on has worked, so you can't lock yourself out; if single "
-              "sign-on stops being set up, the password login comes back by itself. Turning it off signs out every "
-              "device signed in with the password, this one too if it was. The environment variable "
-              "AUTH_PASSWORD_LOGIN (1 = on, 0 = off) wins over this.", "1", env=True),
+              "Can only be turned off once single sign-on has worked.", "1", env=True,
+              info="So you can't lock yourself out: if single sign-on stops being set up, the password login comes "
+                   "back by itself. Turning it off signs out every device signed in with the password, this one "
+                   "too if it was. The environment variable AUTH_PASSWORD_LOGIN (1 = on, 0 = off) wins over this.",
+              wiki="Web-UI#signing-in"),
         ]),
         ("Single sign-on (OIDC)", [
             S("AUTH_OIDC_ENABLED", "Sign in with an OpenID Connect provider", "bool",
-              "E.g. Pocket ID, Authelia, Authentik or Keycloak. Register Handlebreaks there as a client "
-              "with the redirect URL shown below.", "0", env=True),
-            S("AUTH_OIDC_NAME", "Provider name", "text",
-              "Shown on the sign-in button: \"Sign in with …\".", "", env=True, placeholder="Pocket ID"),
-            S("AUTH_OIDC_ISSUER", "Issuer URL", "text",
-              "The provider's address, as its /.well-known/openid-configuration names it, e.g. "
-              "https://id.example.com. Must use https.", "", env=True, placeholder="https://id.example.com"),
+              "E.g. Pocket ID, Authelia, Authentik or Keycloak.", "0", env=True,
+              info="Register Handlebreaks there as a client, with the redirect URL shown below.",
+              wiki="Web-UI#single-sign-on-oidc"),
+            S("AUTH_OIDC_NAME", "Provider name", "text", "On the sign-in button: “Sign in with …”.", "", env=True,
+              placeholder="Pocket ID"),
+            S("AUTH_OIDC_ISSUER", "Issuer URL", "text", "Must use https.", "", env=True,
+              placeholder="https://id.example.com",
+              info="The provider's address, as its /.well-known/openid-configuration names it, e.g. https://id.example.com."),
             S("AUTH_OIDC_CLIENT_ID", "Client ID", "text", "", "", env=True),
-            S("AUTH_OIDC_CLIENT_SECRET", "Client secret", "secret",
-              "Never shown again or sent to the browser; only sent to the provider. A changed issuer or client ID "
-              "needs it again. Leave it empty for a public client (PKCE only).", env=True),
-            S("AUTH_OIDC_SCOPES", "Scopes", "text",
-              "Add groups (Pocket ID, Authelia) if you allow groups below.", "openid profile email", env=True),
-            S("AUTH_OIDC_ALLOWED_USERS", "Allowed users", "text",
-              "User names, e-mail addresses or subject IDs, separated by spaces; * = everyone the provider lets "
-              "sign in to this client. Either this or the groups must be set.", "", env=True),
-            S("AUTH_OIDC_ALLOWED_GROUPS", "Allowed groups", "text",
-              "Members of these groups (the groups claim) may sign in, separated by spaces.", "", env=True),
-            S("AUTH_OIDC_REDIRECT_URL", "Redirect URL", "text",
-              "Only behind a reverse proxy that changes the address: the full address of /login/oidc/callback as "
-              "the browser sees it. Empty = taken from the page's address.", "", env=True,
-              placeholder="https://handlebreaks.example.com/login/oidc/callback"),
+            S("AUTH_OIDC_CLIENT_SECRET", "Client secret", "secret", "Empty for a public client (PKCE only).", env=True,
+              info="Never shown again or sent to the browser, only to the provider. A changed issuer or client ID "
+                   "needs it again."),
+            S("AUTH_OIDC_SCOPES", "Scopes", "text", "Add groups to allow groups below.", "openid profile email", env=True,
+              info="Pocket ID and Authelia send the groups claim only with the groups scope."),
+            S("AUTH_OIDC_ALLOWED_USERS", "Allowed users", "text", "Separated by spaces; * = everyone.", "", env=True,
+              info="User names, e-mail addresses or subject IDs. * lets in everyone the provider lets sign in to this "
+                   "client. Either this or the allowed groups must be set."),
+            S("AUTH_OIDC_ALLOWED_GROUPS", "Allowed groups", "text", "Separated by spaces.", "", env=True,
+              info="Members of these groups (the groups claim) may sign in."),
+            S("AUTH_OIDC_REDIRECT_URL", "Redirect URL", "text", "Only behind a reverse proxy that changes the address.",
+              "", env=True, placeholder="https://handlebreaks.example.com/login/oidc/callback",
+              info="The full address of /login/oidc/callback as the browser sees it. Empty = taken from the page's address."),
         ]),
         ("Sessions", [
-            S("AUTH_SESSION_DAYS", "Stay signed in for (days)", "number",
-              "How long \"Keep me signed in\" lasts on a device without signing in again. "
-              "Without it, the browser forgets the login when it closes. 0 = until the browser closes, always.", "30"),
+            S("AUTH_SESSION_DAYS", "Stay signed in for (days)", "number", "0 = until the browser closes.", "30",
+              info="How long “Keep me signed in” lasts on a device without signing in again. Without it, the browser "
+                   "forgets the login when it closes."),
         ]),
     ]),
     "api": ("System", "API", [
         ("API", [
-            S("API_ENABLED", "Answer API requests", "bool",
-              "Off: every /api/ address answers 404, tokens are kept. On: only requests with a valid token get anything.",
-              "1", env=True),
-            S("API_TRUSTED_PROXIES", "Trusted reverse proxies", "text",
-              "Addresses or networks of reverse proxies whose X-Forwarded-For header names the real client (for the "
-              "allowed networks of a token). Empty = the connecting address counts.", "", env=True,
-              placeholder="172.18.0.0/16"),
+            S("API_ENABLED", "Answer API requests", "bool", "", "1", env=True,
+              info="Off: every /api/ address answers 404, and tokens are kept. On: only requests with a valid token "
+                   "get anything.", wiki="API"),
+            S("API_TRUSTED_PROXIES", "Trusted reverse proxies", "text", "Empty = the connecting address counts.", "",
+              env=True, placeholder="172.18.0.0/16",
+              info="Addresses or networks of reverse proxies whose X-Forwarded-For header names the real client. "
+                   "Used for the allowed addresses of a token."),
         ]),
     ]),
     "about": ("System", "About", []),
@@ -1049,7 +1059,17 @@ def csrf_token():
     return session["csrf"]
 
 
-app.jinja_env.globals.update(csrf_token=csrf_token, scan_state=SCAN, scan_view=scan_view, now=datetime.now,
+def uid(prefix="id"):
+    """A page-unique element id: a counter per request plus a random part per request, so
+    parts of the page loaded later (folder levels, list pages) don't repeat an id."""
+    n = g.get("_uid", 0) + 1
+    g._uid = n
+    if "_uid_tag" not in g:
+        g._uid_tag = secrets.token_hex(3)
+    return f"{prefix}-{g._uid_tag}-{n}"
+
+
+app.jinja_env.globals.update(csrf_token=csrf_token, scan_state=SCAN, scan_view=scan_view, now=datetime.now, uid=uid,
                              app_version=enc.__version__)
 
 

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
+{% from "_info.html" import info as info_pop %}
 {% block title %}{{ p.PresetName }}{% endblock %}
 
 {# One editor field. name: the input name (audio tracks use a<n>-<key>) #}
@@ -73,11 +74,13 @@
     {% else %}<span class="badge badge-ok">fully supported</span>{% endif %}
   </summary>
   {% if compat.notes %}<ul class="compat-notes">{% for n in compat.notes %}<li>{{ n }}</li>{% endfor %}</ul>{% endif %}
-  {% if compat.missing %}<p class="hint">This HandBrakeCLI also knows settings the editor has no field for: <code>{{ compat.missing|join('</code>, <code>')|safe }}</code>. Add them in the JSON below if you need them.</p>{% endif %}
-  <p class="hint">The choices below come from this HandBrakeCLI{% if remote %} (the worker publishes them when it starts; saving checks against them, the full check happens when encoding){% endif %}.
-    Options tied to a platform or hardware are marked (e.g. "macOS only", "needs an NVIDIA GPU"); a worker on another platform can't encode with them.
-    Settings marked "ignored by the worker" are unknown to this HandBrakeCLI (e.g. from a newer HandBrake app) and have no effect.
-    Options HandBrakeCLI only takes per job (time range, title, chapter range, …) aren't part of presets.</p>
+  {% if compat.missing %}<p class="hint">Settings without an editor field (add them in the JSON below): <code>{{ compat.missing|join('</code>, <code>')|safe }}</code></p>{% endif %}
+  <div class="hint head-line">The choices below come from {{ "the worker's" if remote else 'this' }} HandBrakeCLI.{% call info_pop("Choices and markers", "Presets") %}
+    {% if remote %}<p>The worker publishes its HandBrakeCLI's choices when it starts. Saving checks against them; the full check happens when encoding.</p>{% endif %}
+    <ul><li>Options tied to a platform or hardware are marked, e.g. “macOS only” or “needs an NVIDIA GPU”. A worker on another platform can't encode with them.</li>
+      <li>“Ignored by the worker” marks settings this HandBrakeCLI doesn't know (e.g. from a newer HandBrake app). They have no effect.</li>
+      <li>Options HandBrakeCLI only takes per job (time range, title, chapters …) aren't part of presets.</li></ul>
+  {% endcall %}</div>
 </details>
 
 <form method="post" class="panel preset-editor" data-preset-editor>
@@ -90,7 +93,7 @@
   {% for tab, sections in tabs %}
     <section class="tab-panel" data-tab-panel="{{ tab }}">
       <h2>{{ icon(tab_icons.get(tab, 'dots')) }}{{ tab }}</h2>
-      {% if tab == 'More' %}<p class="hint">Settings of this preset the editor doesn't have a field for (e.g. from a newer HandBrake), by their type.</p>{% endif %}
+      {% if tab == 'More' %}<p class="hint">Settings of this preset without an editor field, e.g. from a newer HandBrake.</p>{% endif %}
       {% for group, fields in sections %}
         <div class="field-section" data-section>
           {% if group %}<h3 class="field-group">{{ group }}</h3>{% endif %}
@@ -99,7 +102,7 @@
       {% endfor %}
       {% if tab == 'Audio' %}
         <h3 class="field-group">Tracks</h3>
-        <p class="hint">One entry per output track, in order. The first matching source track uses track 1, and so on.</p>
+        <p class="hint">One entry per output track. The first matching source track uses track 1, and so on.</p>
         <input type="hidden" name="audio-tracks" value="{{ tracks|length }}" data-track-count>
         <div data-tracks>{% for t in tracks %}{{ track(t, loop.index0, loop.index0) }}{% endfor %}</div>
         <button type="button" class="secondary" data-track-add>Add track</button>
@@ -111,7 +114,7 @@
 
   <div class="editor-save">
     <button>Save</button>
-    <span class="hint">{% if caps.available %}HandBrakeCLI checks the preset before it's saved.{% endif %} Hidden fields (e.g. custom filter parameters while a preset is chosen) keep their values.</span>
+    <span class="hint">{% if caps.available %}HandBrakeCLI checks the preset before it's saved. {% endif %}Hidden fields keep their values.</span>
   </div>
 </form>
 
@@ -120,7 +123,7 @@
   <form method="post">
     <input type="hidden" name="csrf" value="{{ csrf_token() }}">
     <input type="hidden" name="mode" value="json">
-    <p class="hint">Every HandBrake setting, in the format of the HandBrake app's preset export. Saving replaces the preset.</p>
+    <p class="hint">Every setting, as in the HandBrake app's export. Saving replaces the preset.</p>
     <textarea class="json" name="json" spellcheck="false" aria-label="Preset JSON">{{ json_text }}</textarea>
     <button>Save JSON</button>
   </form>

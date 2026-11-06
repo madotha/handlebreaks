@@ -1,10 +1,14 @@
 {# Settings → Pages, Files page part: default filters and the date added filters (files_settings_context) #}
 {% from "_icons.html" import icon %}
+{% from "_info.html" import info %}
 {% set fs = files_settings %}
 {% if errors.get('rows') %}<p class="flash error">{{ errors['rows'] }}</p>{% endif %}
 
-<h3 class="field-group">Default filters</h3>
-<p class="hint">Applied when the Files page opens. Its “Reset to default” returns to them, “Clear all” shows every file. Nothing ticked = all files. Saved as <code>FILES_DEFAULT_FILTERS</code>.</p>
+<div class="head-line"><h3 class="field-group">Default filters</h3>{% call info("Default filters") %}
+  <p>Applied when the Files page opens. Its “Reset to default” returns to them; “Clear all” shows every file.</p>
+  <p class="meta"><code>FILES_DEFAULT_FILTERS</code> in config.env</p>
+{% endcall %}</div>
+<p class="hint">Nothing ticked = all files.</p>
 <div class="default-filters">
   <fieldset class="check-list">
     <legend>Codec</legend>
@@ -37,8 +41,12 @@
   </fieldset>
 </div>
 
-<h3 class="field-group">Date added filters</h3>
-<p class="hint">The choices under “Added” on the Files page, in this order; “Custom range…” with two dates is always there as well. A filter shows files first seen newer than the first amount and/or older than the second, e.g. newer than 3 months and older than 1 month. Months and years follow the calendar. An empty label is filled in from the range. Saved as <code>ADDED_FILTERS</code>.</p>
+<div class="head-line"><h3 class="field-group">Date added filters</h3>{% call info("Date added filters") %}
+  <p>A filter shows files first seen newer than the first amount and/or older than the second, e.g. newer than 3 months and older than 1 month. Months and years follow the calendar.</p>
+  <p>“Custom range…” with two dates is always offered as well. An empty label is filled in from the range.</p>
+  <p class="meta"><code>ADDED_FILTERS</code> in config.env</p>
+{% endcall %}</div>
+<p class="hint">The choices under “Added” on the Files page, in this order.</p>
 <div class="range-editor" data-range-editor>
   <div class="range-head" aria-hidden="true"><span>Label</span><span>Newer than</span><span>Older than</span><span></span></div>
   {% macro unit_select(name, value, label) %}

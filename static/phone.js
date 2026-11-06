@@ -2,7 +2,6 @@
 // - The bottom tab bar slides away while scrolling down (like the browser's address bar) and
 //   comes back on scrolling up or at the top or bottom of the page. html.nav-hidden moves the
 //   bar and everything placed above it (--tabbar-off in style.css).
-// - Long hints are cut to two lines with a "More" button.
 // - Installed app (no browser around it): pulling down at the top refreshes the page. A page can
 //   set window.pullRefresh (async) to refresh in place; otherwise it reloads.
 (function () {
@@ -30,30 +29,6 @@
     phone.addEventListener("change", () => set(false));
     addEventListener("pageshow", () => { last = scrollY; set(false); });
   }
-
-  // Long hints
-  const LONG = 160;                             // characters
-  function clamp(scope) {
-    if (!phone.matches) return;
-    scope.querySelectorAll("p.hint:not([data-clamp])").forEach((p) => {
-      p.dataset.clamp = "";
-      if (p.textContent.trim().length < LONG) return;
-      p.classList.add("clamped");
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "link-btn hint-more";
-      b.textContent = "More";
-      b.setAttribute("aria-expanded", "false");
-      b.addEventListener("click", () => {
-        const open = p.classList.toggle("clamped");
-        b.textContent = open ? "More" : "Less";
-        b.setAttribute("aria-expanded", String(!open));
-      });
-      p.after(b);
-    });
-  }
-  clamp(document);
-  window.clampHints = clamp;
 
   // Pull to refresh in the installed app
   const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;

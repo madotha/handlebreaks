@@ -18,9 +18,9 @@
         <option value="" data-share-preset>Share's preset</option>
         {% for pid, name in preset_list %}<option value="{{ pid }}">{{ name }}</option>{% endfor %}
       </select>
-      <p class="hint">The files go to the end of the queue and the worker encodes them with this preset (<a href="{{ url_for('presets_page') }}">presets</a>).</p>
+      <p class="hint">The files go to the end of the queue.</p>
     </div>
-    <p class="small">The encoded file is deleted from the output folder permanently; the original in the library is not touched.</p>
+    <p class="small">The encode is deleted permanently. The original in the library isn't touched.</p>
     <div class="row-actions">
       <button class="danger" data-de-ok>Delete</button>
       <button type="button" class="secondary" data-de-cancel>Cancel</button>

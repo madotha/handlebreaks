@@ -1,0 +1,24 @@
+{% from "_icons.html" import icon %}
+{#- ⓘ buttons that open a popover (static/info.js): next to a page title, a section heading or a
+    settings field. about = what it explains (popover title, button label), wiki = a wiki page
+    (#anchor) for the full story. info() puts button and popover side by side, so use it next to a
+    heading or label, not inside one; inside a <legend>, use info_button() there and info_panel()
+    after it with the same id. -#}
+{% macro info_button(id, about, cls='') -%}
+<button type="button" class="info-btn {{ cls }}" popovertarget="{{ id }}" aria-label="About: {{ about }}" aria-haspopup="dialog" data-info-btn>{{ icon('info') }}</button>
+{%- endmacro %}
+
+{% macro info_panel(id, about, wiki=None) -%}
+<div popover id="{{ id }}" class="info-pop" role="dialog" aria-label="{{ about }}">
+  <div class="info-pop-head"><strong>{{ about }}</strong><button type="button" class="icon-btn" popovertarget="{{ id }}" popovertargetaction="hide" aria-label="Close">{{ icon('close') }}</button></div>
+  <div class="info-pop-body">{{ caller() }}</div>
+  {%- if wiki %}<p class="info-more"><a href="https://github.com/madotha/handlebreaks/wiki/{{ wiki }}" target="_blank" rel="noopener">More in the wiki →</a></p>{% endif %}
+</div>
+{%- endmacro %}
+
+{% macro info(about, wiki=None, cls='') -%}
+{%- set id = uid('info') -%}
+{%- set body = caller() -%}
+{{ info_button(id, about, cls) }}
+{%- call info_panel(id, about, wiki) %}{{ body }}{% endcall %}
+{%- endmacro %}

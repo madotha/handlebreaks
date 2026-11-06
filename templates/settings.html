@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
+{% from "_info.html" import info, info_button, info_panel %}
 {% block title %}{{ 'Settings' if index else title ~ ' · Settings' }}{% endblock %}
 
 {# Form of one share (n = its number, or "new") #}
@@ -12,7 +13,7 @@
         <p class="hint">Shown in the web UI, the notes and the CLI.</p></div>
       <div class="field field-wide"><label for="folder-{{ n }}">Folder</label>
         <input id="folder-{{ n }}" name="folder" class="mono" value="{{ sh.folder if sh else '' }}" required spellcheck="false" autocomplete="off" data-paths>
-        <p class="hint">Read only, never modified. Several paths for the same folder (e.g. on the Mac and in Docker) separated by <code>:</code>; the first that exists is used.</p>
+        <p class="hint">Read only, never modified. Fallback paths (Mac, Docker) separated by <code>:</code>.</p>
         <ul class="checks" data-checks>{% if sh %}{% for p, ok in sh.checks %}<li class="{{ 'ok' if ok else 'missing' }}">{{ '✓' if ok else '✗' }} {{ p }}</li>{% endfor %}{% endif %}</ul></div>
       <div class="field"><label for="preset-{{ n }}">Preset</label>
         <select id="preset-{{ n }}" name="preset">
@@ -36,35 +37,45 @@
   {%- else -%}{{ s.default }}{%- endif -%}
 {%- endmacro %}
 
-{# One setting: label with its config.env key, the control, hint, default, problems #}
+{# The ⓘ popover of a setting: what it does, its config.env key and default #}
+{% macro field_info(s, id) %}
+  {% call info_panel(id, s.label, s.wiki) %}
+    {% if s.info %}<p>{{ s.info }}</p>{% endif %}
+    {% if s.kind == 'paths' %}<p>Several paths for the same folder (e.g. on the Mac and in Docker) are separated by <code>:</code>; the first one that exists is used.</p>{% endif %}
+    <p class="meta"><code>{{ s.key }}</code> in config.env{% if s.default is not none %} · default: {{ default_text(s) }}{% endif %}{% if s.env %} · an environment variable of the same name wins{% endif %}</p>
+  {% endcall %}
+{% endmacro %}
+
+{# One setting: label with its ⓘ (details, config.env key, default), the control, a short hint, problems #}
 {% macro field(s) %}
   {% set key = s.key %}{% set kind = s.kind %}{% set locked = key in env_overrides or key in locks %}{% set value = cfg.get(key, '') %}
+  {% set iid = uid('set') %}
   <div class="field" data-field="{{ key }}" data-kind="{{ kind }}" {% if s.default is not none and not locked %}data-default="{{ s.default }}"{% endif %}{% if locked %} data-locked{% endif %}>
     {% if kind == 'bool' %}
-      <label class="check"><input type="checkbox" name="{{ key }}" value="1" {% if value == '1' %}checked{% endif %} {% if locked %}disabled{% endif %}>
-        <span>{{ s.label }} <code>{{ key }}</code><span class="mod-dot" aria-hidden="true"></span></span></label>
+      <div class="check-line"><label class="check"><input type="checkbox" name="{{ key }}" value="1" {% if value == '1' %}checked{% endif %} {% if locked %}disabled{% endif %}>
+        <span>{{ s.label }}<span class="mod-dot" aria-hidden="true"></span></span></label>{{ info_button(iid, s.label) }}</div>{{ field_info(s, iid) }}
     {% elif kind == 'event_groups' %}
       {% set picked = value.split() %}
       <fieldset class="check-list">
-        <legend>{{ s.label }} <code>{{ key }}</code><span class="mod-dot" aria-hidden="true"></span></legend>
+        <legend>{{ s.label }}<span class="mod-dot" aria-hidden="true"></span>{{ info_button(iid, s.label) }}</legend>{{ field_info(s, iid) }}
         {% for group, glabel in event_groups.items() %}
           <label class="check"><input type="checkbox" name="{{ key }}" value="{{ group }}" {% if group in picked %}checked{% endif %}> {{ glabel }}</label>
         {% endfor %}
       </fieldset>
     {% elif kind == 'accent' %}
       <fieldset class="swatches">
-        <legend>{{ s.label }} <code>{{ key }}</code><span class="mod-dot" aria-hidden="true"></span></legend>
+        <legend>{{ s.label }}<span class="mod-dot" aria-hidden="true"></span>{{ info_button(iid, s.label) }}</legend>{{ field_info(s, iid) }}
         <span class="swatch-row">{% for v, l in s.choices %}
           <label class="swatch swatch-{{ v }}"><input type="radio" name="{{ key }}" value="{{ v }}" {% if (value or s.default) == v %}checked{% endif %}><span class="swatch-dot" aria-hidden="true"></span>{{ l }}</label>
         {% endfor %}</span>
       </fieldset>
     {% elif kind == 'choice' and s.choices|length <= 3 %}
       <fieldset class="segmented">
-        <legend>{{ s.label }} <code>{{ key }}</code><span class="mod-dot" aria-hidden="true"></span></legend>
+        <legend>{{ s.label }}<span class="mod-dot" aria-hidden="true"></span>{{ info_button(iid, s.label) }}</legend>{{ field_info(s, iid) }}
         <span class="seg">{% for v, l in s.choices %}<label><input type="radio" name="{{ key }}" value="{{ v }}" {% if (value or s.default) == v %}checked{% endif %}><span>{{ l }}</span></label>{% endfor %}</span>
       </fieldset>
     {% else %}
-      <label for="{{ key }}">{{ s.label }} <code>{{ key }}</code><span class="mod-dot" aria-hidden="true"></span></label>
+      <div class="head-line"><label for="{{ key }}">{{ s.label }}<span class="mod-dot" aria-hidden="true"></span></label>{{ info_button(iid, s.label) }}</div>{{ field_info(s, iid) }}
       {% if kind == 'preset' %}
         <select id="{{ key }}" name="{{ key }}" {% if locked %}disabled{% endif %}>
           {% for pid, name in preset_list %}<option value="{{ pid }}" {% if value == pid %}selected{% endif %}>{{ name }}</option>{% endfor %}
@@ -90,16 +101,16 @@
                {% if s.placeholder %}placeholder="{{ s.placeholder }}"{% endif %} {% if kind == 'paths' %}class="mono" data-paths{% endif %} {% if locked %}disabled{% endif %}>
       {% endif %}
     {% endif %}
-    {% if s.hint %}<p class="hint">{{ s.hint }}{% if kind == 'paths' %} Separate fallback paths for the same folder with <code>:</code>; the first one that exists is used.{% endif %}</p>{% endif %}
+    {% if s.hint %}<p class="hint">{{ s.hint }}</p>{% endif %}
     {% if s.default is not none and not locked %}
-      <p class="field-meta">Default: {{ default_text(s) }} <button type="button" class="link-btn" data-reset hidden>Reset to default</button></p>
+      <p class="field-meta"><button type="button" class="link-btn" data-reset hidden>Reset to default ({{ default_text(s) }})</button></p>
     {% endif %}
     {% if key == 'UI_THEME' %}
       <p class="flash info" data-theme-device hidden>This browser uses its own theme from the header button (<span></span>).
         <button type="button" class="link-btn" data-theme-follow>Follow this setting</button></p>
     {% endif %}
     {% if key in locks and key not in env_overrides %}<p class="flash info">{{ locks[key] }}</p>
-    {% elif locked %}<p class="flash info">Set by the environment variable <code>{{ key }}={{ env_overrides[key] }}</code> (e.g. in docker-compose.hybrid.yml). The value here is ignored.</p>{% endif %}
+    {% elif locked %}<p class="flash info">Set by the environment variable <code>{{ key }}={{ env_overrides[key] }}</code>, so this field is ignored.</p>{% endif %}
     {% if errors.get(key) %}<p class="flash error">{{ errors[key] }}</p>{% endif %}
     {% if kind == 'paths' %}
       <ul class="checks" data-checks>{% for p, ok in checks.get(key, []) %}<li class="{{ 'ok' if ok else 'missing' }}">{{ '✓' if ok else '✗' }} {{ p }}</li>{% endfor %}</ul>
@@ -198,7 +209,7 @@
       <h3 class="panel-title">Files</h3>
       <dl class="about-list">
         <dt>Data folder</dt><dd><code>{{ about.data_dir }}</code></dd>
-        <dt>Settings file</dt><dd><code>{{ about.config_file }}</code><p class="hint">Every settings page writes to it and keeps its comments. <code>$HOME</code> is allowed in values, but no other <code>$</code>, no quotes and no backslash.</p></dd>
+        <dt>Settings file</dt><dd><code>{{ about.config_file }}</code><p class="hint">Settings pages write to it and keep its comments. Values may use <code>$HOME</code>, but no other <code>$</code>, quotes or backslashes.</p></dd>
         <dt>Database</dt><dd><code>{{ about.db_file }}</code>{% if about.db_size is not none %} · {{ about.db_size|filesizeformat }}{% endif %}</dd>
         <dt>Shares</dt><dd>{{ about.shares }}</dd>
         {% if about.env %}<dt>Environment</dt><dd>{% for k, v in about.env.items() %}<code>{{ k }}={{ v }}</code>{{ ' ' }}{% endfor %}</dd>{% endif %}
@@ -219,9 +230,12 @@
     {% endif %}
     <section class="panel" id="tokens">
       <div class="page-head">
-        <h3 class="panel-title">Tokens <span class="muted small">{{ ai.tokens|selectattr('state', 'equalto', 'active')|list|length }} active</span></h3>
+        <div class="head-line"><h3 class="panel-title">Tokens <span class="muted small">{{ ai.tokens|selectattr('state', 'equalto', 'active')|list|length }} active</span></h3>{% call info("API tokens", "API") %}
+          <p>Programs such as Homepage use the API with a token. Each token can do only what its scopes allow, and nothing works without one.</p>
+          <p>Over plain http a token crosses the network unencrypted: prefer https, or keep the API on this machine's network.</p>
+        {% endcall %}</div>
       </div>
-      <p class="hint">Programs such as Homepage use the API with a token. Each token can do only what its scopes allow, and nothing works without one. Base address: <code>{{ ai.base }}</code>. Over plain http the token crosses the network unencrypted: prefer https or keep the API on this machine's network.</p>
+      <p class="hint">Base address: <code>{{ ai.base }}</code>{% if ai.base.startswith('http:') %} · over http, tokens travel unencrypted{% endif %}</p>
       {% if ai.tokens %}
       <div class="table-wrap">
       <table class="api-tokens">
@@ -279,7 +293,7 @@
           <select id="tok-exp" name="expires">{% for d in ai.expiry %}<option value="{{ d }}" {% if d == ai.default_expiry %}selected{% endif %}>{{ d ~ ' days' if d else 'never' }}</option>{% endfor %}</select></div>
         <div class="field"><label for="tok-allow">Allowed addresses <span class="muted small">(optional)</span></label>
           <input id="tok-allow" name="allowed" placeholder="e.g. 192.168.1.20 or 172.18.0.0/16" class="medium">
-          <p class="hint">Only requests from these addresses or networks are accepted. Empty = any. This browser connects from {{ ai.client }}; the token list shows where a token was last used from.</p></div>
+          <p class="hint">Empty = any. This browser connects from {{ ai.client }}.</p></div>
         {% if ai.oidc_session %}
           <p class="hint">Signed in with single sign-on: creating a token needs a sign-on within the last 10 minutes.</p>
         {% else %}
@@ -319,7 +333,7 @@
     </section>
     <section class="panel">
       <h3 class="panel-title">Reference</h3>
-      <p class="hint">Every endpoint with the scope it needs. The full description is at <code>{{ ai.base }}/openapi.json</code> (needs a token) and on the wiki page <a href="https://github.com/madotha/handlebreaks/wiki/API">API</a>.</p>
+      <p class="hint">Every endpoint with the scope it needs. Full description: <code>{{ ai.base }}/openapi.json</code> (needs a token) and the <a href="https://github.com/madotha/handlebreaks/wiki/API">wiki</a>.</p>
       <div class="table-wrap">
       <table class="api-ref">
         <thead><tr><th>Endpoint</th><th>Scope</th><th>What it does</th></tr></thead>
@@ -347,7 +361,7 @@
         <div class="field">
           <label for="acc-new">New password</label>
           <input id="acc-new" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="256">
-          <p class="hint">Leave empty to keep the current one. At least 8 characters; a few random words make a long password that is easy to type. A new password signs out every other device.</p>
+          <p class="hint">Empty = keep the current one. At least 8 characters; a new one signs out other devices.</p>
         </div>
         <div class="field">
           <label for="acc-confirm">New password again</label>
@@ -384,7 +398,10 @@
     </section>
     {% if security.user %}
     <section class="panel" id="mfa">
-      <h3 class="panel-title">Two-factor authentication</h3>
+      <div class="head-line"><h3 class="panel-title">Two-factor authentication</h3>{% call info("Two-factor authentication", "Web-UI#two-factor-authentication") %}
+        <p>Signing in with the password also asks for a code from an authenticator app on your phone, so a stolen password alone isn't enough.</p>
+        <p>Recovery codes work once each instead of a code, e.g. when the phone is lost. Single sign-on uses your provider's own second factor.</p>
+      {% endcall %}</div>
       {% if security.recovery_codes %}
         <div class="flash warn recovery-box">
           <p><strong>Your recovery codes.</strong> Each works once instead of a code from the app, e.g. when the phone is lost. Save them now (password manager, printout): they won't be shown again.</p>
@@ -393,7 +410,7 @@
         </div>
       {% endif %}
       {% if security.mfa %}
-        <p class="hint"><strong>On</strong> since {{ security.mfa.since|localtime }}: signing in with the password also asks for the code from your authenticator app. {{ security.recovery_left }} recovery codes left.{% if security.recovery_left < 4 %} Make new ones soon.{% endif %}</p>
+        <p class="hint"><strong>On</strong> since {{ security.mfa.since|localtime }} · {{ security.recovery_left }} recovery codes left.{% if security.recovery_left < 4 %} Make new ones soon.{% endif %}</p>
         <form method="post" class="account-form mfa-form">
           <input type="hidden" name="csrf" value="{{ csrf_token() }}">
           <div class="field"><label for="mfa-current">Current password</label>
@@ -415,7 +432,7 @@
           <div>
             <p class="field-label">Key</p>
             <code class="copyable mfa-key">{{ security.mfa_setup.key }}</code>
-            <p class="hint">Time-based (TOTP), 6 digits, every 30 seconds. On this phone: <a href="{{ security.mfa_setup.uri }}">open in the authenticator app</a>.{% if not security.mfa_setup.qr %} The QR code needs the Python package segno (<code>pip install -r requirements.txt</code>).{% endif %}</p>
+            <p class="hint">TOTP, 6 digits, every 30 seconds. On this phone: <a href="{{ security.mfa_setup.uri }}">open in the authenticator app</a>.{% if not security.mfa_setup.qr %} The QR code needs the Python package segno (<code>pip install -r requirements.txt</code>).{% endif %}</p>
           </div>
         </div>
         <form method="post" action="{{ url_for('security_mfa_confirm') }}" class="account-form">
@@ -430,7 +447,7 @@
           </div>
         </form>
       {% else %}
-        <p class="hint">Off. With it, signing in with the password also asks for a code from an authenticator app on your phone, so a stolen password alone isn't enough.{% if security.session_method == 'oidc' %} (Single sign-on uses your provider's own second factor.){% endif %}</p>
+        <p class="hint">Off.</p>
         <form method="post" action="{{ url_for('security_mfa_start') }}">
           <input type="hidden" name="csrf" value="{{ csrf_token() }}">
           <button class="secondary">Set up two-factor authentication</button>
@@ -441,7 +458,7 @@
     <section class="panel">
       <h3 class="panel-title">Devices</h3>
       <p class="hint">{% if security.remembered %}This browser stays signed in for {{ security.days }} days after its last visit.{% else %}This browser forgets the login when it closes.{% endif %}
-        Signing out everywhere ends the login on every other device and browser; this one stays signed in.</p>
+        “Sign out everywhere else” keeps this one signed in.</p>
       <div class="account-actions">
         <form method="post" action="{{ url_for('security_signout_others') }}" onsubmit="return confirm('Sign out every other device and browser?')">
           <input type="hidden" name="csrf" value="{{ csrf_token() }}">
@@ -490,7 +507,7 @@
             <div class="field">
               <p class="field-label">Redirect URL to register at the provider</p>
               <code class="copyable">{{ security.redirect_uri }}</code>
-              <p class="hint">{% if security.oidc_verified %}Single sign-on has worked with this provider and client.{% elif security.oidc_ready %}Set up, but nobody has signed in with it yet: sign out and use the button on the sign-in page once.{% else %}Not in use yet.{% endif %}
+              <p class="hint">{% if security.oidc_verified %}Single sign-on has worked with this provider and client.{% elif security.oidc_ready %}Set up, but nobody has signed in with it yet: sign out and sign in with it once.{% else %}Not in use yet.{% endif %}
                 Changes here sign out everyone who used single sign-on.</p>
             </div>
             <div class="plex-test">

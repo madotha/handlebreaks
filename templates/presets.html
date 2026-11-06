@@ -1,10 +1,15 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
+{% from "_info.html" import info %}
 {% block title %}Presets{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Presets</h1>
-  <span class="muted">{% if caps.available %}HandBrake preset format {{ caps.version.VersionMajor if caps.version else '?' }}{% else %}HandBrakeCLI not found: built-in presets and checks unavailable{% endif %}</span>
+  <div class="head-line"><h1>Presets</h1>{% call info("Presets", "Presets") %}
+    <p>Each share encodes with its own preset, or the default one. A preset chosen when queueing wins over both.</p>
+    <p>Built-in presets and the editor's choices come from the installed HandBrakeCLI, so they always match its version.</p>
+    <p class="meta">{% if caps.available %}HandBrake preset format {{ caps.version.VersionMajor if caps.version else '?' }}.{% else %}HandBrakeCLI not found: built-in presets and checks are unavailable.{% endif %}</p>
+  {% endcall %}</div>
+  {% if not caps.available %}<span class="muted">HandBrakeCLI not found</span>{% endif %}
 </div>
 
 <section class="panel">
@@ -68,7 +73,7 @@
       <label class="inline">Import file <input type="file" name="file" accept=".json,application/json"></label>
       <button>Import</button>
     </form>
-    <p class="hint">Import a preset exported from the HandBrake app (Presets → Export). Built-in presets and the options in the editor come from the installed HandBrakeCLI, so they always match its version.</p>
+    <p class="hint">A preset exported from the HandBrake app (Presets → Export).</p>
   </div>
 </section>
 {% endblock %}

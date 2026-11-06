@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
+{% from "_info.html" import info, info_button, info_panel %}
 {% block title %}Status{% endblock %}
 {% block content %}
 {% include "_replace_progress.html" %}
@@ -18,7 +19,11 @@
 
 <section class="panel" data-current-panel data-current-key="{{ cur.key if cur else '' }}">
   <div class="page-head">
-    <h2>Encoding</h2>
+    <div class="head-line"><h2>Encoding</h2>{% call info("Encoding", "Web-UI#status") %}
+      <p>The file the worker encodes now, with its progress.</p>
+      <ul><li><strong>Stop, continue with next</strong> deletes the partly encoded file and goes on with the queue.</li>
+        <li><strong>Stop all</strong> also pauses the queue until you click Resume. Replace jobs still run.</li></ul>
+    {% endcall %}</div>
     <form class="row-actions" method="post" action="{{ url_for('encode_stop') }}" data-stop-form {% if not cur or stopping or not can_stop %}hidden{% endif %}>
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       <input type="hidden" name="key" value="{{ cur.key if cur else '' }}" data-stop-key>
@@ -35,7 +40,7 @@
       <button>Resume</button>
     </form>
   </div>
-  <p class="muted small" data-no-stop {% if not cur or can_stop %}hidden{% endif %}>This encode was started by an older version of the worker, which can't be stopped from here. Stopping works from the worker's next run.</p>
+  <p class="muted small" data-no-stop {% if not cur or can_stop %}hidden{% endif %}>Started by an older worker: it can be stopped from its next run on.</p>
   <p class="flash info" data-stopping {% if not stopping %}hidden{% endif %}>Stopping <span data-stopping-mode>{{ 'all' if stopping == 'all' else '' }}</span>… the worker ends the encode within a few seconds.</p>
   <div data-current {% if not cur %}hidden{% endif %}>
     <div class="now-head">
@@ -52,11 +57,38 @@
 </section>
 
 <section class="panel">
+  {% set tab_info = uid('info') %}
+  <div class="tabs-line">
   <nav class="view-tabs" aria-label="Status views">
     {% for key, label in views.items() %}
       <a href="{{ url_for('status', view=key) }}" {% if key == q.view %}aria-current="page"{% endif %}>{% if key in ('review', 'originals') %}<span class="tab-long">{{ label }}</span><span class="tab-short">{{ 'Review' if key == 'review' else 'Originals' }}</span>{% else %}{{ label }}{% endif %} <span class="tab-count" data-count="{{ key }}">{{ q.counts.get(key, 0)|count }}</span></a>
     {% endfor %}
   </nav>
+  {{ info_button(tab_info, views[q.view], 'tab-info') }}
+  {% call info_panel(tab_info, views[q.view], "Web-UI#" ~ {'queue': 'queue', 'review': 'awaiting-review', 'history': 'history', 'originals': 'kept-originals'}[q.view]) %}
+    {% if q.view == 'queue' %}
+    <ul><li>Reorder waiting entries by dragging the handle, with the arrows, or with Move to top / bottom. Not while a column is sorted.</li>
+      <li>Entries of the running batch stay in place until the worker takes them. Moving one of them starts a new run after this one; a divider marks where it begins.</li>
+      <li>Removed entries of the running batch show as “Removed” and are skipped.</li>
+      <li>Finished files move to Awaiting review (encodes) or History (every result).</li></ul>
+    {% elif q.view == 'review' %}
+    <ul><li>Finished encodes in the output folder, also from earlier runs, until their original is replaced.</li>
+      <li>Saved = how much space replacing the original frees.</li>
+      <li>Dismiss only hides an entry; the encode stays, with its Replace… button on the Files page.</li>
+      <li>Not happy with an encode? Delete it (the bin), optionally encoding the file again with another preset.</li>
+      <li>A replace that waits for the worker can be cancelled (×) until it starts.</li></ul>
+    {% elif q.view == 'originals' %}
+    <ul><li>Originals that Replace… kept, in <code>.replaced</code> inside the output folder.</li>
+      <li>Deleting removes the files from disk.</li>
+      <li>An original whose replacement is missing or offline is never deleted, unless you tick it and “Also when the replacement is missing”. The file may only have been renamed, so check first.</li></ul>
+    {% else %}
+    <ul><li>Every encode result and finished replace, newest first.{% if q.keep_days %} Entries older than {{ q.keep_days }} days are hidden (<a href="{{ url_for('settings', section='status') }}">change</a>).{% endif %}</li>
+      <li>Dismiss hides entries without deleting anything; a new result of the same file shows again.</li>
+      <li>A failed file keeps its Failed marker on the Files page until it's encoded successfully.</li></ul>
+    {% endif %}
+    <p class="meta">Lists show 100 entries at a time. Progress and counts update every few seconds.</p>
+  {% endcall %}
+  </div>
   <form class="filters queue-filter" method="get" data-queue-filter data-view="{{ q.view }}" data-sort="{{ q.sort.get('sort', '') }}" data-dir="{{ q.sort.get('dir', '') }}">
     {% if q.view == 'queue' %}
       <select name="state" aria-label="Show">
@@ -104,6 +136,7 @@
       <button class="secondary" formaction="{{ url_for('status_dismiss') }}" data-needs-selection disabled title="Hide the selected entries here; nothing is deleted">Dismiss selected</button>
     {%- endif %}
     </div>
+    {{ info_button(tab_info, views[q.view], 'tab-info-phone') }}{# phones: no room next to the tabs #}
     <button type="button" class="secondary more-btn" data-more-toggle aria-expanded="false" aria-controls="bulk-more">More {{ icon('dots') }}</button>
     <div class="bulk-all" id="bulk-more" data-more-menu>
     {%- if q.view == 'queue' %}
@@ -162,20 +195,16 @@
       <tbody data-queue-rows data-total="{{ q.shown_total }}">{% with rows=q.rows, states=q.states, view=q.view, can_move=q.can_move %}{% include "_queue_rows.html" %}{% endwith %}</tbody>
     </table>
   </div>
-  <p class="muted small" data-queue-empty {% if q.rows %}hidden{% endif %}>{{ {'queue': 'Nothing queued.', 'review': 'No finished encodes are waiting to be replaced.', 'history': 'No history yet.', 'originals': 'No originals are kept. Replace… keeps them here when "Keep the original" is ticked.'}[q.view] }}</p>
+  <p class="muted small" data-queue-empty {% if q.rows %}hidden{% endif %}>{{ {'queue': 'Nothing queued.', 'review': 'No finished encodes are waiting to be replaced.', 'history': 'No history yet.', 'originals': 'No originals are kept.'}[q.view] }}</p>
   <p class="muted small" data-queue-shown {% if not q.more_url %}hidden{% endif %}>Showing <span data-shown>{{ q.rows|length|count }}</span> of <span data-total>{{ q.shown_total|count }}</span></p>
   {% if q.more_url %}<button type="button" class="secondary" data-queue-more="{{ q.more_url }}">Show more</button>{% endif %}
-  <p class="hint">
-    {% if q.view == 'queue' %}Waiting entries can be reordered (drag the handle, the arrows, or Move to top / bottom for the ticked entries; not while a column sort is on) and removed. Entries of the current run stay where they are until the worker takes them; moving an entry that is part of the running batch puts it and everything after it into a new batch, the next run, which a new worker starts once this run has finished. Removed entries of the current run show as "Removed" and are skipped by the worker. Finished files move to Awaiting review (encodes) or History (every result).
-    {% elif q.view == 'originals' %}The originals that Replace… moved to the <code>.replaced</code> folder inside the output folder, with the folder structure of the share. Deleting them is permanent: the files are removed from disk, not hidden. The replacement column shows how much space the encode saved, and warns if the file that replaced an original is no longer in the library or its share can't be reached. Such originals are not deleted, neither by hand nor automatically, unless you tick them and "Also when the replacement is missing" (the file may only have been renamed, so check first).
-    {% elif q.view == 'review' %}Finished encodes in the output folder, also from earlier runs, until their original is replaced. The Saved column and the line above the list show how much space replacing the originals frees. Dismiss only hides an entry here; the encode stays in the output folder and keeps its Replace… button on the Files page. Not happy with an encode? Delete it (the bin, or Delete selected…), optionally encoding the file again with another preset. A replace that is still waiting for the worker can be cancelled (×) until the worker starts moving the files.
-    {% else %}Every encode result and finished replace, newest first{% if q.keep_days %}; entries older than {{ q.keep_days }} days are hidden (<a href="{{ url_for('settings', section='status') }}">change</a>){% endif %}. Dismiss hides entries here without deleting anything; a new result of the same file shows again. A failed file keeps its Failed marker on the Files page until it is encoded successfully.
-    {% endif %}
-    The list shows 100 entries at a time; progress and counts update every few seconds, the list whenever the next file starts.</p>
 </section>
 
 <section class="panel" id="scan">
-  <h2>Scan</h2>
+  <div class="head-line"><h2>Scan</h2>{% call info("Scan", "Scanning") %}
+    <p>A scan reads every video of the shares with ffprobe and offers the ones worth encoding. Later scans only read new or changed files.</p>
+    <p>A scan of whole shares shows its progress here: first listing the files, then reading them.</p>
+  {% endcall %}</div>
   <p>Last scan: {{ last_scan|localtime }}</p>
   <p class="muted">Automatic rescan: {% if auto_interval %}every {{ auto_interval }} min, next {{ 'now' if auto_next <= now() else 'at ' ~ auto_next|localtime }}{% else %}off{% endif %} · <a href="{{ url_for('settings', section='scans') }}">change</a></p>
   {% include "_scan_progress.html" %}
