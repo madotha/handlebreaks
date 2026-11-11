@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Security
+- Docker image: rebuilt on the current Debian 13 and Python base image, and the image build now installs all pending Debian updates. This includes the zlib fix for CVE-2026-85091 and CVE-2026-27171.
+- Docker image: pip is removed after the web UI's packages are installed. Nothing uses it at runtime, and it bundled outdated copies of urllib3, msgpack and setuptools with known vulnerabilities.
+
 ## [4.5.1] - 2026-11-06
 
 ### Fixed

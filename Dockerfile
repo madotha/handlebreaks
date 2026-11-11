@@ -51,6 +51,7 @@ LABEL org.opencontainers.image.title="Handlebreaks" \
 
 COPY --from=handbrake /out/runtime-packages /tmp/runtime-packages
 RUN apt-get update \
+ && apt-get upgrade -y \
  && apt-get install -y --no-install-recommends ffmpeg zsh procps tzdata $(cat /tmp/runtime-packages) \
  && rm -rf /var/lib/apt/lists/* /tmp/runtime-packages
 COPY --from=handbrake /out/bin/HandBrakeCLI /usr/local/bin/HandBrakeCLI
@@ -59,7 +60,9 @@ RUN HandBrakeCLI --version 2>/dev/null | grep -q '^HandBrake [0-9]'
 
 WORKDIR /app
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# pip itself isn't needed at runtime; removing it also removes the libraries it bundles
+RUN pip install --no-cache-dir -r requirements.txt \
+ && pip uninstall -y pip
 
 COPY api.py apitokens.py auth.py encoding.py funfacts.py oidc.py plex.py presets.py preset_tips.py webui.py encode.sh status.sh docker-entrypoint.sh preset.json config.example.env ./
 COPY templates/ templates/
