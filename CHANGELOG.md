@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [4.5.3] - 2026-11-11
+
 ### Fixed
 - The worker could wait silently: on macOS, after `brew upgrade` installed a new Python, its first access to the network share waits until someone answers the privacy dialog, and the finished encode stayed in `.inprogress/` without any sign in the web UI. A file operation of the worker that runs longer than a minute now shows a banner ("Encoding waits: Moving the file has been waiting since …", with a hint about the dialog), is logged, and the API's `waiting_for` reports it as `stuck`. The worker still goes on by itself once the operation finishes.
 
