@@ -37,11 +37,47 @@ mkdir -p "$QUEUE" "$PROC" "$DONE" "$LOGS"
 
 log() { print -r -- "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOGS/encode.log"; }
 
+# Why the worker waits goes into worker-wait.txt for the web UI's banner, because the web
+# UI may see the share fine (e.g. in Docker, or when only launchd's processes are blocked):
+#   kind<TAB>prefix<TAB>path<TAB>error   kind: offline, denied, handbrake or stuck
+WAITFILE="$LOGS/worker-wait.txt"
+
 # Move or delete files on the library/output share. Started by launchd on macOS, /bin/mv
 # and /bin/rm may get "Operation not permitted" on network shares while Python's file
 # functions work, so all file operations on the share go through Python.
 #   fs mv SRC DST     fs rm FILE…
+# A call can hang: on macOS, the first access of a new Python (e.g. after brew upgrade)
+# to a network volume waits until someone answers the privacy dialog. A watchdog reports
+# a call that runs longer than a minute as "stuck" (refreshed every minute), and clears
+# it when the call ends.
 fs() {
+  local pid dog rc since what="Deleting"
+  [[ "$1" == mv ]] && what="Moving"
+  fs_py "$@" &
+  pid=$!
+  since=$(date '+%Y-%m-%d %H:%M')
+  {
+    trap 'kill $s 2>/dev/null; exit 0' TERM
+    s=""; sleep 60 & s=$!; wait $s
+    while kill -0 $pid 2>/dev/null; do
+      print -r -- "stuck		${2:-}	$what the file has been waiting since $since" > "$WAITFILE"
+      [[ -f "$LOGS/.fs-stuck" ]] || { : > "$LOGS/.fs-stuck"; log "$what ${2:-} hangs since $since. On macOS, a privacy dialog for python3 may be waiting on the Mac"; }
+      sleep 60 & s=$!; wait $s
+    done
+  } >/dev/null 2>&1 &
+  dog=$!
+  while :; do                                 # a signal ends wait early; the call itself goes on
+    wait $pid; rc=$?
+    kill -0 $pid 2>/dev/null || break
+  done
+  kill -TERM $dog 2>/dev/null; wait $dog 2>/dev/null
+  if [[ -f "$LOGS/.fs-stuck" ]]; then
+    rm -f "$LOGS/.fs-stuck" "$WAITFILE"
+    log "$what ${2:-} went on (waited since $since)"
+  fi
+  return $rc
+}
+fs_py() {
   python3 -c 'import os, shutil, sys
 op, args = sys.argv[1], sys.argv[2:]
 try:
@@ -186,10 +222,6 @@ if command -v caffeinate >/dev/null; then caffeinate -is -w $$ & caf=$!; fi
 reachable() { [[ -n "$1" && -d "$1" ]] && [[ -n $(print -r -- "$1"/*(DNY1)) ]]; }
 
 # ── Library reachable? Otherwise wait 5 minutes (launchd restarts afterwards) ─
-# Why the worker waits goes into worker-wait.txt for the web UI's banner, because the web
-# UI may see the share fine (e.g. in Docker, or when only launchd's processes are blocked):
-#   kind<TAB>prefix<TAB>path<TAB>error   kind: offline, denied or handbrake
-WAITFILE="$LOGS/worker-wait.txt"
 for prefix root in ${(kv)ROOTS}; do
   if ! reachable "$root"; then
     # A folder that exists but can't be listed is a permission problem, not an unmounted

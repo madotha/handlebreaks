@@ -232,7 +232,7 @@ One flat object for dashboards (Homepage's `customapi` widget maps fields by dot
  "scan": {"running": false, "label": null, "started": null, "last_finished": "…"},
  "replaces": {"waiting": 0, "moving": 0, "checking": 0}}
 ```
-- `current` is `null` while nothing encodes. `waiting_for` = `{"kind": "offline"|"denied"|"handbrake", "share": {…}|null, "error": "…"}` while the worker waits (the web UI's banner).
+- `current` is `null` while nothing encodes. `waiting_for` = `{"kind": "offline"|"denied"|"handbrake"|"stuck", "share": {…}|null, "error": "…"}` while the worker waits (the web UI's banner). `stuck` (since 4.5.3): a file operation of the worker (moving a finished encode, deleting a file) has run for more than a minute, e.g. because macOS waits for an answer to a privacy dialog; `error` says since when. The worker may still report `encoding` then.
 
 ### 5.4 `GET /api/v1/queue`: `queue:read`
 Parameters: `state` (`waiting`, `encoding`, `removed`; default all three), `q` (words in the key), `limit`, `cursor`, `sort` (`order` = default, `file`, `codec`, `resolution`, `bitrate`, `preset`, `state`), `dir`.

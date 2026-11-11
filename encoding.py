@@ -383,12 +383,12 @@ def offline_shares():
     return names
 
 
-WORKER_WAIT_FRESH = 15 * 60    # encode.sh rewrites worker-wait.txt every ~5.5 min while it waits
+WORKER_WAIT_FRESH = 15 * 60    # encode.sh rewrites worker-wait.txt every ~5.5 min while it waits (stuck: every minute)
 
 
 def worker_wait():
     """Why the worker is waiting instead of encoding, from logs/worker-wait.txt (written by
-    encode.sh, deleted once it gets going): {"kind": offline|denied|handbrake, "prefix",
+    encode.sh, deleted once it gets going): {"kind": offline|denied|handbrake|stuck, "prefix",
     "name", "path", "error"}, or None. An old file (worker stopped meanwhile) counts as none."""
     f = LOG_DIR / "worker-wait.txt"
     try:

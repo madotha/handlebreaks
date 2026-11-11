@@ -50,6 +50,9 @@
         The worker can't read {{ worker_wait.name }} ({{ worker_wait.error }}), so encoding waits.
         {% if "not permitted" in worker_wait.error %}On macOS, open System Settings → Privacy &amp; Security → Full Disk Access and add <code>/bin/zsh</code> (or allow network volumes for zsh under Files &amp; Folders).{% else %}Check that the user the worker runs as may read <code>{{ worker_wait.path }}</code>.{% endif %}
         It retries every 5 minutes.
+      {%- elif worker_wait.kind == "stuck" -%}
+        Encoding waits: {{ worker_wait.error }} (<code>{{ worker_wait.path.rsplit("/", 1)[-1] | wbr }}</code>).
+        On macOS, a privacy dialog for Python may be open on the Mac: allow it, and the worker goes on by itself.
       {%- elif worker_wait.kind == "handbrake" -%}
         The worker can't find HandBrakeCLI, so encoding waits. Install it on the machine that encodes; the worker retries every 5 minutes.
       {%- else -%}
