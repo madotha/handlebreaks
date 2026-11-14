@@ -160,6 +160,9 @@ STATUS_LABELS = {
 # ─── Detection ────────────────────────────────────────────────────────────────
 
 VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".mov", ".m4v", ".wmv", ".ts", ".mpg", ".mpeg"}
+# Subtitle files next to a video, named after it ("Movie.srt", "Movie.de.forced.srt"):
+# replace_one() renames them along when the video gets a new name.
+SUBTITLE_EXTS = {".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt", ".sup", ".smi"}
 
 # Codecs that count as optimized: such files are never offered for encoding
 OPTIMIZED_CODECS = {"hevc", "av1", "vvc"}
@@ -1391,6 +1394,47 @@ def move_file(src, dst, attempts=6, wait=10):
             time.sleep(wait)
 
 
+def subtitle_files(video, new_stem=None):
+    """Subtitle files that belong to `video`: [(path, rest)], rest = the name after the
+    video's stem (".de.forced.srt"). A file that also matches a longer stem of another
+    video in the folder ("Movie.Part2.srt" next to "Movie.Part2.mkv"), or of the name the
+    video is about to get (`new_stem`), belongs to that one."""
+    stem = video.stem
+    try:
+        names = [e.name for e in os.scandir(video.parent) if not e.name.startswith(".")]
+    except OSError:
+        return []
+    stems = {Path(n).stem for n in names if Path(n).suffix.lower() in VIDEO_EXTS} | {new_stem or stem}
+    found = []
+    for name in sorted(names):
+        if not name.startswith(stem + ".") or Path(name).suffix.lower() not in SUBTITLE_EXTS:
+            continue
+        owner = max((st for st in stems if name.startswith(st + ".")), key=len, default=stem)
+        if owner == stem and (video.parent / name).is_file():
+            found.append((video.parent / name, name[len(stem):]))
+    return found
+
+
+def rename_subtitles(subs, target):
+    """Rename the subtitle files of the replaced video to the new video's name. Never
+    overwrites a file; returns a sentence for the job's message ("" if there were none)."""
+    done, kept = 0, []
+    for path, rest in subs:
+        new = target.with_name(target.stem + rest)
+        if new.exists() or not path.exists():
+            kept.append(path.name)
+            continue
+        try:
+            move_file(path, new)
+            done += 1
+        except OSError:
+            kept.append(path.name)
+    text = f" Renamed {done} subtitle file{'s' if done != 1 else ''} to match." if done else ""
+    if kept:
+        text += f" Subtitle files not renamed (name taken or not movable): {', '.join(kept)}."
+    return text
+
+
 def replace_one(job):
     root = first_existing(ROOT_CANDIDATES.get(job["key"].split("/", 1)[0], []))
     enc_dir = first_existing(ENCODED_CANDIDATES)
@@ -1413,6 +1457,8 @@ def replace_one(job):
     backup = enc_dir / ".replaced" / rel if job["keep_original"] and original.exists() else None
     if backup:
         backup.parent.mkdir(parents=True, exist_ok=True)
+    # only when the name changes: subtitles named after the original then no longer match
+    subs = subtitle_files(original, target.stem) if target.stem != original.stem else []
     if target != original:
         # A new name: put the new file in first and take the original out afterwards, so
         # Plex (or anything else scanning the folder) never sees the item without a file.
@@ -1450,6 +1496,7 @@ def replace_one(job):
                 move_file(tmp, encoded)
             raise
     kept = f" The original is kept in {backup}." if backup else " The original was deleted."
+    kept += rename_subtitles(subs, target)
     return (f"Replaced {original.name} with {target.name}.{kept}",
             f"{job['key'].split('/', 1)[0]}/" + str(target.relative_to(root)), original, target)
 
@@ -1479,6 +1526,8 @@ def _run_replace_jobs():
     for path in jobs:
         if REPLACE_STOP.is_set():               # the worker is being stopped: the rest waits
             break
+        if not job_share_reachable(path):       # waits for its share (encode.sh retries)
+            continue
         if path.parent != REPLACE_RUNNING:
             try:
                 os.replace(path, REPLACE_RUNNING / path.name)
@@ -1512,6 +1561,17 @@ def _run_replace_jobs():
         write_text_atomic(REPLACE_DONE / path.name, json.dumps(result, ensure_ascii=False))
         path.unlink(missing_ok=True)
     return ran
+
+
+def job_share_reachable(path):
+    """False if the replace job in `path` is for a configured share that isn't reachable
+    now: the job then stays where it is, instead of failing, until the share is back."""
+    try:
+        prefix = json.loads(path.read_text(encoding="utf-8"))["key"].split("/", 1)[0]
+    except (ValueError, OSError, KeyError, AttributeError):
+        return True                             # gone or unreadable: the normal path reports it
+    candidates = ROOT_CANDIDATES.get(prefix)
+    return not candidates or any(reachable(p) for p in candidates)
 
 
 _RESULT_LOCK = threading.Lock()

@@ -7,6 +7,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- Replace… renames subtitle files named after the original (`Movie.srt`, `Movie.de.forced.srt`, `.ass`, `.ssa`, `.sub`/`.idx`, `.vtt`, `.sup`, `.smi`) to the new name, so subtitles from Bazarr or elsewhere still belong to the video. A subtitle file is never overwritten; one that can't be renamed is named in the job's message. Files that belong to another video in the folder (`Movie.Part2.srt` next to `Movie.Part2.mkv`) are left alone.
+
+### Changed
+- A share that isn't reachable no longer holds up all encoding. The worker only checks the shares that have files in the queue or replace jobs. It waits only when none of them is reachable; otherwise it encodes the others and puts the entries of the unreachable share back into the queue, preset choice included. Replace jobs for an unreachable share wait instead of failing. Before, a single empty or unmounted share, e.g. one emptied during a library reorganization, stopped the worker even when nothing in the queue was on it.
+
+### Fixed
+- Stopping the worker (`docker stop`, launchd, Ctrl+C) while it waited for the library or a paused queue took up to five minutes; it now stops at once.
+
 ## [4.5.3] - 2026-11-11
 
 ### Fixed

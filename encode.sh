@@ -22,6 +22,9 @@
 # while encoding, so they don't wait for a long encode. A job is claimed (moved into
 # replace-running/) before any file is touched; until then the web UI can cancel it.
 # The original in the library is never modified.
+# A share that isn't reachable only holds back its own entries: they go back into the
+# queue (batch-0-deferred-…) and the worker goes on with the others. It waits only when
+# no share it needs is reachable.
 # ─────────────────────────────────────────────────────────────────────────────
 
 set -u
@@ -102,8 +105,10 @@ hb_finished() {
 # encoding). Then a missing source or a failed encode isn't the file's fault.
 offline() { ! reachable "${ROOTS[$1]}" || [[ ! -d "$OUT" ]]; }
 result() { print -r -- "$(date '+%Y-%m-%d %H:%M')	$1	$2" >> "$LOGS/results.tsv"; done_upto=$i; }
-# A sleep that a stop signal (see shutdown) interrupts at once
-nap() { sleep "$1" & wait $!; }
+# A sleep that a stop signal (see shutdown) interrupts at once: shutdown ends it, since zsh
+# only exits from a trap once the command it was waiting for is over
+nappid=""
+nap() { sleep "$1" & nappid=$!; wait $nappid; nappid=""; }
 
 # ── Settings from config.env (template: config.example.env) ──────────────────
 if [[ ! -f "$DATA/config.env" ]]; then
@@ -195,15 +200,36 @@ trap 'rm -rf "$LOCK"; rm -f "$LOGS/current.txt" "$LOGS/run.txt"' EXIT
 # While a finished encode is moved out of .inprogress and logged (critical=1), the signal
 # only sets deferred_stop and the stop happens right after, so the encode isn't lost.
 in_run=0; i=0; done_upto=0; hbpid=""; rjpid=""; tmp=""; critical=0; deferred_stop=0
+
+# An entry whose share isn't reachable: it goes back into the queue (flush_deferred, before
+# the next encode and when the run ends), so the files of other shares don't wait for it.
+# done_upto counts it as handled, so a stop doesn't put it back a second time.
+deferred=(); deferred_n=0
+defer_entry() {
+  deferred+=("$key${override:+	$override}")
+  done_upto=$i
+  log "Share not reachable ($prefix: ${ROOTS[$prefix]}), back in the queue: $key"
+}
+flush_deferred() {
+  (( ${#deferred} )) || return 0
+  deferred_n=$(( deferred_n + 1 ))
+  local name="batch-0-deferred-$(date +%Y%m%d-%H%M%S)-$$-$deferred_n.txt"   # sorts first
+  print -rl -- $deferred > "$DATA/.$name.tmp" && mv "$DATA/.$name.tmp" "$QUEUE/$name"
+  log "${#deferred} file(s) of unreachable shares back in the queue"
+  deferred=()
+}
+
 on_signal() { if (( critical )); then deferred_stop=1; else shutdown; fi; }
 end_critical() { critical=0; (( deferred_stop )) && shutdown; return 0; }
 shutdown() {
   trap '' INT TERM
+  [[ -n "$nappid" ]] && kill $nappid 2>/dev/null
   [[ -n "$rjpid" ]] && kill -0 $rjpid 2>/dev/null && { kill -TERM $rjpid; wait $rjpid 2>/dev/null; }
   if [[ -n "$hbpid" ]] && kill -0 $hbpid 2>/dev/null; then
     kill $hbpid 2>/dev/null; wait $hbpid 2>/dev/null
     fs rm "$tmp" 2>/dev/null
   fi
+  flush_deferred
   if (( in_run )); then
     n=$(python3 "$BASE/encoding.py" stop-rest $done_upto --no-pause --shutdown 2>> "$LOGS/encode.log")
     log "Worker stopped: ${n:-0} file(s) back in the queue, encoding goes on at the next start"
@@ -222,25 +248,44 @@ if command -v caffeinate >/dev/null; then caffeinate -is -w $$ & caf=$!; fi
 reachable() { [[ -n "$1" && -d "$1" ]] && [[ -n $(print -r -- "$1"/*(DNY1)) ]]; }
 
 # ── Library reachable? Otherwise wait 5 minutes (launchd restarts afterwards) ─
-for prefix root in ${(kv)ROOTS}; do
-  if ! reachable "$root"; then
-    # A folder that exists but can't be listed is a permission problem, not an unmounted
-    # share. On macOS, launchd's processes get "Operation not permitted" on network
-    # volumes until zsh is allowed to access them (privacy settings).
-    err=""; [[ -d "$root" ]] && err=$(ls -A -- "$root" 2>&1 >/dev/null | head -1)
-    err="${err##*: }"
-    if [[ "$err" == (*not permitted*|*ermission denied*) ]]; then
-      print -r -- "denied	$prefix	$root	$err" > "$WAITFILE"
-      hint="Check the folder's permissions."
-      [[ "$err" == *not\ permitted* ]] && hint="On macOS, give /bin/zsh Full Disk Access (System Settings → Privacy & Security)."
-      log "Library not readable ($prefix: $root): $err. $hint Retrying in 5 minutes"
-    else
-      print -r -- "offline	$prefix	$root	" > "$WAITFILE"
-      log "Library not reachable ($prefix: $root), retrying in 5 minutes"
-    fi
-    nap 300
-    exit 1
+# Only the shares with work count: entries in the queue and replace jobs. If some of them
+# are reachable, the worker starts and puts the entries of the others back into the queue
+# (see defer_entry); it waits only if none is.
+typeset -A NEEDED
+for f in "$QUEUE"/*.txt(N) "$PROC"/*.txt(N); do
+  while IFS=$'\t' read -r key _ || [[ -n "$key" ]]; do
+    [[ "$key" == */* && -n "${ROOTS[${key%%/*}]:-}" ]] && NEEDED[${key%%/*}]=1
+  done < "$f"
+done
+for f in "$DATA"/replace/*.json(N) "$DATA"/replace-running/*.json(N); do
+  [[ "$(<$f)" =~ '"key": *"(share[0-9]+)/' && -n "${ROOTS[$match[1]]:-}" ]] && NEEDED[$match[1]]=1
+done
+down=()
+for prefix in ${(k)NEEDED}; do reachable "${ROOTS[$prefix]}" || down+=($prefix); done
+if (( ${#down} && ${#down} < ${#NEEDED} )); then
+  for prefix in $down; do
+    log "Share not reachable ($prefix: ${ROOTS[$prefix]}): its files stay in the queue, encoding the others"
+  done
+  down=()
+fi
+for prefix in $down; do
+  root="${ROOTS[$prefix]}"
+  # A folder that exists but can't be listed is a permission problem, not an unmounted
+  # share. On macOS, launchd's processes get "Operation not permitted" on network
+  # volumes until zsh is allowed to access them (privacy settings).
+  err=""; [[ -d "$root" ]] && err=$(ls -A -- "$root" 2>&1 >/dev/null | head -1)
+  err="${err##*: }"
+  if [[ "$err" == (*not permitted*|*ermission denied*) ]]; then
+    print -r -- "denied	$prefix	$root	$err" > "$WAITFILE"
+    hint="Check the folder's permissions."
+    [[ "$err" == *not\ permitted* ]] && hint="On macOS, give /bin/zsh Full Disk Access (System Settings → Privacy & Security)."
+    log "Library not readable ($prefix: $root): $err. $hint Retrying in 5 minutes"
+  else
+    print -r -- "offline	$prefix	$root	" > "$WAITFILE"
+    log "Library not reachable ($prefix: $root), retrying in 5 minutes"
   fi
+  nap 300
+  exit 1
 done
 if ! command -v HandBrakeCLI >/dev/null; then
   print -r -- "handbrake			" > "$WAITFILE"
@@ -285,7 +330,7 @@ stop_request() {
   print -r -- "$mode"
 }
 
-# The library or output folder went offline during the run: put the current entry and
+# The output folder went offline during the run: put the current entry and
 # everything after it back into the queue (no result, no pause), end the run and let
 # launchd (or the Docker loop) retry until it's reachable again.
 went_offline() {
@@ -328,8 +373,9 @@ for b in $batches; do
     fi
     src="${ROOTS[$prefix]}/${key#*/}"
 
-    if [[ ! -f "$src" ]]; then
-      if offline "$prefix"; then went_offline; break 2; fi
+    if [[ ! -f "$src" ]] || ! reachable "${ROOTS[$prefix]}"; then
+      if [[ ! -d "$OUT" ]]; then went_offline; break 2; fi
+      if ! reachable "${ROOTS[$prefix]}"; then defer_entry; continue; fi
       log "Missing in library: $key"; result MISSING "$key"; continue
     fi
 
@@ -355,6 +401,7 @@ print("avg%d" % int(p.get("VideoAvgBitrate") or 0) if p.get("VideoQualityType", 
       log "Already exists: $out"; result EXISTS "$key"; continue
     fi
 
+    flush_deferred
     print -r -- "$key	$i	$total	$(date +%s)" > "$LOGS/current.txt"
     log "[$i/$total] $key (preset: $preset_name)"
     fs rm "$tmp"
@@ -414,7 +461,8 @@ print("avg%d" % int(p.get("VideoAvgBitrate") or 0) if p.get("VideoQualityType", 
     elif offline "$prefix"; then             # failed because the share or output folder went away
       fs rm "$tmp" 2>/dev/null
       log "  interrupted (exit code $rc): $key"
-      went_offline; break 2
+      if [[ ! -d "$OUT" ]]; then went_offline; break 2; fi
+      defer_entry
     else
       fs rm "$tmp"
       { print -r -- "# Handlebreaks: $key"; cat "$LOGS/handbrake-last.log"; } \
@@ -427,6 +475,7 @@ print("avg%d" % int(p.get("VideoAvgBitrate") or 0) if p.get("VideoQualityType", 
 done
 
 in_run=0
+flush_deferred
 end_critical                                   # went_offline left the loop in the critical part
 (( stopped_all )) || log "Queue finished"
 rm -f "$LOGS/current.txt" "$LOGS/run.txt" "$CANCELLED" "$STOPFILE"
