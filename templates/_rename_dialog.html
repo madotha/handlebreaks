@@ -1,0 +1,26 @@
+{# "Fix language tags…" (static/bulkreplace.js, window.BulkRename): files whose language tag doesn't match their audio, Files page. #}
+{% from "_info.html" import info %}
+<dialog class="replace-dialog bulk-dialog" data-rename-dialog data-preview-url="{{ url_for('rename_preview') }}"
+        data-submit-url="{{ url_for('rename_bulk') }}" data-csrf="{{ csrf_token() }}"
+        data-done="renamed" data-jobs="renames" data-loading="Reading the audio tracks …">
+  <form method="dialog">
+    <div class="head-line"><h2>Fix language tags</h2>{% call info("Fix language tags", "Replacing-Originals#language-tag") %}
+      <p>Reads the audio tracks of the selected files and lists those whose name has a different language tag, with the corrected name.</p>
+      <p>Only the language words change. Subtitle files named after a video are renamed with it.</p>
+      <p>Files in the queue, being replaced or with an encode awaiting review are left out.</p>
+    {% endcall %}</div>
+    <p class="small" data-b-summary>Reading the audio tracks …</p>
+    <div class="table-wrap bulk-list" hidden>
+      <table>
+        <thead><tr><th>File</th><th>New name</th></tr></thead>
+        <tbody data-b-rows></tbody>
+      </table>
+    </div>
+    <p class="hint">Tags from <a href="{{ url_for('settings', section='replace') }}">Settings → Replace</a>.</p>
+    <p class="flash error" data-b-error hidden></p>
+    <div class="row-actions">
+      <button value="ok" data-b-ok disabled>Rename</button>
+      <button value="cancel" class="secondary" formnovalidate>Cancel</button>
+    </div>
+  </form>
+</dialog>

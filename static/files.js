@@ -95,6 +95,7 @@
   const count = form.querySelector("[data-selected-count]");
   const button = form.querySelector("[data-queue-button]");
   const bulkButton = form.querySelector("[data-bulk-replace]");
+  const renameButton = form.querySelector("[data-bulk-rename]");   // only with the language tag on
   const toggleOf = (details) => details && details.querySelector(":scope > summary .dir-toggle");
 
   // Inputs below a ticked folder are ticked and disabled: the folder covers them,
@@ -116,6 +117,7 @@
     button.disabled = n === 0;
     button.dataset.count = n;
     bulkButton.disabled = n === 0;
+    if (renameButton) renameButton.disabled = n === 0;
     form.classList.toggle("has-selection", n > 0);     // phones: shows the selection bar above the tab bar
     if (window.sharePresetFor) {                       // name the preset "Share's preset" means for the ticked files
       const picked = [...form.querySelectorAll('.dir-toggle:checked:not(:disabled), input[name="key"]:checked:not(:disabled)')]
@@ -443,6 +445,9 @@
   // "Replace selected…" (static/bulkreplace.js): the ticked files and folders, with the filters
   bulkButton.addEventListener("click", () => {
     window.BulkReplace.open(new FormData(form), { say, done: () => location.reload() });
+  });
+  if (renameButton) renameButton.addEventListener("click", () => {
+    window.BulkRename.open(new FormData(form), { say, done: () => location.reload() });
   });
 
   // Phones: the file rows are compact; tapping a file name shows duration, date added and ↻

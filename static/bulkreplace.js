@@ -1,9 +1,12 @@
 // Replace several originals at once (Files and Status pages): asks the server for the
 // files with a finished encode and their suggested names, lets you edit the names, then
-// starts one replace job per file and waits for all of them.
+// starts one replace job per file and waits for all of them. The same dialog code serves
+// "Fix language tags…" (rename jobs, [data-rename-dialog]); the words come from the
+// dialog's data-done ("replaced") and data-jobs ("replaces").
 (function () {
-  const dialog = document.querySelector("[data-bulk-dialog]");
-  if (!dialog) return;
+  function setup(dialog) {
+  if (!dialog) return null;
+  const done = dialog.dataset.done || "replaced", jobsWord = dialog.dataset.jobs || "replaces";
   const $ = (sel) => dialog.querySelector(sel);
   const rows = $("[data-b-rows]");
   const okBtn = $("[data-b-ok]");
@@ -21,6 +24,12 @@
     field.value = item.suggested.slice(0, dot);
     tr.fit = window.nameField(field, () => okBtn.click());
     tr.querySelector("span").textContent = item.suggested.slice(dot);
+    if (item.languages) {                     // the audio languages behind the language tag
+      const note = document.createElement("p");
+      note.className = "small muted";
+      note.textContent = item.languages;
+      tr.cells[1].append(note);
+    }
     return tr;
   }
 
@@ -36,8 +45,8 @@
     $(".bulk-list").hidden = true;
     okBtn.disabled = true;
     showError("");
-    $("[data-b-keep]").checked = $("[data-b-keep]").defaultChecked;   // KEEP_ORIGINALS
-    $("[data-b-summary]").textContent = "Looking for finished encodes …";
+    if ($("[data-b-keep]")) $("[data-b-keep]").checked = $("[data-b-keep]").defaultChecked;   // KEEP_ORIGINALS
+    $("[data-b-summary]").textContent = dialog.dataset.loading || "Looking for finished encodes …";
     body.set("csrf", dialog.dataset.csrf);
     if (window.returnFocusOnClose) window.returnFocusOnClose(dialog);
     dialog.showModal();
@@ -48,12 +57,13 @@
       $("[data-b-summary]").textContent = "Couldn't load the list. Reload the page and try again.";
       return;
     }
+    if (res.error) { $("[data-b-summary]").textContent = res.error; return; }
     const n = res.items.length;
     let text = n ? `${n.toLocaleString()} file${n === 1 ? "" : "s"} with a finished encode.`
                  : "None of these files has a finished encode waiting in the output folder.";
     if (res.left_out) text += ` ${res.left_out.toLocaleString()} without a finished encode (or already being replaced) are left out.`;
     if (n >= res.limit) text += ` At most ${res.limit} at a time.`;
-    $("[data-b-summary]").textContent = text;
+    $("[data-b-summary]").textContent = res.summary || text;
     res.items.forEach((item) => rows.append(row(item)));
     $(".bulk-list").hidden = !n;
     [...rows.children].forEach((tr) => tr.fit());      // heights need the rows to be visible
@@ -70,13 +80,13 @@
       body.append("new_name", tr.querySelector("textarea").value.trim() + tr.querySelector("span").textContent);
       tr.querySelector(".b-row-error").hidden = true;
     });
-    if ($("[data-b-keep]").checked) body.append("keep_original", "1");
+    if ($("[data-b-keep]") && $("[data-b-keep]").checked) body.append("keep_original", "1");
     okBtn.disabled = true;
     const r = await fetch(dialog.dataset.submitUrl, { method: "POST", body, headers: { Accept: "application/json" } });
     const res = await r.json();
     okBtn.disabled = false;
     if (res.errors || res.error) {
-      showError(res.error || "Some names need a change (marked below). Nothing was replaced yet.");
+      showError(res.error || `Some names need a change (marked below). Nothing was ${done} yet.`);
       trs.forEach((tr) => {
         const msg = res.errors && res.errors[tr.dataset.key];
         const p = tr.querySelector(".b-row-error");
@@ -106,14 +116,17 @@
       }
     }
     if (left.size) {
-      opts.say(`${ok} replaced; ${left.size} still waiting for the worker. Is it running? See the Status page.`, "error");
+      opts.say(`${ok} ${done}; ${left.size} still waiting for the worker. Is it running? See the Status page.`, "error");
       return;
     }
-    if (failed.length) opts.say(`${failed.length} of ${jobs.length} replaces failed: ${failed.join(" ")}`, "error");
-    else if (cancelled) opts.say(`${ok} replaced, ${cancelled} cancelled.`, "ok");
+    if (failed.length) opts.say(`${failed.length} of ${jobs.length} ${jobsWord} failed: ${failed.join(" ")}`, "error");
+    else if (cancelled) opts.say(`${ok} ${done}, ${cancelled} cancelled.`, "ok");
     if (ok || cancelled) setTimeout(() => opts.done(), 2500);
   }
 
   okBtn.addEventListener("click", submit);
-  window.BulkReplace = { open };
+  return { open };
+  }
+  window.BulkReplace = setup(document.querySelector("[data-bulk-dialog]"));
+  window.BulkRename = setup(document.querySelector("[data-rename-dialog]"));
 })();

@@ -493,6 +493,12 @@
               <p class="hint">Change a share's preset under <a href="{{ url_for('settings', section='library') }}">Shares &amp; scans</a>; edit presets on the <a href="{{ url_for('presets_page') }}">Presets</a> page.</p>
             </div>
           {% endif %}
+          {% if section == 'replace' and panel_title == 'Language tag' %}
+            <div class="name-example" data-lang-example>
+              <p>Examples for <code>{{ lang_example[0] }}</code>{% if cfg.get('RENAME_LANGUAGES', '0') != '1' %} <span class="muted small">(when turned on)</span>{% endif %}:</p>
+              <ul>{% for audio, name in lang_example[1] %}<li><span class="muted small">{{ audio }}:</span> <code>{{ name }}</code></li>{% endfor %}</ul>
+            </div>
+          {% endif %}
           {% if section == 'replace' and panel_title == 'File names' %}
             <p class="name-example" data-name-example>Example: <code data-before>{{ example[0] }}</code> <span aria-hidden="true">→</span> <code data-after>{{ example[1] }}</code>
               <span class="muted small">(encoded as HEVC with RF 20)</span></p>

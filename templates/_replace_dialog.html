@@ -13,6 +13,7 @@
       {% endcall %}</div>
       <div class="name-input"><textarea id="r-name" data-r-name rows="1" required spellcheck="false" autocomplete="off" autocapitalize="off"></textarea><span data-r-ext></span></div>
       <p class="hint">Suggested from the original name, with the encode's codec.</p>
+      <p class="hint" data-r-langs hidden></p>
     </div>
     <label class="check"><input type="checkbox" data-r-keep {% if keep_originals %}checked{% endif %}> Keep the original in <code>.replaced/</code> in the output folder {% if keep_originals %}(recommended){% else %}(off by default, see <a href="{{ url_for('settings', section='replace') }}">settings</a>){% endif %}</label>
     <p class="flash error" data-r-error hidden></p>

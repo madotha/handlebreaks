@@ -10,10 +10,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 - Replace… renames subtitle files named after the original (`Movie.srt`, `Movie.de.forced.srt`, `.ass`, `.ssa`, `.sub`/`.idx`, `.vtt`, `.sup`, `.smi`) to the new name, so subtitles from Bazarr or elsewhere still belong to the video. A subtitle file is never overwritten; one that can't be renamed is named in the job's message. Files that belong to another video in the folder (`Movie.Part2.srt` next to `Movie.Part2.mkv`) are left alone.
 
+- Optional language tag from the audio tracks (Settings → Replace → Language tag, off by default). Replace… reads the encode's audio languages and puts the matching tag into the suggested name in place of the original's language words (`german`, `dl`, `subbed`, `geresp` …): main language plus others → `german.dl`, main language only → `german`, no main-language audio → no tag or the first track's language (`norwegian`), plus an optional tag when only the subtitles are in the main language. Commentary tracks don't count; untagged audio leaves the name as it is. Main language and every tag are configurable. The dialogs show the audio languages under the name.
+- **Fix language tags…** on the Files page (with the language tag turned on): checks the selected files in the library, lists those whose language tag doesn't match their audio with the corrected name, and renames them through the worker, subtitle files included. History shows them as "Renamed".
+
 ### Changed
 - A share that isn't reachable no longer holds up all encoding. The worker only checks the shares that have files in the queue or replace jobs. It waits only when none of them is reachable; otherwise it encodes the others and puts the entries of the unreachable share back into the queue, preset choice included. Replace jobs for an unreachable share wait instead of failing. Before, a single empty or unmounted share, e.g. one emptied during a library reorganization, stopped the worker even when nothing in the queue was on it.
 
 ### Fixed
+- Replace…'s suggested name no longer takes a resolution at the end of a name for the release group: `…WEBDL-1080p` kept `-1080p` replaced by your group.
 - Stopping the worker (`docker stop`, launchd, Ctrl+C) while it waited for the library or a paused queue took up to five minutes; it now stops at once.
 
 ## [4.5.3] - 2026-11-11

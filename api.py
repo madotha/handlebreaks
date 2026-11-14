@@ -826,7 +826,7 @@ def fail_logs():
 
 
 @route("GET", "/history", "review:read", "Encode results and finished replaces, newest first",
-       params=[("status", "string", "OK, FAIL, STOPPED, MISSING, EXISTS, REPLACED"), ("q", "string", "Words in the key"),
+       params=[("status", "string", "OK, FAIL, STOPPED, MISSING, EXISTS, REPLACED, RENAMED"), ("q", "string", "Words in the key"),
                ("since", "date or time", "Only entries from then on (also older than the history limit)"),
                ("include_dismissed", "1", "Also entries dismissed on the Status page"),
                ("sort", "string", "at (default), file, status"), ("dir", "string", "asc or desc")] + PAGING,
@@ -834,7 +834,7 @@ def fail_logs():
                             "log": "f-20261105-140211", "replaced_by": None, "plex": None}], "total": 1, "next": None})
 def history():
     status = request.args.get("status", "")
-    if status and status not in ("OK", "FAIL", "STOPPED", "MISSING", "EXISTS", "REPLACED"):
+    if status and status not in ("OK", "FAIL", "STOPPED", "MISSING", "EXISTS", "REPLACED", "RENAMED"):
         raise APIError(400, "invalid_request", "Unknown status.", field="status")
     since = request.args.get("since", "")
     if since:
@@ -872,7 +872,7 @@ def history():
             log = near[0]["id"] if near else None
         out.append({"at": iso(h["at"]), "status": h["status"], "file": files[h["key"]], "can_retry": h["can_retry"],
                     "log": log, "replaced_by": files.get(h["new_key"]) if h.get("new_key") else None,
-                    "plex": h.get("plex") if h["status"] == "REPLACED" else None})
+                    "plex": h.get("plex") if h["status"] in ("REPLACED", "RENAMED") else None})
     out = sorted_by(out, {"at": lambda r: r["at"], "file": lambda r: r["file"]["name"].lower(), "status": lambda r: r["status"]},
                     default=None)
     return page(out)
@@ -1457,7 +1457,8 @@ def suggested_name(key):
     if not encoded:
         return None
     codec = enc.probe(enc_dir / encoded)["video_codec"] if enc.FFPROBE else None
-    return enc.suggest_name(key.rsplit("/", 1)[-1], encoded, codec, enc.encode_quality(key))
+    return enc.suggest_name(key.rsplit("/", 1)[-1], encoded, codec, enc.encode_quality(key),
+                            tracks=enc.name_tracks(enc_dir / encoded))
 
 
 @route("GET", "/replace/suggest", "review:read", "The file name Replace… would suggest for a file",

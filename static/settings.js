@@ -168,15 +168,19 @@
       clearTimeout(t);
       t = setTimeout(async () => {
         const q = new URLSearchParams();
-        ["RENAME_CODEC_TAGS", "RENAME_GROUP"].forEach((k) => q.set(k, form.querySelector(`[name="${k}"]`).value));
-        if (form.querySelector('[name="RENAME_QUALITY"]').checked) q.set("RENAME_QUALITY", "1");
+        form.querySelectorAll('[name^="RENAME_"]').forEach((el) => {
+          if (el.type === "checkbox") { if (el.checked) q.set(el.name, "1"); }
+          else if (el.type !== "hidden") q.set(el.name, el.value);
+        });
         try {
-          const r = await fetch("/settings/replace/example?" + q);
-          example.querySelector("[data-after]").textContent = (await r.json()).after;
+          const data = await (await fetch("/settings/replace/example?" + q)).json();
+          example.querySelector("[data-after]").textContent = data.after;
+          const codes = document.querySelectorAll("[data-lang-example] li code");
+          data.languages.forEach(([, name], i) => { if (codes[i]) codes[i].textContent = name; });
         } catch (err) { /* keep */ }
       }, 250);
     };
-    ["RENAME_CODEC_TAGS", "RENAME_GROUP", "RENAME_QUALITY"].forEach((k) => {
+    Array.from(form.querySelectorAll('[name^="RENAME_"]'), (el) => el.name).forEach((k) => {
       const el = form.querySelector(`[name="${k}"]`);
       if (el) { el.addEventListener("input", refresh); el.addEventListener("change", refresh); }
     });

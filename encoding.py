@@ -849,7 +849,7 @@ def dismissed_map():
 
 def history_entries(result="", older_than=None):
     """The Status page's History, newest first: encode results plus finished replaces
-    (status REPLACED) as [{"at", "status", "key", "plex", "new_key", "can_retry"}] (plex: the Plex state of a replace,
+    (status REPLACED, or RENAMED for a language tag fix) as [{"at", "status", "key", "plex", "new_key", "can_retry"}] (plex: the Plex state of a replace,
     new_key: the key of the file that replaced it, "" for encode results). Left out: entries older
     than HISTORY_KEEP_DAYS and dismissed ones. can_retry marks a file's latest result when
     it is FAIL or STOPPED and the file isn't waiting or encoding again. older_than (days) returns the entries older than that instead
@@ -863,7 +863,8 @@ def history_entries(result="", older_than=None):
     pending = pending_keys()
     with closing(connect()) as con:
         rows = [(*r, None, "") for r in con.execute("SELECT at, status, key FROM results ORDER BY at DESC, rowid DESC")]
-    rows += [(at, "REPLACED", key, plex_state, new_key) for at, key, plex_state, new_key in sorted(replaced_log(), reverse=True)]
+    rows += [(at, "RENAMED" if renamed else "REPLACED", key, plex_state, new_key)
+             for at, key, plex_state, new_key, renamed in sorted(replaced_log(), reverse=True)]
     out = []
     for at, status, key, plex_state, new_key in rows:
         if result and status != result:
@@ -990,7 +991,8 @@ OLD_CODEC_RE = re.compile(
 DEFAULT_CODEC_TAGS = {"hevc": "x265", "av1": "AV1", "vvc": "VVC", "h264": "x264"}
 GROUP_RE = re.compile(r"-[A-Za-z0-9]+(?=$|[\s.\[{(])")   # release group right after the codec tag
 # Release group at the end of a name, optionally followed by Plex tags: "…-LAMA {edition-Arabic}"
-END_GROUP_RE = re.compile(r"-[A-Za-z0-9]+(?=(?:\s*[\[{(][^\]})]*[\]})])*\s*$)")
+# ("…WEBDL-1080p" ends with a resolution, not a group)
+END_GROUP_RE = re.compile(r"-(?!\d{3,4}[pi](?![A-Za-z0-9]))[A-Za-z0-9]+(?=(?:\s*[\[{(][^\]})]*[\]})])*\s*$)")
 
 
 def codec_tags(cfg=None):
@@ -1035,15 +1037,17 @@ def encode_quality(key):
         return None
 
 
-def suggest_name(original_name, encoded_name, codec=None, quality=None, cfg=None):
+def suggest_name(original_name, encoded_name, codec=None, quality=None, cfg=None, tracks=None):
     """Suggested name for an encode replacing original_name: the last codec tag (h264,
     x264, H.264, AVC, XviD …) becomes the tag of the encode's codec (codec_tags(); an
     unknown codec counts as hevc), and with RENAME_GROUP set, the release group right
     after it ("-NTB") becomes "-<RENAME_GROUP>". With a quality ("rf20", "avg2000") and
     RENAME_QUALITY on (default), it follows the release group: "x265-donm.rf20". A name
     without a codec tag but with a release group at the end gets the tag before the group
-    ("WEBRip-LAMA" -> "WEBRip.x265-LAMA.rf20"); other names stay as they are. The extension
-    follows the encode. cfg: settings to use instead of config.env."""
+    ("WEBRip-LAMA" -> "WEBRip.x265-LAMA.rf20"); other names stay as they are. With
+    RENAME_LANGUAGES on and the encode's tracks (name_tracks()), the language words become
+    the tag of its audio languages (apply_language()). The extension follows the encode.
+    cfg: settings to use instead of config.env."""
     cfg = CONFIG if cfg is None else cfg
     stem = Path(original_name).stem
     ext = Path(encoded_name).suffix
@@ -1063,7 +1067,189 @@ def suggest_name(original_name, encoded_name, codec=None, quality=None, cfg=None
         stem = stem[:m.start()] + tag + rest
     elif tag and (g := END_GROUP_RE.search(stem)):
         stem = stem[:g.start()] + "." + tag + ("-" + group if group else g.group(0)) + q + stem[g.end():]
+    if tracks is not None and languages_on(cfg):
+        lang, _ = language_tag(tracks, cfg)
+        if lang is not None:
+            stem = apply_language(stem, lang, cfg)
     return stem + ext
+
+
+# ─── Language tag from the audio tracks (RENAME_LANGUAGES, off by default) ────
+# ffprobe's language tags (ISO 639-2/B or /T, sometimes 639-1) -> one code per language
+LANG_ALIASES = {
+    "deu": "ger", "de": "ger", "en": "eng", "fra": "fre", "fr": "fre", "es": "spa", "esl": "spa",
+    "it": "ita", "ja": "jpn", "ko": "kor", "no": "nor", "nb": "nor", "nob": "nor", "nn": "nor",
+    "nno": "nor", "sv": "swe", "da": "dan", "fi": "fin", "nl": "dut", "nld": "dut", "pl": "pol",
+    "ru": "rus", "pt": "por", "tr": "tur", "zh": "chi", "zho": "chi", "hi": "hin", "ar": "ara",
+    "he": "heb", "hu": "hun", "el": "gre", "ell": "gre", "cs": "cze", "ces": "cze", "uk": "ukr",
+    "th": "tha", "is": "ice", "isl": "ice", "ro": "rum", "ron": "rum", "hr": "hrv", "sr": "srp",
+    "sk": "slo", "slk": "slo", "sl": "slv", "bg": "bul", "et": "est", "lv": "lav", "lt": "lit",
+    "fa": "per", "fas": "per", "id": "ind", "ms": "may", "msa": "may", "vi": "vie", "ta": "tam",
+    "te": "tel", "ca": "cat", "eu": "baq", "eus": "baq", "gl": "glg",
+}
+# Language names as release names spell them (RENAME_LANG_OTHER=original); others use the code
+LANG_NAMES = {
+    "ger": "german", "eng": "english", "fre": "french", "spa": "spanish", "ita": "italian",
+    "jpn": "japanese", "kor": "korean", "nor": "norwegian", "swe": "swedish", "dan": "danish",
+    "fin": "finnish", "dut": "dutch", "pol": "polish", "rus": "russian", "por": "portuguese",
+    "tur": "turkish", "chi": "chinese", "hin": "hindi", "ara": "arabic", "heb": "hebrew",
+    "hun": "hungarian", "gre": "greek", "cze": "czech", "ukr": "ukrainian", "tha": "thai",
+    "ice": "icelandic", "rum": "romanian", "hrv": "croatian", "srp": "serbian", "slo": "slovak",
+    "slv": "slovenian", "bul": "bulgarian", "per": "persian", "ind": "indonesian", "vie": "vietnamese",
+    "cat": "catalan", "tam": "tamil", "tel": "telugu",
+}
+# Words of release names that name languages (removed before the derived tag is put in);
+# RENAME_LANG_TOKENS replaces this list
+DEFAULT_LANG_TOKENS = (
+    "german ger deu deutsch dl dual dualaudio dual-audio ml multi multisubs dubbed subbed sub subs "
+    "engsub gersub dtsub hardsub english eng french fre fra vff vf vostfr truefrench spanish spa esp "
+    "castellano latino italian ita japanese jap jpn korean kor nordic norwegian nor swedish swe "
+    "danish dan finnish fin dutch nld flemish polish pol pl russian rus portuguese por turkish tur "
+    "chinese chs cht mandarin cantonese hindi arabic geresp gereng gerjap engger")
+EPISODE_RE = re.compile(r"(?i)^(?:s\d{1,4}(?:e\d{1,4})+(?:-?e\d{1,4})*|\d{1,2}x\d{2,3}|\(?(?:19|20)\d\d\)?)$")
+RELEASE_TOKEN_RE = re.compile(
+    r"(?i)^(?:\d{3,4}[pi]|4k|uhd|web|web-?dl|web-?rip|webhd|amazonhd|amzn|nf|dsnp|hmax|atvp|bluray|"
+    r"blu-ray|bdrip|brrip|bd|remux|hdtv|pdtv|sdtv|dvdrip|dvd|dvd9|dvdr|hdrip|tvrip|hdr|hdr10|dv|10bit)$")
+COMMENTARY_RE = re.compile(r"(?i)comment|kommentar|descri|h[öo]rfilm|audiodeskription|\bAD\b")
+
+
+def lang_code(tag):
+    """One code per language for an ffprobe language tag; None for none or undetermined."""
+    t = str(tag or "").strip().lower()
+    if not t or t in ("und", "unk", "mis", "mul", "zxx", "qaa"):
+        return None
+    return LANG_ALIASES.get(t, t)
+
+
+def lang_name(code):
+    return LANG_NAMES.get(code, code)
+
+
+def probe_tracks(path):
+    """Audio and subtitle tracks of a video for its language tag: {"audio": [{"lang",
+    "title", "commentary"}], "subs": [lang], "error"}. Commentary and audio description
+    (disposition or title) don't count as a language of the video."""
+    tracks = {"audio": [], "subs": [], "error": None}
+    try:
+        out = subprocess.run(
+            [FFPROBE, "-v", "error", "-show_entries",
+             "stream=codec_type:stream_tags=language,title:stream_disposition=comment,visual_impaired",
+             "-of", "json", str(path)], capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        tracks["error"] = str(e)
+        return tracks
+    if out.returncode != 0:
+        tracks["error"] = out.stderr.strip()[:300] or f"ffprobe exit code {out.returncode}"
+        return tracks
+    for st in json.loads(out.stdout or "{}").get("streams") or []:
+        tags, disp = st.get("tags") or {}, st.get("disposition") or {}
+        lang = lang_code(tags.get("language"))
+        if st.get("codec_type") == "audio":
+            title = str(tags.get("title") or "")
+            tracks["audio"].append({"lang": lang, "title": title, "commentary": bool(
+                disp.get("comment") or disp.get("visual_impaired") or COMMENTARY_RE.search(title))})
+        elif st.get("codec_type") == "subtitle" and lang:
+            tracks["subs"].append(lang)
+    return tracks
+
+
+def languages_on(cfg=None):
+    return str((CONFIG if cfg is None else cfg).get("RENAME_LANGUAGES", "0")).strip() == "1"
+
+
+def name_tracks(path, cfg=None):
+    """The tracks for the language tag of the file at `path`, or None when the feature is
+    off or there's no ffprobe (so callers only pay for the probe when it's used)."""
+    return probe_tracks(path) if languages_on(cfg) and FFPROBE else None
+
+
+def language_tag(tracks, cfg=None):
+    """(tag, note) for a video's tracks (probe_tracks()): tag "" = no language tag, None =
+    leave the name's language words as they are (no audio language known). The rules:
+    main language plus another -> RENAME_LANG_MULTI, main language only -> RENAME_LANG_ONLY,
+    no main-language audio -> nothing or the first track's language (RENAME_LANG_OTHER),
+    plus RENAME_LANG_SUBS if only the subtitles are in the main language. Subtitles alone
+    never make it the main language."""
+    cfg = CONFIG if cfg is None else cfg
+    if tracks.get("error"):
+        return None, f"The audio tracks couldn't be read: {tracks['error']}"
+    audio = [a for a in tracks.get("audio", []) if not a.get("commentary")]
+    known = list(dict.fromkeys(a["lang"] for a in audio if a.get("lang")))
+    if not audio:
+        return None, "No audio track: the language words stay as they are."
+    if not known:
+        return None, "The audio tracks have no language tag: the language words stay as they are."
+    main = lang_code(cfg.get("RENAME_LANG_MAIN") or "ger") or "ger"
+    get = lambda k, d: str(cfg.get(k, d) if cfg.get(k) is not None else d).strip().strip(".")
+    if main in known:
+        tag = get("RENAME_LANG_MULTI", "german.dl") if len(known) > 1 else get("RENAME_LANG_ONLY", "german")
+    else:
+        tag = lang_name(known[0]) if get("RENAME_LANG_OTHER", "none") == "original" else ""
+        subs = get("RENAME_LANG_SUBS", "")
+        if subs and main in tracks.get("subs", []):
+            tag = ".".join(t for t in (tag, subs) if t)
+    note = "Audio: " + ", ".join(lang_name(c).capitalize() for c in known)
+    untagged = sum(1 for a in audio if not a.get("lang"))
+    if untagged:
+        note += f" ({untagged} track{'s' if untagged != 1 else ''} without a language ignored)"
+    return tag, note
+
+
+def lang_tokens(cfg=None):
+    words = str((CONFIG if cfg is None else cfg).get("RENAME_LANG_TOKENS", "") or "").split()
+    return {w.lower() for w in (words or DEFAULT_LANG_TOKENS.split())}
+
+
+def apply_language(stem, tag, cfg=None):
+    """The name `stem` with its language words replaced by `tag` (language_tag()). Only the
+    part after the episode number or year and before the codec tag is touched, so a title
+    like "The.German.Doctor" stays; names without episode or year only lose the language
+    words right before the resolution or source ("…German.DL.1080p"). The tag goes where
+    the old words were, else before the resolution or source, else before the codec tag;
+    it takes their case ("GERMAN.DL" -> upper case)."""
+    parts = re.split(r"([.\s_]+)", stem)
+    toks = parts[0::2]
+    seps = [""] + parts[1::2]                   # separator before each token
+    words = lang_tokens(cfg)
+    end = next((i for i, t in enumerate(toks) if i and OLD_CODEC_RE.search(t)), len(toks))
+    anchor = max((i for i, t in enumerate(toks[:end]) if i and EPISODE_RE.match(t)), default=None)
+    if anchor is not None:
+        zone = [i for i in range(anchor + 1, end) if toks[i].lower() in words]
+    else:                                       # only the run right before the resolution/source
+        first = next((i for i in range(1, end) if RELEASE_TOKEN_RE.match(toks[i])), None)
+        zone = []
+        if first is not None:
+            i = first - 1
+            while i > 0 and toks[i].lower() in words:
+                zone.insert(0, i)
+                i -= 1
+    removed = [toks[i] for i in zone]
+    start = anchor + 1 if anchor is not None else 1
+    if zone:
+        pos = zone[0]
+    else:
+        pos = next((i for i in range(start, end) if RELEASE_TOKEN_RE.match(toks[i])), None)
+        if pos is None:
+            pos = end if end < len(toks) else None
+    if pos is None or (not tag and not zone):
+        return stem
+    sep = next((s for s in seps[1:] if s), ".")
+    new = [p for p in tag.split(".") if p]
+    alpha = [w for w in removed if w.isalpha()]
+    if alpha and all(w.isupper() for w in alpha):
+        new = [p.upper() for p in new]
+    elif removed and removed[0][:1].isupper():
+        new = [p.upper() if len(p) <= 2 else p.capitalize() for p in new]
+    out = []
+    for i, (sp, t) in enumerate(zip(seps, toks)):
+        if i == pos:
+            for w in new:
+                out.append((sp if not out else sep, w))
+                sp = sep
+        if i in zone:
+            continue
+        out.append((sp if not out else (sp or sep), t))
+    return "".join(sp + t for sp, t in out)
 
 
 def check_new_name(new_name, encoded_name):
@@ -1092,6 +1278,26 @@ def request_replace(key, encoded_name, new_name, keep_original=True):
         job_id = f"{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}-{n}"
     job = {"id": job_id, "key": key, "encoded": encoded_name, "new_name": new_name,
            "keep_original": bool(keep_original), "requested": now_str()}
+    tmp = DATA_DIR / f".replace-{job_id}.tmp"
+    tmp.write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, REPLACE_DIR / f"{job_id}.json")
+    return job_id
+
+
+def request_rename(key, new_name):
+    """Write a rename job (a file in the library gets a new name, e.g. its language tag
+    fixed): carried out by the worker like a replace job; returns its id."""
+    problem = check_new_name(new_name, key.rsplit("/", 1)[-1])
+    if problem:
+        raise SystemExit(problem)
+    REPLACE_DIR.mkdir(parents=True, exist_ok=True)
+    job_id = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    n = 0
+    while (REPLACE_DIR / f"{job_id}.json").exists() or (REPLACE_DONE / f"{job_id}.json").exists():
+        n += 1
+        job_id = f"{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}-{n}"
+    job = {"id": job_id, "key": key, "encoded": None, "new_name": new_name, "keep_original": False,
+           "rename": True, "requested": now_str()}
     tmp = DATA_DIR / f".replace-{job_id}.tmp"
     tmp.write_text(json.dumps(job, ensure_ascii=False), encoding="utf-8")
     os.replace(tmp, REPLACE_DIR / f"{job_id}.json")
@@ -1198,12 +1404,12 @@ def mark_replace_synced(path, job):
     update_replace_result(path, synced=True)
 
 
-_REPLACED_LOG = [None, []]                      # [replace-done/ mtime, [(finished, key, plex state, new key)]]
+_REPLACED_LOG = [None, []]                      # [replace-done/ mtime, [(finished, key, plex state, new key, renamed)]]
 
 
 def replaced_log():
-    """[(finished time, key, Plex state or None, key of the replacing file)] of finished
-    replace jobs, read again only when replace-done/ changes."""
+    """[(finished time, key, Plex state or None, key of the replacing file, renamed)] of finished
+    replace jobs (renamed: a rename job, request_rename()), read again only when replace-done/ changes."""
     try:
         stamp = REPLACE_DONE.stat().st_mtime_ns
     except OSError:
@@ -1217,14 +1423,14 @@ def replaced_log():
                 continue
             if job.get("state") == "done":
                 log.append((job.get("finished") or "", job["key"], (job.get("plex") or {}).get("state"),
-                            job.get("new_key") or ""))
+                            job.get("new_key") or "", bool(job.get("rename"))))
         _REPLACED_LOG[:] = [stamp, log]
     return _REPLACED_LOG[1]
 
 
 def replaced_keys():
     """Keys whose original was replaced by a finished replace job."""
-    return {key for _, key, _, _ in replaced_log()}
+    return {key for _, key, _, _, renamed in replaced_log() if not renamed}
 
 
 _REPLACE_RECORDS = [None, {}]
@@ -1243,6 +1449,8 @@ def replace_records():
             try:
                 job = json.loads(f.read_text(encoding="utf-8"))
             except (ValueError, OSError):
+                continue
+            if job.get("rename"):                 # a language tag fix, no original kept
                 continue
             if job.get("state") == "done" and job.get("keep_original") is not False:
                 when = job.get("finished") or ""
@@ -1435,6 +1643,22 @@ def rename_subtitles(subs, target):
     return text
 
 
+def rename_one(job, root, original, target):
+    """A rename job: the file in the library gets the new name, its subtitle files too."""
+    if check_new_name(job["new_name"], original.name) or not target.resolve().is_relative_to(root.resolve()):
+        raise RuntimeError("Invalid file name.")
+    if not original.is_file():
+        raise RuntimeError(f"{original.name} isn't in the library any more.")
+    if target.exists():
+        raise RuntimeError(f"{job['new_name']} already exists in that folder. Choose another name.")
+    if not os.access(original.parent, os.W_OK):
+        raise RuntimeError(f"No permission to write to the folder {original.parent}.")
+    subs = subtitle_files(original, target.stem)
+    move_file(original, target)
+    return (f"Renamed {original.name} to {target.name}.{rename_subtitles(subs, target)}",
+            f"{job['key'].split('/', 1)[0]}/" + str(target.relative_to(root)), original, target)
+
+
 def replace_one(job):
     root = first_existing(ROOT_CANDIDATES.get(job["key"].split("/", 1)[0], []))
     enc_dir = first_existing(ENCODED_CANDIDATES)
@@ -1442,8 +1666,10 @@ def replace_one(job):
         raise RuntimeError("The share or the output folder isn't reachable.")
     rel = job["key"].split("/", 1)[1]
     original = root / rel
-    encoded = enc_dir / job["encoded"]
     target = original.parent / job["new_name"]
+    if job.get("rename"):
+        return rename_one(job, root, original, target)
+    encoded = enc_dir / job["encoded"]
     if check_new_name(job["new_name"], job["encoded"]) or not target.resolve().is_relative_to(root.resolve()):
         raise RuntimeError("Invalid file name.")
     if not encoded.is_file():
@@ -1549,7 +1775,7 @@ def _run_replace_jobs():
                 size = target.stat().st_size
             except OSError:
                 size = None
-            if old_size and size:
+            if old_size and size and not job.get("rename"):
                 result["sizes"] = [old_size, size]      # original and replacement, for the saved space
             info = plex.job_info(CONFIG, original, target, size)
             if info:
@@ -1998,6 +2224,7 @@ def current_progress():
 
 # State of a queued entry (queue_items) -> label; the upper-case ones are results of encode.sh
 QUEUE_STATES = {"encoding": "Encoding", "waiting": "Waiting", "removed": "Removed", "OK": "Done", "FAIL": "Failed",
+                "RENAMED": "Renamed",
                 "STOPPED": "Stopped", "skipped": "Skipped (see log)",
                 "MISSING": "Missing in library", "EXISTS": "Output already exists"}
 

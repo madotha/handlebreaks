@@ -126,6 +126,7 @@
         </label>
         <button data-queue-button>Queue for encoding</button>
         <button type="button" class="secondary" data-bulk-replace disabled title="Replace the originals of the selected files that have a finished encode">Replace selected…</button>
+        {% if rename_languages %}<button type="button" class="secondary" data-bulk-rename disabled title="Set the language tag of the selected files from their audio tracks">Fix language tags…</button>{% endif %}
       </div>
       <nav class="sort-bar" aria-label="Sort the list">
         <span class="muted small">Sort by</span>
@@ -152,6 +153,7 @@
   </div>{# .files-layout #}
   {% include "_replace_dialog.html" %}
   {% include "_bulk_replace_dialog.html" %}
+  {% if rename_languages %}{% include "_rename_dialog.html" %}{% endif %}
   {% set delete_json = true %}{% include "_delete_encode_dialog.html" %}
   <script src="{{ url_for('static', filename='replaceprogress.js') }}"></script>
   <script src="{{ url_for('static', filename='replace.js') }}"></script>

@@ -166,6 +166,33 @@ SETTINGS_PAGES = {
               info="Taken from the preset the file was encoded with: rf<RF value> for constant quality, "
                    "avg<kbit/s> for an average bitrate."),
         ]),
+        ("Language tag", [
+            S("RENAME_LANGUAGES", "Set the language tag from the audio tracks", "bool",
+              "Off: the original name's language words are kept.", "0",
+              info="Replace… then reads the encode's audio tracks and puts the matching tag into the suggested "
+                   "name, in place of language words like german, dl, subbed or geresp. Commentary and audio "
+                   "description tracks don't count. If no audio track has a language, the name stays as it is. "
+                   "Only the part after the episode number or year and before the codec tag is changed.",
+              wiki="Replacing-Originals#language-tag"),
+            S("RENAME_LANG_MAIN", "Main language", "text", "Language code, e.g. ger, eng or fre.", "ger",
+              info="The ISO 639-2 code as video files tag it. ger and deu both mean German."),
+            S("RENAME_LANG_MULTI", "Tag for the main language plus others", "text", "", "german.dl",
+              info="Used when an audio track is in the main language and at least one in another language."),
+            S("RENAME_LANG_ONLY", "Tag for the main language only", "text", "", "german"),
+            S("RENAME_LANG_OTHER", "Without audio in the main language", "choice", "", "none",
+              choices=[("none", "No language tag"), ("original", "Language of the first audio track, e.g. norwegian")],
+              info="Sonarr and Radarr read a name without a language tag as the series' or movie's original "
+                   "language."),
+            S("RENAME_LANG_SUBS", "Added when only the subtitles are in the main language", "text",
+              "Optional, e.g. subbed. Empty = nothing.", "",
+              info="Subtitles never make a file count as the main language. Careful: Sonarr and Radarr read "
+                   "“german.subbed” as German."),
+            S("RENAME_LANG_TOKENS", "Language words to replace", "text", "Empty = the built-in list.", "",
+              placeholder="german dl dubbed subbed multi …",
+              info="Words of the original name, separated by spaces, that are removed before the tag is put in. "
+                   "The built-in list covers common language words of release names: german, ger, deu, dl, ml, "
+                   "multi, dubbed, subbed, engsub, geresp, english, french, spanish, japanese and more."),
+        ]),
         ("Originals", [
             S("KEEP_ORIGINALS", "Keep originals when replacing", "bool",
               "The default of “Keep the original” in the Replace dialogs.", "1",
@@ -668,9 +695,10 @@ def sync_replaces():
                                      if added.get(j["key"]) and added[j["key"]][0] and j.get("new_key")])
             for f, job in items:
                 enc.mark_replace_synced(f, job)
-            enc.add_events([("replace_done", job.get("new_key") or job["key"], None, None)
+            kind = lambda job: "rename" if job.get("rename") else "replace"
+            enc.add_events([(kind(job) + "_done", job.get("new_key") or job["key"], None, None)
                             if job.get("state") == "done" else
-                            ("replace_failed", job["key"], job.get("message"), None) for _, job in items])
+                            (kind(job) + "_failed", job["key"], job.get("message"), None) for _, job in items])
         return True
 
 
@@ -838,6 +866,8 @@ EVENT_KINDS = {
     "run_interrupted": ("runs", "warn", "Run interrupted", "queue"),
     "replace_done": ("replaces", "success", "Replaced", "history"),
     "replace_failed": ("replaces", "error", "Replace failed", "review"),
+    "rename_done": ("replaces", "success", "Language tag fixed", "history"),
+    "rename_failed": ("replaces", "error", "Rename failed", "history"),
     "plex_failed": ("replaces", "warn", "Plex not updated", "history"),
     "scan_new": ("scans", "success", "New files found", "files_new"),
     "scan_done": ("scans", "success", "Scan finished", "files"),
@@ -850,7 +880,8 @@ EVENT_KINDS = {
 }
 # Several events of these kinds in one poll become one notification
 EVENT_PLURALS = {"encode_ok": "{n} encodes finished", "encode_fail": "{n} encodes failed",
-                 "replace_done": "{n} files replaced", "replace_failed": "{n} replaces failed"}
+                 "replace_done": "{n} files replaced", "replace_failed": "{n} replaces failed",
+                 "rename_done": "{n} files renamed", "rename_failed": "{n} renames failed"}
 LEVEL_ORDER = ("info", "success", "warn", "error")
 EVENTS_SHOWN_HOURS = 24                         # a page opened later doesn't show older ones
 
@@ -1576,6 +1607,7 @@ def inject():
     return {"config_error": g.get("config_error"), "offline": offline, "worker_wait": wait,
             "date_format": date_format(), "ui": appearance(),
             "keep_originals": (enc.CONFIG.get("KEEP_ORIGINALS") or "1").strip() != "0",
+            "rename_languages": enc.languages_on(),
             "in_docker": Path("/.dockerenv").exists(), "account_user": session.get("auth_user")}
 
 
@@ -2468,7 +2500,7 @@ VIEW_SORT = {
     },
 }
 HIDDEN_DEFAULT = {"history": {"codec", "resolution"}}    # columns hidden until the user shows them (Columns menu)
-HISTORY_RESULTS = ("OK", "FAIL", "STOPPED", "MISSING", "EXISTS", "REPLACED")
+HISTORY_RESULTS = ("OK", "FAIL", "STOPPED", "MISSING", "EXISTS", "REPLACED", "RENAMED")
 
 
 def status_view(src):
@@ -2735,7 +2767,9 @@ def replace_suggest():
         return {"error": "No finished encode of this file in the output folder."}, 404
     codec = enc.probe(enc_dir / encoded)["video_codec"] if enc.FFPROBE else None
     quality = enc.encode_quality(key)
-    return {"name": enc.suggest_name(key.rsplit("/", 1)[-1], encoded, codec, quality), "codec": codec, "quality": quality}
+    tracks = enc.name_tracks(enc_dir / encoded)   # None unless the language tag is on
+    return {"name": enc.suggest_name(key.rsplit("/", 1)[-1], encoded, codec, quality, tracks=tracks),
+            "codec": codec, "quality": quality, "languages": enc.language_tag(tracks)[1] if tracks else None}
 
 
 BULK_REPLACE_MAX = 500                          # files per bulk replace
@@ -2762,12 +2796,14 @@ def replace_preview():
     pending = enc.pending_replaces()
     rows = [(k, encoded[Path(k).stem.lower()]) for k in keys
             if Path(k).stem.lower() in encoded and k not in pending][:BULK_REPLACE_MAX]
-    with ThreadPoolExecutor(enc.PROBE_WORKERS) as pool:   # the codec decides the suggested tag
-        codecs = list(pool.map(lambda e: enc.probe(enc_dir / e)["video_codec"] if enc.FFPROBE else None,
-                               [e for _, e in rows]))
+    def look(e):                                # the codec decides the tag, the audio the language
+        return (enc.probe(enc_dir / e)["video_codec"] if enc.FFPROBE else None), enc.name_tracks(enc_dir / e)
+    with ThreadPoolExecutor(enc.PROBE_WORKERS) as pool:
+        found = list(pool.map(look, [e for _, e in rows]))
     items = [{"key": k, "short": enc.short(k), "original": k.rsplit("/", 1)[-1], "encoded": e,
-              "suggested": enc.suggest_name(k.rsplit("/", 1)[-1], e, c, enc.encode_quality(k))}
-             for (k, e), c in zip(rows, codecs)]
+              "suggested": enc.suggest_name(k.rsplit("/", 1)[-1], e, c, enc.encode_quality(k), tracks=t),
+              "languages": enc.language_tag(t)[1] if t else None}
+             for (k, e), (c, t) in zip(rows, found)]
     return {"items": items, "left_out": len(keys) - len(items), "limit": BULK_REPLACE_MAX}
 
 
@@ -2809,6 +2845,101 @@ def replace_bulk():
     keep = bool(request.form.get("keep_original"))
     return {"jobs": [{"key": k, "status_url": url_for("replace_state", job_id=enc.request_replace(k, e, n, keep))}
                      for k, e, n in jobs]}
+
+
+RENAME_PROBE_MAX = 1000                         # files probed per "Fix language tags…"
+
+
+def rename_blockers():
+    """{key: reason} of files whose name must not change now: an open replace, waiting or
+    encoding in the queue (the worker reads them by name), or an encode awaiting review
+    (it's matched to the original by name)."""
+    encoded = enc.encoded_files(enc.first_existing(enc.ENCODED_CANDIDATES))
+    out = {k: "Being replaced." for k in enc.pending_replaces()}
+    out.update({k: "In the queue." for k in enc.pending_keys()})
+    return out, encoded
+
+
+@app.route("/rename/preview", methods=["POST"])
+def rename_preview():
+    """Files of the selection whose language tag doesn't match their audio tracks (JSON), each
+    with the corrected name (RENAME_LANGUAGES must be on). The tracks are read from the
+    library with ffprobe, at most RENAME_PROBE_MAX files per request."""
+    if not enc.languages_on():
+        return {"error": "Turn on the language tag under Settings → Replace first."}, 400
+    if not enc.FFPROBE:
+        return {"error": "ffprobe isn't installed, so the audio tracks can't be read."}, 400
+    form = request.form
+    keys, _, _ = select_files(form.getlist("key"), [f.strip("/") for f in form.getlist("folder")], file_filters(form))
+    blocked, encoded = rename_blockers()
+    skipped = sum(1 for k in keys if k in blocked or Path(k).stem.lower() in encoded)
+    keys = [k for k in keys if k not in blocked and Path(k).stem.lower() not in encoded]
+    probed, keys = keys[:RENAME_PROBE_MAX], keys[RENAME_PROBE_MAX:]
+    roots = {p: enc.first_existing(c) for p, c in enc.ROOT_CANDIDATES.items()}
+
+    def look(key):
+        root = roots.get(key.split("/", 1)[0])
+        return enc.probe_tracks(root / key.split("/", 1)[1]) if root else {"error": "Share not reachable."}
+    with ThreadPoolExecutor(enc.PROBE_WORKERS) as pool:
+        found = list(pool.map(look, probed))
+    items, unknown, same = [], 0, 0
+    for key, tracks in zip(probed, found):
+        name = key.rsplit("/", 1)[-1]
+        tag, note = enc.language_tag(tracks)
+        if tag is None:
+            unknown += 1
+            continue
+        new = enc.apply_language(Path(name).stem, tag) + Path(name).suffix
+        if new == name:
+            same += 1
+        elif len(items) < BULK_REPLACE_MAX:
+            items.append({"key": key, "short": enc.short(key), "original": name, "suggested": new, "languages": note})
+    n = len(items)
+    parts = [f"{n:,} file{'' if n == 1 else 's'} with a language tag that doesn't match the audio." if n
+             else "No file of the selection needs a different language tag."]
+    if same:
+        parts.append(f"{same:,} already match.")
+    if unknown:
+        parts.append(f"{unknown:,} without a language on their audio tracks stay as they are.")
+    if skipped:
+        parts.append(f"{skipped:,} in the queue, being replaced or with an encode awaiting review are left out.")
+    if keys:
+        parts.append(f"Only the first {RENAME_PROBE_MAX:,} files were checked; run it again for the rest.")
+    if n >= BULK_REPLACE_MAX:
+        parts.append(f"At most {BULK_REPLACE_MAX} at a time.")
+    return {"items": items, "summary": " ".join(parts), "left_out": 0, "limit": BULK_REPLACE_MAX}
+
+
+@app.route("/rename/bulk", methods=["POST"])
+def rename_bulk():
+    """Rename several files of the library (key and new_name lists in the same order), e.g. to
+    fix their language tag. All rows are checked first; with any problem nothing is started."""
+    if not enc.languages_on():
+        return {"error": "Turn on the language tag under Settings → Replace first."}, 400
+    keys, names = request.form.getlist("key"), [n.strip() for n in request.form.getlist("new_name")]
+    if not keys or len(keys) != len(names) or len(keys) > BULK_REPLACE_MAX:
+        return {"error": "Nothing to rename."}, 400
+    known, _, _ = select_files(keys, [], {})
+    blocked, encoded = rename_blockers()
+    roots = {p: enc.first_existing(c) for p, c in enc.ROOT_CANDIDATES.items()}
+    errors, targets = {}, set()
+    for key, name in zip(keys, names):
+        root = roots.get(key.split("/", 1)[0])
+        folder = key.rsplit("/", 1)[0]
+        problem = ("Unknown file. Scan again and retry." if key not in known else
+                   blocked.get(key) or
+                   ("Its encode is awaiting review: replace it first." if Path(key).stem.lower() in encoded else None) or
+                   enc.check_new_name(name, key.rsplit("/", 1)[-1]) or
+                   ("Same name as another file in this list." if (folder, name.lower()) in targets else None) or
+                   ("A file with this name already exists in the folder." if root and name != key.rsplit("/", 1)[-1]
+                    and (root / key.split("/", 1)[1]).with_name(name).exists() else None))
+        if problem:
+            errors[key] = problem
+        targets.add((folder, name.lower()))
+    if errors:
+        return {"errors": errors}, 400
+    return {"jobs": [{"key": k, "status_url": url_for("replace_state", job_id=enc.request_rename(k, n))}
+                     for k, n in zip(keys, names)]}
 
 
 @app.route("/replace", methods=["POST"])
@@ -3652,6 +3783,12 @@ def check_setting(s, form, cfg, errors):
             val = str(int(val or 0))
     elif key == "ENCODED_DIR" and not val:
         errors[key] = "This folder is required."
+    elif key == "RENAME_LANG_MAIN" and not re.fullmatch(r"[A-Za-z]{2,3}", val):
+        errors[key] = "Enter a language code of 2 or 3 letters, e.g. ger."
+    elif key in ("RENAME_LANG_MULTI", "RENAME_LANG_ONLY", "RENAME_LANG_SUBS") and not re.fullmatch(r"[A-Za-z0-9.-]*", val):
+        errors[key] = "Use letters, digits, dots and hyphens only, e.g. german.dl."
+    elif key == "RENAME_LANG_TOKENS" and not re.fullmatch(r"[A-Za-z0-9 -]*", val):
+        errors[key] = "Use words of letters and digits, separated by spaces."
     return val
 
 
@@ -3837,6 +3974,7 @@ def settings(section, index=False):
         "settings.html", section=section, group=group, title=title, panels=panels, cfg=cfg, errors=errors, index=index,
         settings_nav=settings_nav(), accents=ACCENTS,
         example=(EXAMPLE_NAME, enc.suggest_name(EXAMPLE_NAME, "x.mkv", "hevc", "rf20", cfg=cfg)) if section == "replace" else None,
+        lang_example=(LANG_EXAMPLE, language_examples(cfg)) if section == "replace" else None,
         checks={s["key"]: path_checks(cfg.get(s["key"]) or "") for _, f in panels for s in f if s["kind"] == "paths"},
         secrets_set={s["key"]: bool(os.environ.get(s["key"]) or (stored_plex()[1] if s["key"] == "PLEX_TOKEN" else stored_oidc()[2]))
                      for _, f in panels for s in f if s["kind"] == "secret"},
@@ -3893,9 +4031,26 @@ EXAMPLE_NAME = "Northwind.Station.S02E01.1080p.WEB.h264-NTB.mkv"
 @app.route("/settings/replace/example")
 def settings_replace_example():
     """The name "Replace…" would suggest for an example file with the settings on the form."""
-    cfg = {k: request.args.get(k, "") for k in ("RENAME_CODEC_TAGS", "RENAME_GROUP")}
-    cfg["RENAME_QUALITY"] = "1" if request.args.get("RENAME_QUALITY") else "0"
-    return {"before": EXAMPLE_NAME, "after": enc.suggest_name(EXAMPLE_NAME, "x.mkv", "hevc", "rf20", cfg=cfg)}
+    cfg = {k: request.args.get(k, "") for k in ("RENAME_CODEC_TAGS", "RENAME_GROUP") + LANG_KEYS}
+    for k in ("RENAME_QUALITY", "RENAME_LANGUAGES"):
+        cfg[k] = "1" if request.args.get(k) else "0"
+    return {"before": EXAMPLE_NAME, "after": enc.suggest_name(EXAMPLE_NAME, "x.mkv", "hevc", "rf20", cfg=cfg),
+            "languages": language_examples(cfg)}
+
+
+LANG_KEYS = ("RENAME_LANG_MAIN", "RENAME_LANG_MULTI", "RENAME_LANG_ONLY", "RENAME_LANG_OTHER", "RENAME_LANG_SUBS",
+             "RENAME_LANG_TOKENS")
+LANG_EXAMPLE = "Northwind.Station.S02E01.GERMAN.DL.1080p.WEB.h264-NTB.mkv"
+
+
+def language_examples(cfg):
+    """[(audio, name)]: what the language tag makes of an example name for some track sets."""
+    def tracks(audio, subs=()):
+        return {"audio": [{"lang": a, "title": "", "commentary": False} for a in audio], "subs": list(subs), "error": None}
+    cases = [("German, English", tracks(["ger", "eng"])), ("German", tracks(["ger"])),
+             ("English", tracks(["eng"])), ("Norwegian, German subtitles", tracks(["nor"], ["ger"]))]
+    return [(label, enc.suggest_name(LANG_EXAMPLE, "x.mkv", "hevc", "rf20", cfg=dict(cfg, RENAME_LANGUAGES="1"), tracks=t))
+            for label, t in cases]
 
 
 def settings_problems():

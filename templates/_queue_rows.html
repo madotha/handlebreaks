@@ -56,7 +56,7 @@
     <td class="name entry" title="{{ r.key }}">{% if r.where %}<span class="entry-where">{{ r.where|wbr }}</span>{% endif %}<span class="entry-file">{{ r.file|wbr }}</span></td>
     {{ codec_cell(r) }}
     {{ res_cell(r) }}
-    {{ bitrate_cell(r, 'Replacing file' if r.status == 'REPLACED' else 'Original') }}
+    {{ bitrate_cell(r, 'Replacing file' if r.status == 'REPLACED' else 'File' if r.status == 'RENAMED' else 'Original') }}
     <td>{% if r.can_retry %}<form class="inline-form" method="post" action="{{ url_for('queue_again') }}">
         <input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="key" value="{{ r.key }}">
         <button class="icon-btn" aria-label="Queue again" data-tip="Queue this file again">{{ icon('retry') }}</button></form>{% endif %}</td>

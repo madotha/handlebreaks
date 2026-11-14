@@ -43,6 +43,7 @@
     $("[data-r-ext]").textContent = encoded.slice(dot);
     $("[data-r-keep]").checked = $("[data-r-keep]").defaultChecked;   // KEEP_ORIGINALS
     $("[data-r-error]").hidden = true;
+    if ($("[data-r-langs]")) $("[data-r-langs]").hidden = true;
     window.returnFocusOnClose(dialog);
     dialog.showModal();
     fitName();
@@ -56,9 +57,11 @@
     try {
       const r = await fetch(`${dialog.dataset.suggestUrl}?key=${encodeURIComponent(btn.dataset.key)}`);
       if (!r.ok) return;
-      const { name } = await r.json();
+      const { name, languages } = await r.json();
       const dot = name.lastIndexOf(".");
       if (current && current.btn === btn && field.value === prefilled) { field.value = name.slice(0, dot); fitName(); }
+      const langs = $("[data-r-langs]");
+      if (langs && current && current.btn === btn) { langs.textContent = languages || ""; langs.hidden = !languages; }
     } catch (e) { /* keep the pre-filled name */ }
   }
 
