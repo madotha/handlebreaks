@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [4.8.1] - 2026-11-17
+
 ### Fixed
 - Moving entries in the Queue tab no longer leaves the whole rest of the run behind as "Removed": moved entries only show at their new place, so the list shows the real order in which files are encoded. This also applies to the API's queue list.
 
