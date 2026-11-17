@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [4.8.0] - 2026-11-17
+
 ### Changed
 - Faster pages, especially over a VPN such as Tailscale or a mobile connection:
   - The browser keeps the web UI's styles and scripts until the next update, instead of checking each of them with the server on every page.
