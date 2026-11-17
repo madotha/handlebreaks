@@ -78,7 +78,7 @@
     {% if q.view == 'queue' %}
     <ul><li>Reorder waiting entries by dragging the handle, with the arrows, or with Move to top / bottom. Not while a column is sorted.</li>
       <li>Entries of the running batch stay in place until the worker takes them. Moving one of them starts a new run after this one; a divider marks where it begins.</li>
-      <li>Removed entries of the running batch show as “Removed” and are skipped.</li>
+      <li>Moved entries show at their new place. Removed entries are hidden; choose “Removed” in the list filter to see them.</li>
       <li>Finished files move to Awaiting review (encodes) or History (every result).</li></ul>
     {% elif q.view == 'review' %}
     <ul><li>Finished encodes in the output folder, also from earlier runs, until their original is replaced.</li>
@@ -102,9 +102,10 @@
     {% if q.view == 'queue' %}
       <select name="state" aria-label="Show">
         <option value="">All</option>
-        {% for key, label in [('encoding', 'Encoding'), ('waiting', 'Waiting'), ('removed', 'Removed')] %}
+        {% for key, label in [('encoding', 'Encoding'), ('waiting', 'Waiting')] %}
           <option value="{{ key }}" {% if q.state == key %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
+        {% if q.counts.get('removed') or q.state == 'removed' %}<option value="removed" {% if q.state == 'removed' %}selected{% endif %}>Removed ({{ q.counts.get('removed', 0)|count }})</option>{% endif %}
       </select>
     {% elif q.view == 'history' %}
       <select name="state" aria-label="Show">

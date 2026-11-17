@@ -7,6 +7,12 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Fixed
+- Moving entries in the Queue tab no longer leaves the whole rest of the run behind as "Removed": moved entries only show at their new place, so the list shows the real order in which files are encoded. This also applies to the API's queue list.
+
+### Changed
+- Removed queue entries are hidden in the Queue tab by default. While there are any, the list filter offers "Removed (N)" to show them. The `#` column numbers only the entries that will be encoded.
+
 ## [4.8.0] - 2026-11-17
 
 ### Changed

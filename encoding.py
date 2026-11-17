@@ -2366,7 +2366,9 @@ def queue_items():
     and are numbered like encode.sh does (current.txt holds the number of the file being
     encoded): earlier entries are finished (state = their result from this run, or
     "skipped" if there is none), the current one is "encoding", the rest "waiting".
-    Batches in processing/ without an active run and everything in queue/ are "waiting"."""
+    Batches in processing/ without an active run and everything in queue/ are "waiting".
+    Entries removed from the run are "removed", unless they were moved (then they wait elsewhere).
+    """
     cur = current_progress()
     current = int(cur["i"]) if cur and cur["i"].isdigit() else None
     cancelled = cancelled_entries()
@@ -2390,7 +2392,10 @@ def queue_items():
     else:
         rest = batch_entries()
     items += [{"key": key, "preset": preset, "state": "waiting", "batch": f, "run": False} for f, key, preset in rest]
-    return items
+    # A moved entry of the run (reorder_queued) is on the cancel list at its old place and waits
+    # again at its new one: only the new place is real, so the old one isn't listed at all
+    waiting = {i["key"] for i in items if i["state"] == "waiting"}
+    return [i for i in items if not (i["state"] == "removed" and i["key"] in waiting)]
 
 
 def take_out_of_queue(waiting):

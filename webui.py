@@ -2690,10 +2690,12 @@ def queue_rows(view, state):
     has_run = any(i["run"] for i in items)
     n = 0
     for item in items:                          # processing order of the run and queue
-        n += 1
-        item["n"] = n
+        if item["state"] != "removed":          # (removed entries are skipped: no place in the order)
+            n += 1
+        item["n"] = n if item["state"] != "removed" else ""
         item["next_run"] = has_run and not item["run"]      # waits for a new worker run
-    active = [i for i in items if i["state"] in ("encoding", "waiting", "removed")]
+    # "All" is the real order: encoding and waiting; removed entries only with their own filter
+    active = [i for i in items if i["state"] in (("removed",) if state == "removed" else ("encoding", "waiting"))]
     review = awaiting_review()
     history = enc.history_entries(state if view == "history" else "")
     kept = kept_list()
