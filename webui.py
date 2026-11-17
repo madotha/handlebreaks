@@ -2331,7 +2331,7 @@ def files():
     queued = enc.pending_keys()
     # Folder contents only change with the database or the queue: the browser keeps loaded
     # folders for this version (files.js), so reopening them after a reload needs no request
-    version = hashlib.sha1(repr((STARTED, enc.db_version(), sorted(queued), activity_version())).encode()).hexdigest()[:12]
+    version = folder_version(queued)
     if filters:
         level = level_context("", filters, queued, sort=sort)
     else:                                       # the unfiltered top level is the same until data changes
@@ -2410,30 +2410,45 @@ def select_files(keys, folders, filters, statuses=None):
     return list(dict.fromkeys(out)), unknown, bad
 
 
+def folder_version(queued=None):
+    """Version of the Files page's folder contents: they only change with the database or the
+    queue, so the browser keeps loaded folders for it (files.js)."""
+    queued = enc.pending_keys() if queued is None else queued
+    return hashlib.sha1(repr((STARTED, enc.db_version(), sorted(queued), activity_version())).encode()).hexdigest()[:12]
+
+
 @app.route("/queue", methods=["POST"])
 def queue():
     """Queue the selected files, plus every file (matching the active filters) in the
-    selected folders."""
+    selected folders. With json=1 (the Files page, which then reloads its folders in place
+    and keeps them open) the answer is JSON with the message and the new folder version."""
+    as_json = bool(request.form.get("json"))
+
+    def back(msg, kind, status=200):
+        if as_json:
+            return {"ok": kind != "error", "message": msg, "kind": kind, "version": folder_version()}, status
+        if status != 200:
+            abort(status, msg)
+        flash(msg, kind)
+        return safe_next(url_for("files"))
     keys, unknown, bad_folders = select_files(request.form.getlist("key"),
                                               [f.strip("/") for f in request.form.getlist("folder")],
                                               file_filters(request.form))
     if unknown:                                 # only files from the last scan can be queued
-        abort(400, "Unknown file selected. Scan again and retry.")
+        return back("Unknown file selected. Scan again and retry.", "error", 400)
     if bad_folders:
-        abort(400, "Unknown folder selected. Scan again and retry.")
+        return back("Unknown folder selected. Scan again and retry.", "error", 400)
     preset = request.form.get("preset", "").strip() or None
     if preset and not presets.exists(preset):
-        abort(400, "Unknown preset.")
+        return back("Unknown preset.", "error", 400)
     if not keys:
-        flash("No files selected.", "error")
-    else:
-        chosen = enc.write_batch(keys, preset)
-        skipped = len(set(keys)) - len(chosen)
-        msg = f"{len(chosen):,} file(s) queued {preset_phrase(chosen, preset)}."
-        if skipped:
-            msg += f" {skipped:,} already in the queue."
-        flash(msg, "ok" if chosen else "error")
-    return safe_next(url_for("files"))
+        return back("No files selected.", "error")
+    chosen = enc.write_batch(keys, preset)
+    skipped = len(set(keys)) - len(chosen)
+    msg = f"{len(chosen):,} file(s) queued {preset_phrase(chosen, preset)}."
+    if skipped:
+        msg += f" {skipped:,} already in the queue."
+    return back(msg, "ok" if chosen else "error")
 
 
 QUEUE_PAGE = 100                                # queue entries per page on the Status page

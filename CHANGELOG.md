@@ -7,6 +7,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+- Files page: **Queue for encoding** no longer reloads the page. The folders you opened stay open and the scroll position stays, so you can go on queueing other files, e.g. with another preset. The same applies after **Replace selected…** and **Fix language tags…**.
+
 ## [4.6.0] - 2026-11-14
 
 ### Added

@@ -356,13 +356,15 @@
     document.documentElement.style.setProperty("--sel-h", `${selBar.getBoundingClientRect().height}px`);
   }).observe(selBar);
 
-  // Installed app, pull down at the top (static/phone.js): load the tree again with the folders
-  // that are open, then tick again what was ticked
-  window.pullRefresh = async () => {
+  // Load the tree again with the folders that are open (they reopen as their levels load,
+  // nothing from the cache). keepPicked ticks again what was ticked; the scroll position stays.
+  async function reloadTree(keepPicked) {
     const tree = form.querySelector(".tree");
     const picked = new Set([...form.querySelectorAll('input[name="key"]:checked, input[name="folder"]:checked')].map((i) => i.value));
     const r = await fetch(`${form.dataset.folderUrl}?path=` + (form.dataset.folderQuery ? "&" + form.dataset.folderQuery : ""));
-    if (!r.ok) { say("Could not load the folders. Try again in a moment.", "error"); return; }
+    if (!r.ok) { say("Could not load the folders. Reload the page.", "error"); return; }
+    const y = window.scrollY;
+    tree.style.minHeight = `${tree.offsetHeight}px`;     // the page doesn't shrink (and jump) while folders reload
     allFresh = true;
     try {
       tree.innerHTML = await r.text();
@@ -374,15 +376,20 @@
       } while (pending.size);
     } finally {
       allFresh = false;
+      tree.style.minHeight = "";
+      window.scrollTo(0, y);
     }
-    form.querySelectorAll('input[name="key"], input[name="folder"]').forEach((i) => {
+    if (keepPicked) form.querySelectorAll('input[name="key"], input[name="folder"]').forEach((i) => {
       if (picked.has(i.value) && !i.disabled && !i.checked) {
         i.checked = true;
         i.dispatchEvent(new Event("change", { bubbles: true }));
       }
     });
     update();
-  };
+  }
+
+  // Installed app, pull down at the top (static/phone.js)
+  window.pullRefresh = () => reloadTree(true);
 
   // Phones: the open folders around the scroll position stay named below the header; tapping
   // one closes it and scrolls back to it
@@ -444,10 +451,10 @@
 
   // "Replace selected…" (static/bulkreplace.js): the ticked files and folders, with the filters
   bulkButton.addEventListener("click", () => {
-    window.BulkReplace.open(new FormData(form), { say, done: () => location.reload() });
+    window.BulkReplace.open(new FormData(form), { say, done: () => reloadTree(false) });
   });
   if (renameButton) renameButton.addEventListener("click", () => {
-    window.BulkRename.open(new FormData(form), { say, done: () => location.reload() });
+    window.BulkRename.open(new FormData(form), { say, done: () => reloadTree(false) });
   });
 
   // Phones: the file rows are compact; tapping a file name shows duration, date added and ↻
@@ -458,9 +465,28 @@
   });
 
   form.addEventListener("change", update);
-  form.addEventListener("submit", (e) => {
+  // Queue for encoding: sent in the background, then the folders are loaded again in place,
+  // so the open ones stay open for queueing more files (e.g. with another preset)
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
     const n = Number(button.dataset.count || 0);
-    if (n > 200 && !confirm(`Queue ${n.toLocaleString()} files for encoding?`)) e.preventDefault();
+    if (!n || (n > 200 && !confirm(`Queue ${n.toLocaleString()} files for encoding?`))) return;
+    const body = new FormData(form);
+    body.append("json", "1");
+    button.disabled = true;
+    say("Queueing…", "busy");
+    let res;
+    try {
+      const r = await fetch(form.action, { method: "POST", body, headers: { Accept: "application/json" } });
+      res = await r.json();
+    } catch (err) {
+      say("The files could not be queued. Reload the page and try again.", "error");
+      update();
+      return;
+    }
+    if (res.version) form.dataset.version = res.version;
+    say(res.message, res.kind);
+    if (res.ok) await reloadTree(false); else update();
   });
   init(form);
 })();
