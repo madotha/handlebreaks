@@ -1757,6 +1757,17 @@ def static_version(endpoint, values):
         values.setdefault("v", STATIC_V)
 
 
+@app.after_request
+def static_cache(resp):
+    """Static files requested with the current ?v= never change under that URL, so the browser may
+    keep them without asking again on every page (over plain http, e.g. a LAN or Tailscale address,
+    the service worker that would otherwise hold them isn't allowed to run). Other static URLs
+    (without ?v=, or an old version) are still checked with the server each time."""
+    if request.endpoint == "static" and resp.status_code == 200 and request.args.get("v") == STATIC_V:
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    return resp
+
+
 def no_cache(resp):
     resp.headers["Cache-Control"] = "no-cache"
     return resp
@@ -2231,7 +2242,15 @@ def sort_links(filters, sort):
 
 def facet_counts(filters):
     """Numbers of the filter panel: files per codec, status and date added filter, each
-    counted with the other filters applied, so a number says how many files that choice shows."""
+    counted with the other filters applied, so a number says how many files that choice shows.
+    The last combination is kept until the database changes (the date filters count from now,
+    so at most a minute)."""
+    key = (enc.db_version(), json.dumps(filters, sort_keys=True, default=str), tuple(added_filters()),
+           int(time.time() // 60))
+    return cached("facets", key, lambda: count_facets(filters))
+
+
+def count_facets(filters):
     def without(key):
         drop = {key, "from", "to"} if key == "added" else {key}
         return filter_sql({k: v for k, v in filters.items() if k not in drop})
@@ -3395,13 +3414,22 @@ def stats():
     of every file), so the page stays fast with large libraries."""
     if g.config_error:
         return render_template("stats.html", charts=[], tiles=None)
+    charts, tiles = cached("stats", (enc.db_version(), tuple(sorted(enc.SHARE_NAMES.items()))), stats_data)
+    if tiles is None:
+        return render_template("stats.html", charts=[], tiles=None)
+    return render_template("stats.html", charts=charts, tiles=tiles, last_scan=enc.last_scan(), fact=fun_fact())
+
+
+def stats_data():
+    """(charts, tiles) of the Stats page, or ([], None) for an empty library. Kept by stats()
+    until the database changes: the grouped query is the slowest part of any page."""
     with closing(db()) as con:
         groups = con.execute(f"""
             SELECT video_codec, {bin_case('bitrate', BITRATE_BINS, 1e6)}, {bin_case('size', SIZE_BINS, GB)},
                    {RES_CASE}, substr(key, 1, instr(key, '/') - 1), status, COUNT(*), COALESCE(SUM(size), 0)
             FROM files GROUP BY 1, 2, 3, 4, 5, 6""").fetchall()
         if not groups:
-            return render_template("stats.html", charts=[], tiles=None)
+            return [], None
         good = sorted(enc.OPTIMIZED_CODECS)
         marks = ", ".join("?" * len(good))
 
@@ -3466,7 +3494,7 @@ def stats():
         "good_count": good_count, "other_count": other_count, "other_size": other_size,
         "median_good": median_good, "median_other": median_other,
     }
-    return render_template("stats.html", charts=charts, tiles=tiles, last_scan=enc.last_scan(), fact=fun_fact())
+    return charts, tiles
 
 
 # ─── Presets ──────────────────────────────────────────────────────────────────

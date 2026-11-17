@@ -64,7 +64,8 @@
   <p data-idle {% if cur %}hidden{% endif %}>No encode running.</p>
 </section>
 
-<section class="panel">
+{#- The open tab: static/status.js swaps this section in place when another tab is chosen #}
+<section class="panel status-tab" data-status-tab>
   {% set tab_info = uid('info') %}
   <div class="tabs-line">
   <nav class="view-tabs" aria-label="Status views">

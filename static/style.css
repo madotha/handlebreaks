@@ -422,6 +422,9 @@ th.sel, td.sel { width: 2rem; padding-right: 0; }
 .now-step.next .meter > span { width: 0 !important; }
 .now-step.next .step-label, .now-step.next .step-info { opacity: .6; }
 .now-step-short { display: none; }
+/* A tab or filter that takes a moment to load (static/status.js, static/files.js): the old list dims */
+.status-tab.tab-loading .table-wrap, .status-tab.tab-loading .queue-tools,
+.files-main.soft-loading .tree, .files-main.soft-loading .result-line { opacity: .5; transition: opacity .15s; pointer-events: none; }
 .view-tabs { display: flex; gap: .15rem; margin: -.2rem 0 .9rem; box-shadow: inset 0 -1px 0 var(--border);
   overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .view-tabs::-webkit-scrollbar { display: none; }

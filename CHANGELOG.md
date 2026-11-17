@@ -7,6 +7,13 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+- Faster pages, especially over a VPN such as Tailscale or a mobile connection:
+  - The browser keeps the web UI's styles and scripts until the next update, instead of checking each of them with the server on every page.
+  - The Status tabs switch in place, without reloading the page. The other tabs are loaded ahead in the background, so a switch usually shows at once. Sorting a tab also works in place. Back, reload and bookmarks work as before.
+  - On the Files page, filters, filter chips, sorting and the search apply in place. Open folders stay open with the new filters.
+  - The Stats page and the Files page's filter counts are calculated once per change of the data instead of on every visit. Presets are read from disk only when they change.
+
 ## [4.7.0] - 2026-11-17
 
 ### Added

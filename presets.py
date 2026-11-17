@@ -12,6 +12,7 @@ containers, mixdowns, built-in presets) are read from the installed HandBrakeCLI
 they always match its version.
 """
 
+import copy
 import json
 import os
 import re
@@ -99,13 +100,30 @@ def exists(preset_id):
         return False
 
 
-def load(preset_id):
-    """The preset object (the single entry of PresetList)."""
+_LOADED = {}                                    # path -> ((mtime_ns, size), preset) for _read()
+
+
+def _read(preset_id):
+    """The preset object as stored, parsed once per file version (pages ask for preset names
+    many times). Shared: never change it, load() returns a copy."""
+    path = path_of(preset_id)
     try:
-        data = json.loads(path_of(preset_id).read_text(encoding="utf-8"))
-        return data["PresetList"][0]
-    except (OSError, ValueError, KeyError, IndexError) as e:
+        st = path.stat()
+        version = (st.st_mtime_ns, st.st_size)
+        hit = _LOADED.get(path)
+        if hit and hit[0] == version:
+            return hit[1]
+        preset = json.loads(path.read_text(encoding="utf-8"))["PresetList"][0]
+    except (OSError, ValueError, KeyError, IndexError, TypeError) as e:
+        _LOADED.pop(path, None)
         raise PresetError(f"Preset {preset_id!r} can't be read: {e}")
+    _LOADED[path] = (version, preset)
+    return preset
+
+
+def load(preset_id):
+    """The preset object (the single entry of PresetList), a copy the caller may change."""
+    return copy.deepcopy(_read(preset_id))
 
 
 def file_format(preset_id):
@@ -118,7 +136,7 @@ def file_format(preset_id):
 
 def name_of(preset_id):
     try:
-        return load(preset_id).get("PresetName") or preset_id
+        return _read(preset_id).get("PresetName") or preset_id
     except PresetError:
         return preset_id
 

@@ -7,24 +7,21 @@
   // applies at once; in the drawer "Show files" applies all changes together.
   const layout = document.querySelector("[data-files-layout]");
   const filterForm = document.querySelector("[data-filter-form]");
-  const range = document.querySelector("[data-date-range]");
   const phone = matchMedia("(max-width: 720px)");
+  let setOpen = () => {};                       // phones: opens or closes the filter drawer
   if (layout && filterForm) {
     const panel = layout.querySelector("[data-filter-panel]");
     const toggle = document.querySelector("[data-filter-toggle]");
     const backdrop = layout.querySelector("[data-filter-backdrop]");
-    const datesSet = () => [...range.querySelectorAll('input[type="date"]')].some((i) => i.value);
-    const apply = () => {
-      sessionStorage.setItem("files:filter-scroll", panel.scrollTop);
-      filterForm.requestSubmit();
-    };
+    const range = () => filterForm.querySelector("[data-date-range]");   // the form's content is swapped by filtersGo()
+    const apply = () => filterForm.requestSubmit();
     filterForm.addEventListener("change", (e) => {
       const t = e.target;
-      if (t.name === "added") range.hidden = t.value !== "custom";
+      if (t.name === "added") range().hidden = t.value !== "custom";
       if (phone.matches || t.type === "search") return;
       if (t.type === "date" || (t.name === "added" && t.value === "custom")) {
         // a custom range applies once both dates are set, or with "Show files" for an open end
-        const dates = [...range.querySelectorAll('input[type="date"]')];
+        const dates = [...range().querySelectorAll('input[type="date"]')];
         if (dates.every((i) => i.value)) apply();
         else {
           filterForm.classList.add("fp-pending");
@@ -42,10 +39,8 @@
         if (!data.get(name) || (!custom && (name === "from" || name === "to"))) data.delete(name);
       });
     });
-    const saved = sessionStorage.getItem("files:filter-scroll");
-    if (saved) { panel.scrollTop = +saved; sessionStorage.removeItem("files:filter-scroll"); }
 
-    const setOpen = (open) => {           // phones: the drawer
+    setOpen = (open) => {                 // phones: the drawer
       layout.classList.toggle("fp-open", open);
       backdrop.hidden = !open;
       document.documentElement.classList.toggle("fp-lock", open);
@@ -61,7 +56,8 @@
       localStorage.setItem("files:filters", hidden ? "hidden" : "shown");
       sync();
     });
-    panel.querySelector("[data-filter-close]").addEventListener("click", () => {
+    panel.addEventListener("click", (e) => {
+      if (!e.target.closest("[data-filter-close]")) return;
       if (phone.matches) setOpen(false);
       else toggle.click();
     });
@@ -78,7 +74,9 @@
     sync();
   }
   // The date pickers: no future dates, "from" never after "to"; a click anywhere in a field opens its picker
-  if (range) {
+  function setupRange() {
+    const range = document.querySelector("[data-date-range]");
+    if (!range) return;
     const [from, to] = range.querySelectorAll('input[type="date"]');
     const now = new Date();
     const today = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -89,6 +87,7 @@
     });
     limits();
   }
+  setupRange();
 
   const form = document.getElementById("queue-form");
   if (!form) return;
@@ -487,6 +486,119 @@
     if (res.version) form.dataset.version = res.version;
     say(res.message, res.kind);
     if (res.ok) await reloadTree(false); else update();
+  });
+
+  // ─── Filters and sorting in place ─────────────────────────────────────────
+  // A filter, a chip, "Clear all" or a sort link fetches the page with the new address and
+  // takes over only what depends on it: the filter panel's choices and counts, the result
+  // line, the sort links and the tree (the open folders open again). The address follows,
+  // so reloads, Back and bookmarks work as before. Anything unexpected loads the page normally.
+  const main = document.querySelector(".files-main");
+  let navToken = 0, shownUrl = location.pathname + location.search;
+  const sameAttr = (from, to, names) => names.forEach((n) => {
+    if (from.hasAttribute(n)) to.setAttribute(n, from.getAttribute(n)); else to.removeAttribute(n);
+  });
+
+  async function filtersGo(href, push) {
+    const url = new URL(href, location.href);
+    const token = ++navToken;
+    const dim = setTimeout(() => main.classList.add("soft-loading"), 120);
+    let doc = null;
+    try {
+      const r = await fetch(url, { headers: { Accept: "text/html" } });
+      if (r.ok && !r.redirected) doc = new DOMParser().parseFromString(await r.text(), "text/html");
+    } catch (e) { /* loads normally below */ }
+    if (token !== navToken) return;              // another filter was chosen meanwhile
+    clearTimeout(dim);
+    const newForm = doc && doc.getElementById("queue-form");
+    const newFilters = doc && doc.querySelector("[data-filter-form]");
+    if (!newForm || !newFilters || !filterForm) { location.href = url; return; }
+
+    // Filter panel: new choices and counts; the focused field and opened sections stay
+    const active = document.activeElement && filterForm.contains(document.activeElement) ? document.activeElement : null;
+    const focusSel = active && active.name ? `[name="${CSS.escape(active.name)}"]${active.value && active.type !== "date" ? `[value="${CSS.escape(active.value)}"]` : ""}` : null;
+    const opened = [...filterForm.querySelectorAll("details[open] > summary")].map((s) => s.textContent.trim());
+    filterForm.classList.remove("fp-pending");
+    filterForm.innerHTML = newFilters.innerHTML;
+    filterForm.querySelectorAll("details > summary").forEach((s) => { if (opened.includes(s.textContent.trim())) s.parentElement.open = true; });
+    if (focusSel) { const f = filterForm.querySelector(focusSel); if (f) f.focus({ preventScroll: true }); }
+    setupRange();
+    const toggle = document.querySelector("[data-filter-toggle]"), newToggle = doc.querySelector("[data-filter-toggle]");
+    if (toggle && newToggle) toggle.innerHTML = newToggle.innerHTML;
+    const search = document.querySelector('.files-toolbar input[name="q"]'), newSearch = doc.querySelector('.files-toolbar input[name="q"]');
+    if (search && newSearch && document.activeElement !== search) search.value = newSearch.value;
+    const line = document.querySelector(".result-line"), newLine = doc.querySelector(".result-line");
+    if (line && newLine) line.replaceWith(newLine);
+
+    // Queue form: its filter fields, the folder address and version, and the sort links
+    form.querySelectorAll(':scope > input[type="hidden"]:not([name="csrf"])').forEach((i) => i.remove());
+    const csrf = form.querySelector(':scope > input[name="csrf"]');
+    csrf.after(...[...newForm.querySelectorAll(':scope > input[type="hidden"]:not([name="csrf"])')].map((i) => document.importNode(i)));
+    form.dataset.folderQuery = newForm.dataset.folderQuery || "";
+    form.dataset.version = newForm.dataset.version || "";
+    const pageNext = document.querySelector('.page-head input[name="next"]'), newPageNext = doc.querySelector('.page-head input[name="next"]');
+    if (pageNext && newPageNext) pageNext.value = newPageNext.value;
+    const chips = form.querySelectorAll(".sort-bar a.sort-chip"), newChips = newForm.querySelectorAll(".sort-bar a.sort-chip");
+    chips.forEach((a, i) => {
+      const n = newChips[i];
+      if (!n) return;
+      a.href = n.getAttribute("href");
+      a.className = n.className;
+      a.textContent = n.textContent;
+      sameAttr(n, a, ["aria-sort"]);
+    });
+    const hint = form.querySelector(".sort-bar > span.muted:last-of-type"), newHint = newForm.querySelector(".sort-bar > span.muted:last-of-type");
+    if (hint && newHint) hint.textContent = newHint.textContent;
+    const heads = form.querySelectorAll("table.col-def th[data-col]"), newHeads = newForm.querySelectorAll("table.col-def th[data-col]");
+    heads.forEach((th, i) => {                   // (keeps the column handles of static/columns.js)
+      const n = newHeads[i], a = th.querySelector("a.sort-link"), na = n && n.querySelector("a.sort-link");
+      if (!n) return;
+      sameAttr(n, th, ["aria-sort"]);
+      if (a && na) { a.href = na.getAttribute("href"); a.className = na.className; a.textContent = na.textContent; }
+    });
+
+    // The tree: the new top level; folders that were open open again with the new filters
+    if (push && url.pathname + url.search !== shownUrl) history.pushState({ files: 1 }, "", url);
+    shownUrl = url.pathname + url.search;
+    const tree = form.querySelector(".tree");
+    const y = window.scrollY;
+    tree.style.minHeight = `${tree.offsetHeight}px`;
+    try {
+      tree.innerHTML = newForm.querySelector(".tree").innerHTML;
+      if (window.localizeTimes) window.localizeTimes(main);
+      init(tree);
+      main.classList.remove("soft-loading");
+      do {
+        await Promise.all([...pending]);
+        await new Promise((done) => setTimeout(done));
+      } while (pending.size);
+    } finally {
+      tree.style.minHeight = "";
+      main.classList.remove("soft-loading");
+      window.scrollTo(0, y);
+    }
+    update();
+    if (phone.matches && layout.classList.contains("fp-open")) setOpen(false);
+  }
+
+  if (filterForm) filterForm.addEventListener("submit", (e) => {
+    if (e.defaultPrevented) return;
+    e.preventDefault();
+    const data = new FormData(filterForm, e.submitter);   // (fires "formdata": empty fields are left out)
+    filtersGo(`${filterForm.action}?${new URLSearchParams(data)}`, true);
+  });
+  document.addEventListener("click", (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest && e.target.closest("[data-files-layout] a[href]");
+    if (!a || a.target) return;
+    const u = new URL(a.href, location.href);
+    if (u.origin !== location.origin || u.pathname !== location.pathname) return;   // only links to this page
+    e.preventDefault();
+    filtersGo(u.href, true);
+  });
+  history.replaceState({ files: 1 }, "", location.href);
+  window.addEventListener("popstate", () => {
+    if (location.pathname + location.search !== shownUrl) filtersGo(location.href, false);
   });
   init(form);
 })();

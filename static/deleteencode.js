@@ -68,15 +68,17 @@
     if (window.onEncodeDeleted) window.onEncodeDeleted(result, opener);
   });
 
+  // Delegated: the Status page swaps its tabs in place, so the buttons may come later
   document.addEventListener("click", (e) => {
     const btn = e.target.closest && e.target.closest("[data-delete-encode]");
-    if (!btn) return;
-    e.preventDefault();
-    opener = btn;
-    open([btn.dataset.key], { encoded: btn.dataset.encoded, preset: btn.dataset.preset });
-  });
-  const selected = document.querySelector("[data-delete-encodes-selected]");
-  if (selected) selected.addEventListener("click", () => {
+    if (btn) {
+      e.preventDefault();
+      opener = btn;
+      open([btn.dataset.key], { encoded: btn.dataset.encoded, preset: btn.dataset.preset });
+      return;
+    }
+    const selected = e.target.closest && e.target.closest("[data-delete-encodes-selected]");
+    if (!selected) return;
     opener = selected;
     const keys = window.selectedStatusKeys ? window.selectedStatusKeys()
       : [...document.querySelectorAll('[data-queue-rows] input[name="key"]:checked')].map((c) => c.value);
