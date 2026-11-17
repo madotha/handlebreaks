@@ -7,6 +7,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- Encodes in several steps show one progress bar per step instead of one bar that fills up twice. A 2-pass encode (average bitrate) shows **Pass 1 · Analysis** and **Pass 2 · Encoding**; a foreign-audio subtitle scan shows as its own step. The big percentage and the time left are for the whole file. A finished step shows how long it took. While the analysis pass runs, the time left is marked "about", because the encoding pass is assumed to take as long. On phones the one-line view shows the step, e.g. "Pass 2/2 · 27 %". The same applies to the tab's progress ring, `status.sh`, the Obsidian status note and the API, which gets the fields `step`, `step_count`, `step_label`, `step_percent`, `eta_estimated` and, in `/status`, `steps`. RF encodes look as before.
+
 ## [4.6.1] - 2026-11-17
 
 ### Changed

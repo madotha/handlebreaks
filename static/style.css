@@ -408,6 +408,20 @@ th.sel, td.sel { width: 2rem; padding-right: 0; }
 .entry .entry-file { display: block; line-height: 1.3; }
 @media (min-width: 721px) { .queue-table tr:has(> td.entry) > td { padding-top: .35rem; padding-bottom: .35rem; } }
 .now-stats { margin: .55rem 0 0; font-variant-numeric: tabular-nums; }
+.now-overall { font-size: .9rem; font-weight: 500; letter-spacing: 0; }
+/* Encodes in several steps: one row per step (label, bar, info) instead of the big bar */
+[data-current]:has(.now-steps:not([hidden])) > .meter.big { display: none; }
+.now-steps { display: grid; grid-template-columns: auto minmax(4rem, 1fr) auto; align-items: center; gap: .45rem .9rem;
+  margin-top: .2rem; font-size: .88rem; font-variant-numeric: tabular-nums; }
+.now-step { display: contents; }
+.now-step .meter { margin: 0; height: 8px; }
+.now-step .step-label { color: var(--muted); }
+.now-step .step-info { color: var(--muted); text-align: right; white-space: nowrap; }
+.now-step.active .step-label, .now-step.active .step-info { color: var(--text); font-weight: 600; }
+.now-step.done .meter > span { background: var(--viz-good); }
+.now-step.next .meter > span { width: 0 !important; }
+.now-step.next .step-label, .now-step.next .step-info { opacity: .6; }
+.now-step-short { display: none; }
 .view-tabs { display: flex; gap: .15rem; margin: -.2rem 0 .9rem; box-shadow: inset 0 -1px 0 var(--border);
   overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .view-tabs::-webkit-scrollbar { display: none; }
@@ -1075,6 +1089,17 @@ input.medium { max-width: 26rem; }
   [data-current-panel]:not(.open) .now-file .entry-file { display: inline; }
   [data-current-panel]:not(.open) .meter { grid-column: 1 / -1; grid-row: 2; height: 4px; margin: 0; }
   [data-current-panel]:not(.open) .now-stats { margin: 0; white-space: nowrap; }
+  /* one line: the overall bar stays, the steps show as "Pass 2/2 · 27 %" */
+  [data-current-panel]:not(.open) [data-current] > .meter.big { display: block; }
+  [data-current-panel]:not(.open) .now-steps, [data-current-panel]:not(.open) .now-overall { display: none; }
+  [data-current-panel]:not(.open) .now-step-short:not([hidden]) { display: inline; }
+  [data-current-panel]:not(.open) .now-pct { white-space: nowrap; }
+  [data-current-panel]:not(.open) [data-current]:has(.now-steps:not([hidden])) .now-file { visibility: hidden; }
+  /* open: label and info on one line, the bar below */
+  .now-steps { display: flex; flex-direction: column; align-items: stretch; gap: .55rem; width: 100%; }
+  .now-steps .step-info { text-align: right; }
+  .now-step { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .25rem .6rem; }
+  .now-step .meter { grid-column: 1 / -1; grid-row: 2; }
   .cur-toggle { display: inline-flex; }
   [data-current-panel].open .cur-toggle { position: absolute; top: .6rem; right: .6rem; }
   [data-current-panel].open { position: relative; }

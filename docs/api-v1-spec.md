@@ -211,7 +211,8 @@ Common objects, used in several responses:
 One flat object for dashboards (Homepage's `customapi` widget maps fields by dotted path). Fields of scopes the token lacks are `null` (so one dashboard token with `status:read` alone still works; with `queue:read`, `review:read`, `stats:read` the numbers fill in).
 ```json
 {"encoding": {"active": true, "file": "Northwind.Station.S02E03.mkv", "percent": 41.2, "fps": 38.5,
-              "eta_seconds": 1260, "position": 3, "of": 12},
+              "eta_seconds": 1260, "position": 3, "of": 12, "step": 2, "step_count": 2,
+              "step_label": "Pass 2 · Encoding", "step_percent": 17.6, "eta_estimated": false},
  "worker": {"state": "encoding", "paused": false},
  "queue": {"waiting": 9, "next_run": 4},
  "review": {"waiting": 5, "saved_bytes": 9126805504},
@@ -220,19 +221,23 @@ One flat object for dashboards (Homepage's `customapi` widget maps fields by dot
  "saved": {"bytes": 1849267937280},
  "offline": [], "scanning": false}
 ```
+- Encodes in several steps (2-pass with average bitrate: analysis + encoding; a foreign-audio subtitle scan), since 4.7.0: `percent` and `eta_seconds` are for the whole file, `step`/`step_count` say which step runs, `step_label` names it and `step_percent` is its own progress. `eta_estimated` is true while a later step's length is only estimated (during the analysis pass it counts as long as the analysis). For single-step encodes (RF) the step fields are `null` and `eta_estimated` is false.
 - `worker.state`: `encoding`, `idle`, `paused` (after Stop all, batches waiting), `waiting` (share offline, HandBrakeCLI missing or not readable: see `/status`), `off` (Docker with `WORKER_ENABLED=0` and no native worker running).
 
 ### 5.3 `GET /api/v1/status`: `status:read`
 ```json
 {"current": {"file": {…File…}, "position": 3, "of": 12, "percent": 41.2, "fps": 38.5, "eta_seconds": 1260,
-             "started": "2026-11-05T14:02:00+01:00", "preset": {…}},
+             "started": "2026-11-05T14:02:00+01:00", "preset": {…},
+             "step": 2, "step_count": 2, "step_label": "Pass 2 · Encoding", "step_percent": 17.6, "eta_estimated": false,
+             "steps": [{"label": "Pass 1 · Analysis", "state": "done", "percent": 100.0, "seconds": 6643},
+                       {"label": "Pass 2 · Encoding", "state": "active", "percent": 17.6, "seconds": null}]},
  "worker": {"state": "encoding", "paused": false, "stoppable": true,
             "waiting_for": null},
  "offline": [{"share": {"number": 1, "name": "Movies"}, "since": "…"}],
  "scan": {"running": false, "label": null, "started": null, "last_finished": "…"},
  "replaces": {"waiting": 0, "moving": 0, "checking": 0}}
 ```
-- `current` is `null` while nothing encodes. `waiting_for` = `{"kind": "offline"|"denied"|"handbrake"|"stuck", "share": {…}|null, "error": "…"}` while the worker waits (the web UI's banner). `stuck` (since 4.5.3): a file operation of the worker (moving a finished encode, deleting a file) has run for more than a minute, e.g. because macOS waits for an answer to a privacy dialog; `error` says since when. The worker may still report `encoding` then.
+- `current` is `null` while nothing encodes. Its step fields are the same as in `/summary`; `steps` lists every step with `state` `done`, `active` or `next` and, for finished ones, how long they took (`seconds`; `null` if unknown). `steps` is `null` for single-step encodes. `waiting_for` = `{"kind": "offline"|"denied"|"handbrake"|"stuck", "share": {…}|null, "error": "…"}` while the worker waits (the web UI's banner). `stuck` (since 4.5.3): a file operation of the worker (moving a finished encode, deleting a file) has run for more than a minute, e.g. because macOS waits for an answer to a privacy dialog; `error` says since when. The worker may still report `encoding` then.
 
 ### 5.4 `GET /api/v1/queue`: `queue:read`
 Parameters: `state` (`waiting`, `encoding`, `removed`; default all three), `q` (words in the key), `limit`, `cursor`, `sort` (`order` = default, `file`, `codec`, `resolution`, `bitrate`, `preset`, `state`), `dir`.

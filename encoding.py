@@ -136,6 +136,7 @@ CURRENT_FILE = LOG_DIR / "current.txt"
 RUN_FILE     = LOG_DIR / "run.txt"            # batch file names of the worker's current run, in order
 ENCODES_FILE = LOG_DIR / "encodes.tsv"        # date, key, preset id, quality of every finished encode
 PROGRESS_LOG = LOG_DIR / "progress.log"
+HANDBRAKE_LOG = LOG_DIR / "handbrake-last.log"   # HandBrakeCLI's log (stderr) of the current or last encode
 SCAN_PROGRESS = LOG_DIR / "scan.json"        # progress of the running scan (ScanProgress), gone when it ends
 
 # Find ffprobe even when launchd or another caller sets a minimal PATH
@@ -2204,13 +2205,18 @@ def write_note(s):
 # ─── Status ───────────────────────────────────────────────────────────────────
 
 def current_progress():
-    """The file being encoded, with progress from progress.log, or None."""
+    """The file being encoded, with progress from progress.log, or None.
+
+    HandBrakeCLI counts its tasks ("task 1 of 2": subtitle scan, analysis pass, encoding pass)
+    and starts each at 0 %. With more than one task, "pct" and "eta" are for the whole file
+    (task_progress()); "steps" lists the tasks and "pass_pct"/"pass_eta" are the running task's."""
     if not CURRENT_FILE.exists():
         return None
     parts = CURRENT_FILE.read_text(encoding="utf-8").strip().split("\t")
     if len(parts) < 3:
         return None
-    cur = {"key": parts[0], "i": parts[1], "n": parts[2], "pct": None, "eta": None, "fps": None}
+    cur = {"key": parts[0], "i": parts[1], "n": parts[2], "pct": None, "eta": None, "fps": None,
+           "steps": None, "step": None, "step_short": None, "pass_pct": None, "pass_eta": None, "eta_about": False}
     if PROGRESS_LOG.exists():
         raw = PROGRESS_LOG.read_bytes()[-2000:].decode("utf-8", "replace")
         chunks = [c for c in re.split(r"[\r\n]", raw) if "Encoding:" in c]
@@ -2219,7 +2225,131 @@ def current_progress():
                              ("fps", r"avg ([\d.]+) fps")):
                 m = re.search(rx, chunks[-1])
                 cur[name] = m.group(1) if m else None
+            m = re.search(r"task (\d+) of (\d+)", chunks[-1])
+            if m and int(m.group(2)) > 1:
+                task_progress(cur, int(m.group(1)), int(m.group(2)))
     return cur
+
+
+TASK_START_RE = re.compile(r"^\[(\d\d):(\d\d):(\d\d)\] Starting Task: (.+?)\s*$", re.M)
+TASK_LABELS = {"analysis pass": "Analysis", "encoding pass": "Encoding", "subtitle scan": "Subtitle scan"}
+_TASKS = {}
+
+
+def task_starts():
+    """[(label, start in seconds)] of the tasks in HandBrake's log of the current encode. The log
+    only has times of day: a start earlier than the one before is on the next day."""
+    try:
+        st = HANDBRAKE_LOG.stat()
+    except OSError:
+        return []
+    sig = (st.st_size, st.st_mtime_ns)
+    if _TASKS.get("sig") != sig:
+        tasks, day, last = [], 0, None
+        text = HANDBRAKE_LOG.read_bytes().decode("utf-8", "replace")
+        for m in TASK_START_RE.finditer(text):
+            t = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
+            if last is not None and t < last:
+                day += 86400
+            last = t
+            name = m.group(4)
+            tasks.append((TASK_LABELS.get(name.lower(), name), t + day))
+        _TASKS.update(sig=sig, tasks=tasks)
+    return _TASKS["tasks"]
+
+
+def hms(seconds):
+    """Seconds as HandBrake writes an ETA (01h04m12s)."""
+    seconds = int(round(seconds))
+    return f"{seconds // 3600:02d}h{seconds // 60 % 60:02d}m{seconds % 60:02d}s"
+
+
+def took(seconds):
+    """A short duration for people: 45 s, 12 min, 1 h 50 min."""
+    seconds = int(round(seconds))
+    if seconds < 60:
+        return f"{seconds} s"
+    if seconds < 3600:
+        return f"{seconds // 60} min"
+    return f"{seconds // 3600} h {seconds // 60 % 60} min"
+
+
+def task_progress(cur, task, total):
+    """Turn the running task's progress in cur into the whole file's (task of total tasks).
+
+    Finished tasks count with their real duration (from HandBrake's log), the running one with
+    its elapsed time (from its percentage and ETA), and tasks still to come as long as the running
+    one: the analysis pass takes about as long as the encoding pass. Until that can be computed
+    (no ETA yet, durations unknown, or a subtitle scan whose length says nothing about the
+    encode) every task counts the same and the whole file's time left stays unknown."""
+    starts = task_starts()
+    if len(starts) > task:                      # a log from another encode
+        starts = []
+    labels = [label for label, _ in starts]
+    expected = {2: ["Subtitle scan", "Encoding"] if labels[:1] == ["Subtitle scan"] else ["Analysis", "Encoding"],
+                3: ["Subtitle scan", "Analysis", "Encoding"]}.get(total)
+    if expected and labels == expected[:len(labels)]:
+        names = expected                        # the tasks still to come are known
+    else:
+        names = (labels + [None] * total)[:total]
+    passes = [k for k, n in enumerate(names) if n in ("Analysis", "Encoding")]
+    pct = min(max(float(cur["pct"] or 0), 0.0), 100.0)
+    eta = None
+    m = re.fullmatch(r"(\d+)h(\d+)m(\d+)s", cur["eta"] or "")
+    if m:
+        eta = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
+    done = [starts[k + 1][1] - starts[k][1] for k in range(task - 1)] if len(starts) == task else None
+    elapsed = eta * pct / (100 - pct) if eta is not None and 0 < pct < 100 else None
+    steps = []
+    for k in range(total):
+        name = names[k]
+        is_pass = len(passes) > 1 and k in passes
+        label = f"Pass {passes.index(k) + 1} · {name}" if is_pass else name or f"Step {k + 1}"
+        if k == task - 1:                       # the phones' one-line view: "Pass 2/2"
+            cur["step_short"] = f"Pass {passes.index(k) + 1}/{len(passes)}" if is_pass else name or f"Step {k + 1}/{total}"
+        if k < task - 1:
+            steps.append({"label": label, "state": "done", "pct": 100.0, "seconds": done[k] if done else None,
+                          "took": took(done[k]) if done else ""})
+        elif k == task - 1:
+            steps.append({"label": label, "state": "active", "pct": pct, "seconds": None, "eta": cur["eta"]})
+        else:
+            steps.append({"label": label, "state": "next", "pct": 0.0, "seconds": None})
+    cur.update(steps=steps, step=task, pass_pct=cur["pct"], pass_eta=cur["eta"])
+    estimable = done is not None and elapsed is not None and (task == total or names[task - 1] != "Subtitle scan")
+    if estimable:
+        current = elapsed + eta
+        before = sum(done)
+        after = current * (total - task)
+        overall = (before + elapsed) / (before + current + after) * 100
+        cur["eta"] = hms(eta + after)
+        cur["eta_about"] = task < total
+    else:
+        overall = (task - 1 + pct / 100) / total * 100
+        cur["eta"] = None
+    cur["pct"] = f"{overall:.2f}"
+
+
+def progress_text(cur, markdown=False):
+    """The current encode's progress as text lines (status.sh, the Obsidian status note)."""
+    if not cur:
+        return "No encode running."
+    left = (("about " if cur["eta_about"] else "") + cur["eta"]) if cur["eta"] else ""
+    if markdown:
+        lines = [f"**Progress:** {cur['pct'] or 'starting …'} %" + (f" · {left} left" if left else "")]
+    else:
+        lines = [f"{bar_text(cur['pct'])}  {cur['pct'] or 0} %" + ("  overall" if cur["steps"] else ""),
+                 f"Speed: {cur['fps'] or '–'} fps   Time left for this file: {left or '–'}"]
+    for s in cur["steps"] or []:
+        info = {"done": f"done · {s['took']}" if s.get("took") else "done",
+                "active": f"{s['pct']:.2f} %" + (f" · {s['eta']} left" if s.get("eta") else ""),
+                "next": "next"}[s["state"]]
+        lines.append(f"- {s['label']}: {info}" if markdown else f"  {s['label']:<20} {bar_text(s['pct'], 24)}  {info}")
+    return "\n".join(lines)
+
+
+def bar_text(pct, width=40):
+    filled = int(float(pct or 0) * width / 100)
+    return "[" + "█" * filled + "░" * (width - filled) + "]"
 
 
 # State of a queued entry (queue_items) -> label; the upper-case ones are results of encode.sh
@@ -2449,7 +2579,10 @@ def status_text():
     if cur:
         prog = ""
         if cur["pct"]:
-            prog = f", {cur['pct']} %" + (f", {cur['eta']} left" if cur["eta"] else "")
+            prog = f", {cur['pct']} %" + (f", {'about ' if cur['eta_about'] else ''}{cur['eta']} left" if cur["eta"] else "")
+            step = next((st for st in cur["steps"] or [] if st["state"] == "active"), None)
+            if step:
+                prog += f" ({step['label']}, {step['pct']:.0f} %)"
         lines.append(f"**Running:** file {cur['i']} of {cur['n']}: {short(cur['key'])}{prog}")
     if not lines:
         lines.append("No encode running.")
@@ -2596,6 +2729,9 @@ def main():
     cmd, rest = args[0], args[1:]
     if cmd in ("version", "--version", "-V"):
         print(f"Handlebreaks v{__version__}")
+        return
+    if cmd == "progress":                       # status.sh and encode.sh's status note: the current encode
+        print(progress_text(current_progress(), markdown="--markdown" in args))
         return
     if cmd == "preset-check":                   # compatibility of the editor and presets with a HandBrakeCLI
         caps = presets.worker_capabilities() if "--worker" in rest else presets.capabilities()

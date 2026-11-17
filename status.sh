@@ -19,14 +19,19 @@ while true; do
 
   if [[ -f "$LOGS/current.txt" ]] && pgrep -x HandBrakeCLI >/dev/null; then
     IFS=$'\t' read -r key i n t < "$LOGS/current.txt"
-    prog=$(tail -c 400 "$LOGS/progress.log" 2>/dev/null | tr '\r' '\n' | grep 'Encoding:' | tail -1)
-    pct=$(print -r -- "$prog" | sed -nE 's/.*, ([0-9.]+) %.*/\1/p')
-    fps=$(print -r -- "$prog" | sed -nE 's/.*avg ([0-9.]+) fps.*/\1/p')
-    eta=$(print -r -- "$prog" | sed -nE 's/.*ETA ([0-9]+h[0-9]+m[0-9]+s).*/\1/p')
     print "File $i of $n"
     print "${key:t}\n"
-    print "$(bar ${pct:-0})  ${pct:-0} %"
-    print "Speed: ${fps:-–} fps   Time left for this file: ${eta:-–}\n"
+    # Bar, speed and time left; encodes in several steps (2-pass, subtitle scan) also get one
+    # bar per step, with the whole file's percentage on top (encoding.py progress_text)
+    if ! ENCODING_DATA_DIR="$BASE" python3 "${0:A:h}/encoding.py" progress 2>/dev/null; then
+      prog=$(tail -c 400 "$LOGS/progress.log" 2>/dev/null | tr '\r' '\n' | grep 'Encoding:' | tail -1)
+      pct=$(print -r -- "$prog" | sed -nE 's/.*, ([0-9.]+) %.*/\1/p')
+      fps=$(print -r -- "$prog" | sed -nE 's/.*avg ([0-9.]+) fps.*/\1/p')
+      eta=$(print -r -- "$prog" | sed -nE 's/.*ETA ([0-9]+h[0-9]+m[0-9]+s).*/\1/p')
+      print "$(bar ${pct:-0})  ${pct:-0} %"
+      print "Speed: ${fps:-–} fps   Time left for this file: ${eta:-–}"
+    fi
+    print
 
     print "Still to do:"
     cat "$BASE"/processing/*.txt(N) "$BASE"/queue/*.txt(N) 2>/dev/null | awk -F'\t' -v cur="$key" '

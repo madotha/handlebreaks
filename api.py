@@ -524,7 +524,21 @@ def current_obj(cur=None):
     return {"file": files_for([cur["key"]])[cur["key"]], "position": int(cur["i"]) if cur["i"].isdigit() else None,
             "of": int(cur["n"]) if cur["n"].isdigit() else None, "percent": num(cur.get("pct")),
             "fps": num(cur.get("fps")), "eta_seconds": eta_seconds(cur.get("eta")),
-            "started": started, "preset": preset_ref(preset)}
+            "started": started, "preset": preset_ref(preset), **step_fields(cur),
+            "steps": [{"label": s["label"], "state": s["state"], "percent": round(s["pct"], 2),
+                       "seconds": s["seconds"]} for s in cur["steps"]] if cur.get("steps") else None}
+
+
+def step_fields(cur):
+    """Encodes in several steps (2-pass: analysis + encoding; subtitle scan): which one runs.
+    percent and eta_seconds are then for the whole file; eta_estimated while later steps' length
+    is only estimated. All null/false for single-step (RF) encodes."""
+    steps = cur.get("steps") if cur else None
+    active = next((s for s in steps if s["state"] == "active"), None) if steps else None
+    return {"step": cur["step"] if steps else None, "step_count": len(steps) if steps else None,
+            "step_label": active["label"] if active else None,
+            "step_percent": round(active["pct"], 2) if active else None,
+            "eta_estimated": bool(cur and cur.get("eta_about"))}
 
 
 def saved_bytes():
@@ -558,7 +572,8 @@ def info():
 @route("GET", "/summary", "status:read",
        "Flat numbers for dashboards; fields of scopes the token lacks are null",
        response={"encoding": {"active": True, "file": "Northwind.Station.S02E03.mkv", "percent": 41.2, "fps": 38.5,
-                              "eta_seconds": 1260, "position": 3, "of": 12},
+                              "eta_seconds": 1260, "position": 3, "of": 12, "step": 2, "step_count": 2,
+                              "step_label": "Pass 2 · Encoding", "step_percent": 17.6, "eta_estimated": False},
                  "worker": {"state": "encoding", "paused": False}, "queue": {"waiting": 9, "next_run": 4},
                  "review": {"waiting": 5, "saved_bytes": 9126805504}, "history": {"done_24h": 7, "failed_24h": 1},
                  "library": {"files": 70312, "optimized_percent": 38.4, "to_encode": 41022},
@@ -570,7 +585,7 @@ def summary():
                         "percent": num(cur.get("pct")) if cur else None, "fps": num(cur.get("fps")) if cur else None,
                         "eta_seconds": eta_seconds(cur.get("eta")) if cur else None,
                         "position": int(cur["i"]) if cur and cur["i"].isdigit() else None,
-                        "of": int(cur["n"]) if cur and cur["n"].isdigit() else None},
+                        "of": int(cur["n"]) if cur and cur["n"].isdigit() else None, **step_fields(cur)},
            "worker": {"state": worker_state(), "paused": enc.is_paused()},
            "queue": None, "review": None, "history": None, "library": None, "saved": None,
            "offline": ui.offline_now(), "scanning": bool(ui.SCAN["running"] or enc.scan_progress())}

@@ -44,12 +44,20 @@
   <p class="flash info" data-stopping {% if not stopping %}hidden{% endif %}>Stopping <span data-stopping-mode>{{ 'all' if stopping == 'all' else '' }}</span>… the worker ends the encode within a few seconds.</p>
   <div data-current {% if not cur %}hidden{% endif %}>
     <div class="now-head">
-      <span class="now-pct"><span data-cur-pct>{{ (cur.pct if cur else '0') or '0' }}</span> %</span>
+      <span class="now-pct"><span data-cur-pct>{{ (cur.pct if cur else '0') or '0' }}</span> %<span class="now-overall muted" data-cur-overall {% if not (cur and cur.steps) %}hidden{% endif %}> overall</span></span>
       <span class="muted small">File <span data-cur-i>{{ cur.i if cur }}</span> of <span data-cur-n>{{ cur.n if cur }}</span></span>
     </div>
     <p class="now-file entry">{% set cw = entry_parts(cur.key) if cur else ('', '') %}<span class="entry-where" data-cur-where>{{ cw[0] }}</span><span class="entry-file" data-cur-name>{{ cw[1] }}</span></p>
     <span class="meter big"><span data-cur-bar style="width: {{ (cur.pct if cur else 0) or 0 }}%"></span></span>
-    <p class="muted small now-stats"><span class="now-fps"><span data-cur-fps>{{ (cur.fps if cur else '–') or '–' }}</span> fps · </span><span data-cur-eta>{{ (cur.eta if cur else '–') or '–' }}</span> left</p>
+    {#- Encodes in several steps (2-pass: analysis + encoding; subtitle scan): one bar per step,
+        the big number is the whole file. status.js renders the same markup on updates. #}
+    <div class="now-steps" data-cur-steps {% if not (cur and cur.steps) %}hidden{% endif %}>
+      {%- for s in (cur.steps if cur and cur.steps else []) %}
+      <div class="now-step {{ s.state }}"><span class="step-label">{{ s.label }}</span><span class="meter"><span style="width: {{ s.pct }}%"></span></span><span class="step-info">{% if s.state == 'done' %}done{% if s.took %} · {{ s.took }}{% endif %}{% elif s.state == 'active' %}{{ '%.0f' % s.pct }} %{% if s.eta %} · {{ s.eta }} left{% endif %}{% else %}next{% endif %}</span></div>
+      {%- endfor %}
+    </div>
+    {%- set act = (cur.steps|selectattr('state', 'equalto', 'active')|first) if cur and cur.steps else none %}
+    <p class="muted small now-stats"><span class="now-step-short" data-cur-step-short {% if not act %}hidden{% endif %}>{% if act %}{{ cur.step_short }} · {{ '%.0f' % act.pct }} % · {% endif %}</span><span class="now-fps"><span data-cur-fps>{{ (cur.fps if cur else '–') or '–' }}</span> fps · </span><span data-cur-about {% if not (cur and cur.eta_about) %}hidden{% endif %}>about </span><span data-cur-eta>{{ (cur.eta if cur else '–') or '–' }}</span> left</p>
     {#- Phones: the encode is one line at the top; this shows the whole panel #}
     <button type="button" class="icon-btn cur-toggle" data-cur-toggle aria-expanded="false" aria-label="Show the encode's details and Stop" data-tip="Details and Stop">{{ icon('chevron') }}</button>
   </div>

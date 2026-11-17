@@ -243,6 +243,36 @@
   });
   rows.addEventListener("dragend", () => { clearDrop(); dragKeys = null; });
 
+  // Encodes in several steps (2-pass, subtitle scan): one bar per step, same markup as status.html
+  function renderSteps(cur) {
+    const box = $("[data-cur-steps]");
+    const steps = cur.steps || [];
+    box.hidden = !steps.length;
+    $("[data-cur-overall]").hidden = !steps.length;
+    const active = steps.find((s) => s.state === "active");
+    const short = $("[data-cur-step-short]");
+    short.hidden = !active;
+    short.textContent = active ? `${cur.step_short} · ${Math.round(active.pct)} % · ` : "";
+    box.replaceChildren(...steps.map((s) => {
+      const row = document.createElement("div");
+      row.className = "now-step " + s.state;
+      const label = document.createElement("span");
+      label.className = "step-label";
+      label.textContent = s.label;
+      const meter = document.createElement("span");
+      meter.className = "meter";
+      const fill = document.createElement("span");
+      fill.style.width = s.pct + "%";
+      meter.append(fill);
+      const info = document.createElement("span");
+      info.className = "step-info";
+      info.textContent = s.state === "done" ? "done" + (s.took ? " · " + s.took : "")
+        : s.state === "active" ? `${Math.round(s.pct)} %` + (s.eta ? ` · ${s.eta} left` : "") : "next";
+      row.append(label, meter, info);
+      return row;
+    }));
+  }
+
   async function poll(force) {
     if (running) { if (force) again = true; return; }
     running = true;
@@ -267,7 +297,9 @@
         setText("[data-cur-pct]", cur.pct || "0");
         setText("[data-cur-fps]", cur.fps || "–");
         setText("[data-cur-eta]", cur.eta || "–");
+        $("[data-cur-about]").hidden = !cur.eta_about;
         $("[data-cur-bar]").style.width = (cur.pct || 0) + "%";
+        renderSteps(cur);
       }
       document.querySelectorAll("[data-count]").forEach((el) => {
         el.textContent = (s.counts[el.dataset.count] || 0).toLocaleString();

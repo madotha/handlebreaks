@@ -156,12 +156,17 @@ write_status() {
     body="No encode running. Last run finished: $(date '+%Y-%m-%d %H:%M')"
   else
     [[ -f "$LOGS/current.txt" ]] && IFS=$'\t' read -r k i n t < "$LOGS/current.txt"
-    prog=$(tail -c 400 "$LOGS/progress.log" 2>/dev/null | tr '\r' '\n' | grep 'Encoding:' | tail -1)
-    pct=$(print -r -- "$prog" | sed -nE 's/.*, ([0-9.]+) %.*/\1/p')
-    eta=$(print -r -- "$prog" | sed -nE 's/.*ETA ([0-9]+h[0-9]+m[0-9]+s).*/\1/p')
+    # whole file's percentage and time left, plus one line per step for 2-pass encodes
+    prog=$(python3 "$BASE/encoding.py" progress --markdown 2>/dev/null)
+    if [[ -z "$prog" ]]; then
+      prog=$(tail -c 400 "$LOGS/progress.log" 2>/dev/null | tr '\r' '\n' | grep 'Encoding:' | tail -1)
+      pct=$(print -r -- "$prog" | sed -nE 's/.*, ([0-9.]+) %.*/\1/p')
+      eta=$(print -r -- "$prog" | sed -nE 's/.*ETA ([0-9]+h[0-9]+m[0-9]+s).*/\1/p')
+      prog="**Progress:** ${pct:-starting …} %${eta:+ · $eta left}"
+    fi
     body="**Running:** file $i of $n
 **File:** ${k:t}
-**Progress:** ${pct:-starting …} %${eta:+ · $eta left}"
+$prog"
   fi
   local recent=$(tail -n 5 "$LOGS/results.tsv" 2>/dev/null | awk -F'\t' '{n=split($3,a,"/"); print "- " $1 " " $2 " · " a[n]}')
   print -r -- "# Encoding Status
