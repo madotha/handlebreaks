@@ -2436,6 +2436,7 @@ def remove_queued(keys=None):
     take_out_of_queue(waiting)
     removed = list(dict.fromkeys(i["key"] for i in waiting))
     unqueue_status(removed)
+    settle_pause()                               # removing the held files ends the pause
     return removed
 
 
@@ -2553,8 +2554,10 @@ def requeue_rest(done, pause=True, shutdown=False):
     if entries is None:
         entries = [e for e in batch_entries() if e[0].parent == PROC_DIR]
     rest = [(k, p) for f, k, p in entries[done:] if (f.name, k) not in cancelled]
-    if pause:
-        PAUSE_FILE.touch()                      # first, so the new batch doesn't start a worker
+    if pause and rest:                          # nothing left: nothing to hold back, so no pause
+        # first, so the new batch doesn't start a worker; it lists the files it holds back,
+        # so the pause ends by itself once none of them is waiting (settle_pause())
+        write_text_atomic(PAUSE_FILE, "".join(f"{k}\n" for k, _ in rest))
     if rest:
         QUEUE_DIR.mkdir(parents=True, exist_ok=True)
         kind = "resumed-shutdown" if shutdown else "resumed"     # the web UI's run notification tells them apart
@@ -2569,8 +2572,30 @@ def requeue_rest(done, pause=True, shutdown=False):
     return len(rest)
 
 
+PAUSE_GRACE = 60     # s: a new pause file is kept while "Stop all" is still writing its batch
+
+
+def settle_pause(waiting=None):
+    """How many of the files held back by "Stop all" are still waiting, or None when the
+    queue isn't paused. Ends the pause (deletes the file) once none of them is waiting, so
+    files queued afterwards start without "Resume". A pause file without keys (written by
+    versions before 4.8.2) ends once nothing is waiting at all."""
+    try:
+        st = PAUSE_FILE.stat()
+        keys = set(PAUSE_FILE.read_text(encoding="utf-8").split("\n")) - {""}
+    except OSError:
+        return None
+    if waiting is None:
+        waiting = pending_keys()
+    held = len(keys & waiting) if keys else len(waiting)
+    if not held and time.time() - st.st_mtime > PAUSE_GRACE:
+        PAUSE_FILE.unlink(missing_ok=True)
+        return None
+    return held
+
+
 def is_paused():
-    return PAUSE_FILE.exists()
+    return settle_pause() is not None
 
 
 def resume_queue():
@@ -2637,6 +2662,7 @@ def write_batch(keys, preset=None):
     chosen = [k for k in dict.fromkeys(keys) if k not in already]
     if not chosen:
         return []
+    settle_pause(already)                        # a pause with nothing left to hold ends now
     QUEUE_DIR.mkdir(parents=True, exist_ok=True)
     batch = QUEUE_DIR / f"batch-{datetime.now().strftime('%Y%m%d-%H%M%S-%f')}.txt"
     tmp = DATA_DIR / f".{batch.name}.tmp"         # same disk as queue/, so os.replace is atomic

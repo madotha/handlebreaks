@@ -30,11 +30,11 @@
       <button class="secondary" name="mode" value="skip"
               onclick="return confirm('Stop this encode and continue with the next file? The partly encoded file is deleted.')">Stop, continue with next</button>
       <button class="danger" name="mode" value="all"
-              onclick="return confirm('Stop this encode and pause the queue? The remaining files stay queued until you click Resume.')">Stop all</button>
+              onclick="return confirm('Stop this encode and pause the queue? The remaining files stay queued until you click Resume. If none are left, nothing is paused.')">Stop all</button>
     </form>
   </div>
-  <div class="flash info paused-bar" data-paused {% if not paused %}hidden{% endif %}>
-    <span><strong>Queue paused</strong> (after "Stop all"). Queued files wait until you resume; replace jobs still run.</span>
+  <div class="flash info paused-bar" data-paused {% if paused is none %}hidden{% endif %}>
+    <span><strong>Queue paused</strong> after "Stop all": <span data-paused-held>{{ paused or 0 }}</span> stopped file(s) wait, and so does anything queued now.</span>
     <form method="post" action="{{ url_for('encode_resume') }}">
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       <button>Resume</button>

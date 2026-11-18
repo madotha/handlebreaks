@@ -354,6 +354,7 @@
       $("[data-stopping]").hidden = !s.stopping;
       setText("[data-stopping-mode]", s.stopping === "all" ? "all" : "");
       $("[data-paused]").hidden = !s.paused;
+      setText("[data-paused-held]", s.paused_held);
       if (cur) {
         setText("[data-cur-i]", cur.i);
         setText("[data-cur-n]", cur.n);

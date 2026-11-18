@@ -7,6 +7,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+- **Stop all** only pauses the queue when files were left to hold back. When the stopped file was the last one, or once the held-back files have been encoded otherwise or removed from the queue, the pause ends by itself, so files you queue afterwards start without **Resume**. While files are held back, the pause bar shows how many.
+
 ## [4.8.1] - 2026-11-17
 
 ### Fixed

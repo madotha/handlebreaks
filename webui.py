@@ -969,6 +969,7 @@ def event_loop():
         try:
             enc.apply_config(enc.load_config())
             event_tick()
+            enc.settle_pause()                  # end a "Stop all" pause whose files are gone
             if time.monotonic() - pruned > 3600:
                 enc.prune_events()
                 enc.prune_api_log()
@@ -2776,13 +2777,16 @@ def queue_view(view="queue", state="", offset=0, sort=None, q=""):
 def live_status():
     """Small snapshot for the Status page's live updates."""
     cur = enc.current_progress()
-    states = Counter(i["state"] for i in enc.queue_items())
+    items = enc.queue_items()
+    states = Counter(i["state"] for i in items)
     stop = enc.stop_requested()
+    held = enc.settle_pause({i["key"] for i in items if i["state"] in ("waiting", "encoding")})
     return {
         "current": dict(cur, short=enc.short(cur["key"]), where=entry_parts(cur["key"])[0],
                         file=entry_parts(cur["key"])[1]) if cur else None,
         "stopping": stop[0] if stop and cur and stop[1] == cur["key"] else None,
-        "paused": enc.is_paused(),
+        "paused": held is not None,
+        "paused_held": held or 0,
         "can_stop": enc.worker_can_stop(),
         "counts": {"encoding": states["encoding"], "waiting": states["waiting"],
                    "queue": states["encoding"] + states["waiting"],
@@ -3103,7 +3107,7 @@ def status():
     state = request.args.get("state", "")
     cur = enc.current_progress()
     stop = enc.stop_requested()
-    return render_template("status.html", cur=cur, paused=enc.is_paused(), can_stop=enc.worker_can_stop(),
+    return render_template("status.html", cur=cur, paused=enc.settle_pause(), can_stop=enc.worker_can_stop(),
                            stopping=stop[0] if stop and cur and stop[1] == cur["key"] else None,
                            q=queue_view(view, state, sort=sort_state(request.args, f"queue:{view}", VIEW_SORT[view]),
                                         q=request.args.get("q", "")),
