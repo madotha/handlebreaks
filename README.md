@@ -33,7 +33,7 @@ Handlebreaks converts movies and TV episodes in a Plex library from H.264 (and o
 - **API for dashboards and scripts:** scoped tokens for Homepage and other tools: read everything, queue, scan and review, and (opt-in) replace; nothing is reachable without a token ([API](https://github.com/madotha/handlebreaks/wiki/API)).
 - **Live status:** queue with drag-and-drop order, encode and scan progress, history, statistics and notifications when encodes, replaces and scans finish.
 - **On your phone:** a layout made for phones, and it installs as an app on the home screen.
-- **Looks the way you like:** light or dark, six accent colors, text size, a compact layout and more contrast.
+- **Looks the way you like:** light or dark, six accent colors, two retro themes inspired by Windows ME and XP, text size, a compact layout and more contrast.
 - **Built for a NAS:** scans resume after an interruption, a share that goes offline only holds back its own files instead of failing them, and automatic rescans find new files.
 - **Easy to run:** a prebuilt Docker image for Intel and ARM, or natively on macOS for the fastest encoding.
 

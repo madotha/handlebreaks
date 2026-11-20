@@ -195,11 +195,43 @@
       root.dataset.themeDefault = e.target.value;
       if (!deviceTheme()) applyTheme(e.target.value);
     }
+    if (name === "UI_STYLE") {
+      root.dataset.styleDefault = e.target.value;
+      if (!deviceStyle()) window.applyStyle(e.target.value);
+    }
   });
+  // Theme (UI_STYLE) for this browser only: localStorage "style", applied by _app_head.html
+  function deviceStyle() {
+    try { return localStorage.getItem("style"); } catch (e) { return null; }
+  }
+  const styleDevice = document.querySelector("[data-style-device]");
+  if (styleDevice) {
+    const label = (v) => { const el = form.querySelector(`[name="UI_STYLE"][value="${v}"]`);
+      return el ? el.closest("label").querySelector(".tp-name").textContent : v; };
+    const show = () => {
+      const s = deviceStyle();
+      styleDevice.hidden = !s;
+      if (s) styleDevice.querySelector("span").textContent = label(s);
+    };
+    show();
+    document.querySelector("[data-style-device-set]").addEventListener("click", () => {
+      const picked = form.querySelector('[name="UI_STYLE"]:checked');
+      if (!picked) return;
+      try { localStorage.setItem("style", picked.value); } catch (e) { /* blocked */ }
+      window.applyStyle(picked.value);
+      show();
+    });
+    styleDevice.querySelector("[data-style-follow]").addEventListener("click", () => {
+      try { localStorage.removeItem("style"); } catch (e) { /* blocked */ }
+      window.applyStyle(root.dataset.styleDefault || "modern");
+      show();
+    });
+  }
   function deviceTheme() {
     try { return localStorage.getItem("theme"); } catch (e) { return null; }
   }
   function applyTheme(mode) {
+    if (root.dataset.style) return;             // Retro and Millennium are light only
     if (mode === "light" || mode === "dark") root.dataset.theme = mode; else delete root.dataset.theme;
     if (window.themeColor) window.themeColor(mode);
     if (window.showThemeToggle) window.showThemeToggle();

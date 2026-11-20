@@ -107,17 +107,20 @@ DATE_FORMATS = {
 DEFAULT_DATE_FORMAT = "YYYY-MM-DD"
 
 # Accent colors of the web UI (UI_ACCENT): value -> label; the colors are in static/style.css
+# Themes of the web UI (UI_STYLE): value -> label; Modern is static/style.css alone, the others
+# add static/theme-<name>.css (light only, own colors instead of the accent)
+STYLES = {"modern": "Modern", "retro": "Retro", "millennium": "Millennium"}
 ACCENTS = {"amber": "Amber", "blue": "Blue", "teal": "Teal", "violet": "Violet", "pink": "Pink", "graphite": "Graphite"}
 
 
 def S(key, label, kind, hint="", default=None, **extra):
     """One setting of the Settings pages. kind: text, paths, number, bool, preset, choice
-    (extra choices=[(value, label)]), event_groups, secret (never sent to the browser) or
-    accent. default: shown on the form and used when config.env lacks the key (None = no
+    (extra choices=[(value, label)]), event_groups, secret (never sent to the browser),
+    accent or style (the theme picker with previews). default: shown on the form and used when config.env lacks the key (None = no
     default to show). extra: docker=True (only means something in Docker), env=True (an
     environment variable of the same name wins), scope="user" (a personal preference: per
-    user once there is a login, for everyone until then), placeholder, info (the details in the
-    field's ⓘ; hint is one short line under the field, often empty), wiki (page#anchor for "More
+    user once there is a login, for everyone until then), placeholder, modern_only=True (hidden while a
+    theme other than Modern is shown), info (the details in the field's ⓘ; hint is one short line under the field, often empty), wiki (page#anchor for "More
     in the wiki")."""
     return {"key": key, "label": label, "kind": kind, "hint": hint, "default": default, "scope": "instance", **extra}
 
@@ -226,11 +229,15 @@ SETTINGS_PAGES = {
     ]),
     "appearance": ("Interface", "Appearance", [
         ("Theme", [
-            S("UI_THEME", "Theme", "choice", "", "auto",
+            S("UI_STYLE", "Theme", "style", "", "modern", choices=list(STYLES.items()), scope="user",
+              info="Retro is inspired by Windows ME, Millennium by Windows XP. Both are light only and use "
+                   "their own colors, so Mode and Accent color apply to Modern only. “Use in this browser only” "
+                   "keeps a theme for one browser, e.g. Modern on the phone and Retro on the desktop."),
+            S("UI_THEME", "Mode", "choice", "", "auto",
               choices=[("auto", "Follow the system"), ("light", "Light"), ("dark", "Dark")], scope="user",
-              info="The theme button in the header changes it for one browser only."),
+              modern_only=True, info="The theme button in the header changes it for one browser only."),
             S("UI_ACCENT", "Accent color", "accent", "", "amber", choices=list(ACCENTS.items()), scope="user",
-              info="The color of buttons, links and selections. Status and codec colors stay the same."),
+              modern_only=True, info="The color of buttons, links and selections. Status and codec colors stay the same."),
         ]),
         ("Text and layout", [
             S("UI_TEXT_SIZE", "Text size", "choice", "", "normal",
@@ -352,7 +359,7 @@ def appearance():
     """The Appearance settings for <html> (data-* attributes, read by static/style.css):
     each value checked against its choices, default if unknown."""
     out = {}
-    for key in ("UI_THEME", "UI_ACCENT", "UI_TEXT_SIZE", "UI_DENSITY", "UI_CONTRAST", "UI_MOTION"):
+    for key in ("UI_STYLE", "UI_THEME", "UI_ACCENT", "UI_TEXT_SIZE", "UI_DENSITY", "UI_CONTRAST", "UI_MOTION"):
         s = SETTINGS[key]
         value = (enc.CONFIG.get(key) or "").strip().lower()
         out[key[3:].lower()] = value if value in dict(s["choices"]) else s["default"]
@@ -1797,7 +1804,7 @@ def manifest():
 @app.route("/sw.js")
 def service_worker():
     """The service worker sits at the top so its scope covers every page (also under a proxy's subpath)."""
-    assets = [url_for("static", filename=f) for f in ("style.css", "favicon.svg", "theme.js")]
+    assets = [url_for("static", filename=f) for f in ("style.css", "theme-retro.css", "theme-millennium.css", "favicon.svg", "theme.js")]
     body = render_template("sw.js", cache=f"handlebreaks-{STATIC_V}", offline=url_for("offline"), assets=assets,
                            static=url_for("static", filename="", v=None))
     return no_cache(Response(body, mimetype="text/javascript"))
@@ -3817,7 +3824,7 @@ def check_setting(s, form, cfg, errors):
     val = form.get(key, "").strip()
     if FORBIDDEN_RE.search(val):
         errors[key] = 'Not allowed: " ` \\ line breaks and $ (except $HOME).'
-    elif kind in ("choice", "accent"):
+    elif kind in ("choice", "accent", "style"):
         if val not in dict(s["choices"]):
             errors[key] = "Choose one of the listed values."
     elif kind == "preset":

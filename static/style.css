@@ -1256,3 +1256,78 @@ html[data-text="large"] body { font-size: 17px; }
 .auth-help summary { cursor: pointer; width: fit-content; }
 .auth-help p { margin: .5rem 0 .35rem; }
 .auth-help code { display: block; overflow-wrap: anywhere; }
+
+/* ─── Themes (UI_STYLE): Retro and Millennium are static/theme-*.css, scoped to html[data-style] ── */
+/* Light only, own colors: the mode button and the Mode/Accent fields don't apply there */
+:root[data-style] .theme-toggle, :root[data-style] [data-modern-only] { display: none !important; }
+/* The picker in Settings → Appearance: one card per theme with a small window in its look.
+   The previews use fixed colors, so each shows its theme whatever the page uses. */
+.theme-picker { border: 0; padding: 0; margin: 0; min-width: 0; }
+.theme-picker legend { padding: 0; font-weight: 600; font-size: .92rem; margin-bottom: .4rem; }
+.theme-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr)); gap: .75rem; }
+.theme-card { position: relative; display: flex; flex-direction: column; gap: .15rem; margin: 0 !important; padding: .55rem .55rem .6rem;
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); cursor: pointer; font-weight: 400 !important; }
+.theme-card:hover { border-color: var(--border-strong); }
+.theme-card input[type=radio] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.theme-card:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.theme-card:has(input:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+.tp-name, .tp-desc { display: block; }
+.tp-name { font-weight: 650; font-size: .9rem; margin-top: .35rem; }
+.tp-desc { color: var(--muted); font-size: .78rem; }
+.theme-device { margin: .45rem 0 0; font-size: .82rem; }
+.theme-device + .flash { margin: .45rem 0 0; }
+.tp-pair { position: relative; display: block; }
+.tp-pair .tp-modern-dark { position: absolute; inset: 0; clip-path: polygon(62% 0, 100% 0, 100% 100%, 38% 100%); }
+.tp { --tp-bg: #f4f3f0; --tp-win: #fff; --tp-text: #1c1b19; --tp-line: #e2dfd8; --tp-acc: #e5a00d; --tp-good: #006b3c; --tp-other: #f0963a;
+  display: flex; flex-direction: column; height: 6.4rem; padding: .45rem; background: var(--tp-bg); border-radius: 6px; overflow: hidden;
+  font: 600 .58rem/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--tp-text); pointer-events: none; }
+.tp i { display: block; font-style: normal; }
+.tp-title { display: flex; align-items: center; gap: .3rem; height: 1.15rem; padding: 0 .35rem; background: var(--tp-win); border: 1px solid var(--tp-line);
+  border-bottom: 0; border-radius: 5px 5px 0 0; }
+.tp-dot { width: .5rem; height: .5rem; border-radius: 2px; background: var(--tp-acc); }
+.tp-text { flex: 1; overflow: hidden; white-space: nowrap; }
+.tp-ctl { display: flex; gap: 2px; }
+.tp-ctl i { width: .45rem; height: .45rem; border-radius: 50%; background: var(--tp-line); }
+.tp-body { flex: 1; display: grid; grid-template-rows: 1fr auto auto; gap: .3rem; padding: .35rem; background: var(--tp-win);
+  border: 1px solid var(--tp-line); border-radius: 0 0 5px 5px; }
+.tp-bars { display: flex; align-items: flex-end; gap: 3px; border-bottom: 1px solid var(--tp-line); }
+.tp-bars i { flex: 1; height: var(--h); background: var(--tp-good); border-radius: 2px 2px 0 0; }
+.tp-bars i.tp-other { background: var(--tp-other); }
+.tp-meter { height: .3rem; background: var(--tp-line); border-radius: 99px; overflow: hidden; }
+.tp-meter i { width: 62%; height: 100%; background: var(--tp-acc); border-radius: 99px; }
+.tp-row { display: flex; gap: .3rem; align-items: center; }
+.tp-input { flex: 1; height: .9rem; border: 1px solid var(--tp-line); border-radius: 3px; background: var(--tp-win); }
+.tp-btn { padding: .15rem .45rem; border-radius: 3px; background: var(--tp-acc); color: #1a1406; }
+.tp-modern-dark { --tp-bg: #121315; --tp-win: #1b1c1f; --tp-text: #ecebe8; --tp-line: #2d2f34; --tp-good: #0f7a48; --tp-other: #d9772a; }
+/* Retro: grey 3D face, navy title bar, bevelled edges, segmented progress */
+.tp-retro { --tp-bg: #3a6ea5; --tp-win: #d4d0c8; --tp-text: #000; --tp-good: #008000; --tp-other: #ff9900;
+  font-family: Tahoma, "MS Sans Serif", Verdana, Geneva, sans-serif; border-radius: 0; }
+.tp-retro .tp-title { border: 0; border-radius: 0; color: #fff; background: linear-gradient(90deg, #0a246a, #a6caf0);
+  box-shadow: inset 1px 1px #fff, inset -1px 0 #404040; }
+.tp-retro .tp-dot { background: #d4d0c8; border-radius: 0; }
+.tp-retro .tp-ctl i { width: .55rem; height: .5rem; border-radius: 0; background: #d4d0c8; box-shadow: inset -1px -1px #404040, inset 1px 1px #fff; }
+.tp-retro .tp-body { border: 0; border-radius: 0; box-shadow: inset 1px 0 #fff, inset -1px -1px #404040, inset 2px 0 #dfdfdf, inset -2px -2px #808080; }
+.tp-retro .tp-bars { background: #fff; border: 0; padding: 2px 2px 0; box-shadow: inset 1px 1px #808080, inset -1px -1px #fff; }
+.tp-retro .tp-bars i { border-radius: 0; outline: 1px solid #000; outline-offset: -1px; }
+.tp-retro .tp-meter { height: .45rem; border-radius: 0; background: #fff; box-shadow: inset 1px 1px #808080, inset -1px -1px #fff; padding: 1px; }
+.tp-retro .tp-meter i { border-radius: 0; background: repeating-linear-gradient(90deg, #0a246a 0 4px, transparent 4px 5px); }
+.tp-retro .tp-input { border: 0; border-radius: 0; background: #fff; box-shadow: inset 1px 1px #808080, inset -1px -1px #fff, inset 2px 2px #404040; }
+.tp-retro .tp-btn { border-radius: 0; background: #d4d0c8; color: #000; font-weight: 400;
+  box-shadow: inset -1px -1px #404040, inset 1px 1px #fff, inset -2px -2px #808080, 0 0 0 1px #000; }
+/* Millennium: blue title bar with rounded top, beige face, green progress, soft buttons */
+.tp-millennium { --tp-bg: #5a7edc; --tp-win: #ece9d8; --tp-text: #000; --tp-good: #2a8a2a; --tp-other: #f39c12;
+  font-family: Tahoma, Verdana, Geneva, sans-serif; background: linear-gradient(180deg, #5a7edc, #3d6bd6 70%, #4f8a3c); }
+.tp-millennium .tp-title { border: 0; border-radius: 6px 6px 0 0; color: #fff; text-shadow: 1px 1px #0f1089; font-family: "Trebuchet MS", Tahoma, sans-serif; font-weight: 700;
+  background: linear-gradient(180deg, #0997ff, #0053ee 12%, #0050ee 70%, #06f); }
+.tp-millennium .tp-dot { background: #fff; border-radius: 50%; }
+.tp-millennium .tp-ctl i { width: .55rem; height: .55rem; border-radius: 2px; background: #3a80f3; border: 1px solid #fff; }
+.tp-millennium .tp-ctl i.tp-x { background: #e2512f; }
+.tp-millennium .tp-body { border: 3px solid #0054e3; border-top: 0; border-radius: 0; }
+.tp-millennium .tp-bars { background: #fff; border: 1px solid #7f9db9; padding: 2px 2px 0; }
+.tp-millennium .tp-bars i { background: linear-gradient(90deg, color-mix(in srgb, var(--tp-good), #fff 25%), var(--tp-good)); }
+.tp-millennium .tp-bars i.tp-other { background: linear-gradient(90deg, color-mix(in srgb, var(--tp-other), #fff 25%), var(--tp-other)); }
+.tp-millennium .tp-meter { height: .45rem; border-radius: 3px; background: #fff; border: 1px solid #686868; padding: 1px; }
+.tp-millennium .tp-meter i { border-radius: 0; background: repeating-linear-gradient(90deg, #2bd22b 0 4px, transparent 4px 5px); }
+.tp-millennium .tp-input { border: 1px solid #7f9db9; border-radius: 0; background: #fff; }
+.tp-millennium .tp-btn { border-radius: 3px; color: #000; font-weight: 400; border: 1px solid #003c74;
+  background: linear-gradient(180deg, #fff, #ece9d8 85%, #d6d0c5); box-shadow: inset 0 -1px #ffc83c, inset 0 1px #ffe7a2; }

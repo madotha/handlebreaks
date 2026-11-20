@@ -3,16 +3,28 @@
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#f4f3f0" data-color="#f4f3f0" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#1b1c1f" data-color="#1b1c1f" media="(prefers-color-scheme: dark)">
-  {# Apply the chosen theme before the first paint, also to the browser's or app's bar (static/theme.js switches it) #}
+  {# Apply the chosen theme and mode before the first paint, also to the browser's or app's bar
+     (static/theme.js switches the mode, static/settings.js previews themes) #}
   <script>
     window.themeColor = function (t) {
-      document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) {
-        m.content = t === "light" ? "#f4f3f0" : t === "dark" ? "#1b1c1f" : m.dataset.color; });
+      var bar = { light: "#f4f3f0", dark: "#1b1c1f", retro: "#0a246a", millennium: "#0054e3" }[t];
+      document.querySelectorAll('meta[name="theme-color"]').forEach(function (m) { m.content = bar || m.dataset.color; });
     };
-    (function () {   /* the header button's choice for this browser (localStorage), else the setting (UI_THEME) */
-      var t = null; try { t = localStorage.getItem("theme"); } catch (e) {}
-      t = t || document.documentElement.dataset.themeDefault;
-      if (t === "light" || t === "dark") { document.documentElement.dataset.theme = t; themeColor(t); }
+    /* theme (UI_STYLE): this browser's choice (localStorage "style"), else the setting. Retro and
+       Millennium are light only (data-style + data-theme="light"); Modern takes the mode from the
+       header button's choice (localStorage "theme"), else the setting (UI_THEME) */
+    window.applyStyle = function (s) {
+      var r = document.documentElement, t = null;
+      if (s === "retro" || s === "millennium") { r.dataset.style = s; r.dataset.theme = "light"; themeColor(s); return; }
+      delete r.dataset.style;
+      try { t = localStorage.getItem("theme"); } catch (e) {}
+      t = t || r.dataset.themeDefault;
+      if (t === "light" || t === "dark") r.dataset.theme = t; else delete r.dataset.theme;
+      themeColor(t);
+    };
+    (function () {
+      var s = null; try { s = localStorage.getItem("style"); } catch (e) {}
+      applyStyle(s || document.documentElement.dataset.styleDefault);
     })();
   </script>
   <meta name="application-name" content="Handlebreaks">
@@ -24,3 +36,5 @@
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='theme-retro.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='theme-millennium.css') }}">

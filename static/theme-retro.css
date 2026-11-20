@@ -1,0 +1,229 @@
+/* ─────────────────────────────────────────────────────────────────────────────
+   Theme "Retro" (UI_STYLE=retro), inspired by Windows ME: grey 3D face, bevelled
+   edges, navy title bars, segmented progress bars, classic scroll bars. Active while
+   <html data-style="retro"> (set by _app_head.html); always light (data-theme="light").
+   Only CSS and inline SVG: no fonts, icons or images of the original.
+   Rules sit under :where(…) so they have the same specificity as the base rules in
+   style.css they replace (this file loads later); tokens need the full selector to win
+   over the accent colors.
+   ───────────────────────────────────────────────────────────────────────────── */
+:root[data-style="retro"] {
+  color-scheme: light;
+  --face: #d4d0c8; --hilite: #ffffff; --light: #dfdfdf; --shade: #808080; --dark: #404040;
+  --navy: #0a246a; --title: linear-gradient(90deg, #0a246a, #a6caf0); --desk: #3a6ea5;
+  --out: inset -1px -1px var(--dark), inset 1px 1px var(--hilite), inset -2px -2px var(--shade), inset 2px 2px var(--light);
+  --in: inset 1px 1px var(--shade), inset -1px -1px var(--hilite), inset 2px 2px var(--dark), inset -2px -2px var(--light);
+  --pressed: inset 1px 1px var(--dark), inset -1px -1px var(--hilite), inset 2px 2px var(--shade), inset -2px -2px var(--light);
+  --thin-out: inset -1px -1px var(--shade), inset 1px 1px var(--hilite);
+  --thin-in: inset 1px 1px var(--shade), inset -1px -1px var(--hilite);
+  --etched: inset 1px 1px var(--hilite), 1px 1px var(--hilite);
+  --bg: #d4d0c8; --surface: #d4d0c8; --surface-2: #e4e1da; --surface-3: #c8c4bb;   /* lists and fields are white below */
+  --text: #000000; --muted: #404040; --border: #808080; --border-strong: #404040;
+  --accent: #0a246a; --accent-hover: #0a246a; --accent-text: #ffffff;
+  --accent-soft: rgba(10, 36, 106, .14); --link: #0000ee; --focus: #000000;
+  --ok: #006000; --ok-bg: #d8f0d8; --warn: #7a4000; --warn-bg: #ffffe1; --err: #a00000; --err-bg: #ffe0e0;
+  --info: #000080; --info-bg: #e2e8f6;
+  --codec-good-bg: #d8f0d8; --codec-good-text: #005000;
+  --codec-other-bg: #ffe6c0; --codec-other-text: #7a3500;
+  /* chart marks: classic VGA green and orange (well apart in lightness), grey, navy */
+  --viz-good: #008000; --viz-other: #ff9900; --viz-unknown: #a0a0a0; --viz-single: #000080;
+  --grid: #c0c0c0; --axis: #000000;
+  --shadow: none; --shadow-pop: 2px 2px 0 rgba(0, 0, 0, .35);
+  --header-bg: var(--navy);
+  --radius: 0px; --radius-sm: 0px;
+}
+:root[data-style="retro"][data-contrast="more"] { --muted: #000000; --border: #404040; --border-strong: #000000; }
+
+:where(:root[data-style="retro"]) {
+  /* ─── Base: the desktop, Tahoma (or a close system font), dotted focus ─── */
+  & body { background: var(--desk); font-family: Tahoma, "MS Sans Serif", Verdana, Geneva, "Segoe UI", sans-serif; -webkit-font-smoothing: auto; }
+  & h1, & h2, & h3, & .panel-title { font-weight: 700; letter-spacing: 0; }
+  & a { color: var(--link); }
+  & :focus-visible { outline: 1px dotted #000; outline-offset: -4px; }
+  & a:focus-visible, & input:focus-visible { outline-offset: 1px; }
+  & code { background: transparent; border-radius: 0; padding: 0; font-family: "Courier New", Courier, monospace; }
+  & ::selection { background: var(--navy); color: #fff; }
+
+  /* ─── Scroll bars: dithered track, bevelled thumb and arrow buttons ─── */
+  & ::-webkit-scrollbar { width: 16px; height: 16px; }
+  & ::-webkit-scrollbar-track { background: repeating-conic-gradient(var(--face) 0 25%, var(--hilite) 0 50%) 0 0 / 2px 2px; }
+  & ::-webkit-scrollbar-thumb { background: var(--face); box-shadow: var(--out); }
+  & ::-webkit-scrollbar-corner { background: var(--face); }
+  & ::-webkit-scrollbar-button:single-button { display: block; width: 16px; height: 16px; background-color: var(--face); box-shadow: var(--out);
+    background-repeat: no-repeat; background-position: center; }
+  & ::-webkit-scrollbar-button:single-button:active { box-shadow: var(--thin-in); background-position: calc(50% + 1px) calc(50% + 1px); }
+  & ::-webkit-scrollbar-button:single-button:vertical:decrement { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M4 2 7.5 6h-7z'/%3E%3C/svg%3E"); }
+  & ::-webkit-scrollbar-button:single-button:vertical:increment { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M.5 2h7L4 6z'/%3E%3C/svg%3E"); }
+  & ::-webkit-scrollbar-button:single-button:horizontal:decrement { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M2 4 6 .5v7z'/%3E%3C/svg%3E"); }
+  & ::-webkit-scrollbar-button:single-button:horizontal:increment { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M2 .5 6 4 2 7.5z'/%3E%3C/svg%3E"); }
+
+  /* ─── Header: a title bar; the page tabs are toolbar buttons, the current one pressed ─── */
+  & .top { background: var(--title); border-bottom: 0; box-shadow: inset 0 -2px var(--face), inset 0 -3px var(--dark);
+    -webkit-backdrop-filter: none; backdrop-filter: none; }
+  & .brand { color: #fff; font-weight: 700; }
+  & .top nav.tabs { align-items: center; gap: .25rem; }
+  & .top nav.tabs a { height: 2.1rem; margin: 0; border: 0; color: #fff; font-weight: 400; padding: 0 .75rem; }
+  & .top nav.tabs a:hover { color: #000; background: var(--face); box-shadow: var(--thin-out); }
+  & .top nav.tabs a[aria-current] { color: #000; font-weight: 700; box-shadow: var(--pressed);
+    background: repeating-conic-gradient(var(--face) 0 25%, var(--hilite) 0 50%) 0 0 / 2px 2px; }
+  & .account-link { border-radius: 0; border: 0; background: var(--face); color: #000; box-shadow: var(--out); width: 1.9rem; height: 1.7rem; min-height: 0; }
+  & .account-link:hover { background: var(--face); color: #000; }
+  & .pill.busy { background: var(--face); color: #000; border-radius: 0; box-shadow: var(--thin-in); }
+  & .pill.busy::before { border-radius: 0; background: var(--navy); }
+
+  /* ─── The page is one window on the desktop ─── */
+  & main { background: var(--face); box-shadow: var(--out); margin: .9rem auto 1.25rem; }
+
+  /* ─── Buttons: raised, pressed while clicked; the main action has the black frame of a default button ─── */
+  & button, & a.button { background: var(--face); color: #000; border: 0; border-radius: 0; box-shadow: var(--out); font-weight: 400;
+    transition: none; text-shadow: none; }
+  & button { box-shadow: 0 0 0 1px #000, var(--out); }
+  & button:hover:not(:disabled) { background: var(--face); }
+  & button:active:not(:disabled), & a.button:active { box-shadow: var(--pressed); }
+  & button.secondary, & a.button { background: var(--face); color: #000; box-shadow: var(--out); font-weight: 400; }
+  & button.secondary:hover:not(:disabled), & a.button:hover { background: var(--face); }
+  & button.danger { background: var(--face); color: var(--err); box-shadow: var(--out); }
+  & button.danger:hover:not(:disabled) { background: var(--face); }
+  & button:disabled:not(.icon-btn):not(.link-btn) { background: var(--face); color: var(--shade); text-shadow: 1px 1px var(--hilite); box-shadow: var(--out); }
+  & .icon-btn { border: 0; border-radius: 0; background: transparent; box-shadow: none; color: #000; }
+  & .icon-btn:hover:not(:disabled) { background: transparent; box-shadow: var(--thin-out); color: #000; }
+  & .icon-btn:active:not(:disabled) { box-shadow: var(--thin-in); padding: 0; }
+  & .link-btn, & .info-btn, & .rp-toggle, & .rp-cancel, & .crumb-bar button { box-shadow: none; background: none; }
+  & .info-btn { color: var(--navy); }
+
+  /* ─── Fields: sunken white; checkboxes and radios drawn the old way ─── */
+  & input, & select, & textarea { border: 0; border-radius: 0; background-color: #fff; box-shadow: var(--in); color: #000; }
+  & input:focus, & select:focus, & textarea:focus { border: 0; box-shadow: var(--in); }
+  & input:disabled, & select:disabled, & textarea:disabled { background-color: var(--face); color: var(--shade); }
+  & select { background-color: #fff;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M.5 2h7L4 6z'/%3E%3C/svg%3E"),
+      linear-gradient(var(--dark), var(--dark)), linear-gradient(var(--dark), var(--dark)), linear-gradient(var(--hilite), var(--hilite)),
+      linear-gradient(var(--hilite), var(--hilite)), linear-gradient(var(--face), var(--face));
+    background-repeat: no-repeat;
+    background-size: 8px 8px, 1px calc(100% - 4px), 17px 1px, 1px calc(100% - 4px), 17px 1px, 17px calc(100% - 4px);
+    background-position: right 6px center, right 2px top 2px, right 2px bottom 2px, right 18px top 2px, right 2px top 2px, right 2px top 2px;
+    padding-right: 1.9rem; }
+  & input[type=checkbox], & input[type=radio] { appearance: none; -webkit-appearance: none; width: 13px; height: 13px; flex: none;
+    background: #fff center / 9px 9px no-repeat; box-shadow: var(--in); }
+  & input[type=radio] { border-radius: 50%; box-shadow: inset 1px 1px var(--shade), inset -1px -1px var(--hilite), inset 2px 2px var(--dark), inset -2px -2px var(--light); }
+  & input[type=checkbox]:checked { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='9' height='9' viewBox='0 0 9 9'%3E%3Cpath d='M1.5 4.3 3.6 6.4 7.6 2.3' fill='none' stroke='%23000' stroke-width='1.7'/%3E%3C/svg%3E"); }
+  & input[type=checkbox]:indeterminate { background-image: linear-gradient(#000, #000); background-size: 7px 2px; }
+  & input[type=radio]:checked { background-image: radial-gradient(circle, #000 0 2px, transparent 2.5px); background-size: 100% 100%; }
+  & input[type=checkbox]:disabled, & input[type=radio]:disabled { background-color: var(--face); }
+  & .filters input[type=search] { background-color: #fff; }
+
+  /* ─── Messages ─── */
+  & .flash { border: 1px solid var(--shade); border-radius: 0; box-shadow: inset 1px 1px var(--hilite); }
+  & .flash.info { background: var(--face); }
+  & .scan-msg, & .scan-note { border-radius: 0; border: 1px solid var(--shade); }
+  & .tooltip { background: #ffffe1; color: #000; border: 1px solid #000; border-radius: 0; box-shadow: none; font-weight: 400; }
+  & .empty { background: #fff; border: 0; box-shadow: var(--in); }
+  /* Popups are small windows; their timer is a segmented progress bar */
+  & .toast { background: var(--face); border: 0; border-radius: 0; box-shadow: var(--out), var(--shadow-pop); padding-bottom: 1rem; }
+  & .toast-bar { left: 4px; right: 4px; bottom: 4px; height: 6px; opacity: 1;
+    background: repeating-linear-gradient(90deg, var(--navy) 0 6px, transparent 6px 8px); }
+  & .toast-more { border: 0; border-radius: 0; background: var(--face); box-shadow: var(--out); }
+  & .toasts .toast-more:hover { background: var(--face); }
+
+  /* ─── Surfaces: panels are group boxes, cards raised ─── */
+  & .panel, & .fun-fact, & .filter-panel, & .rp, & .track, & .share-card, & .settings-save { background: var(--face); border: 1px solid var(--shade);
+    border-radius: 0; box-shadow: var(--etched); }
+  & .fun-fact { border-left: 1px solid var(--shade); }
+  & .card { background: var(--face); border: 0; border-radius: 0; box-shadow: var(--out); }
+  & .card .label, & th, & .fun-fact-label, & .side-group, & .col-menu-title, & .range-head, & .fp-group legend { text-transform: none; letter-spacing: 0; }
+  & fieldset { border: 1px solid var(--shade); border-radius: 0; box-shadow: var(--etched); }
+  & .segmented, & .swatches, & .theme-picker, & .check-list, & .fp-group { box-shadow: none; }
+  & .badge, & .codec, & .status, & .result, & .qstate, & .pill, & .tab-count, & .nav-badge, & .filter-chip, & .sort-chip { border-radius: 0; }
+  & .codec, & .status, & .result, & .qstate, & .badge { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .3); }
+  & .qstate-removed { box-shadow: none; }
+  & .sort-chip { border-color: transparent; background: var(--face); box-shadow: var(--out); }
+  & .sort-chip.active { background: var(--face); color: #000; box-shadow: var(--pressed); border-color: transparent; }
+  & .filter-chip { background: #fff; box-shadow: var(--thin-in); border: 0; }
+  /* Progress: a sunken well with navy blocks */
+  & .meter, & .meter.big { height: 16px; padding: 3px; background: #fff; border-radius: 0; box-shadow: var(--thin-in); }
+  & .meter > span { border-radius: 0; background: repeating-linear-gradient(90deg, var(--navy) 0 8px, transparent 8px 10px); }
+  & .meter > span.viz-good, & .now-step.done .meter > span { background: repeating-linear-gradient(90deg, var(--viz-good) 0 8px, transparent 8px 10px); }
+  & .now-step .meter { height: 14px; }
+  & .opt-bar, & .rp-bar { border-radius: 0; height: 9px; box-shadow: var(--thin-in); padding: 1px; background: #fff; }
+
+  /* ─── Tables: white list views, column headers are buttons, ticked rows highlighted ─── */
+  & .table-wrap, & .bulk-list { background: #fff; box-shadow: var(--in); padding: 2px; border: 0; border-radius: 0; }
+  & th { color: #000; font-weight: 400; font-size: .8rem; background: var(--face); box-shadow: var(--out); border-bottom: 0; }
+  & thead th { border-bottom: 0; }
+  & td { border-bottom: 1px dotted #c0c0c0; }
+  & tbody tr:hover td { background: #f0f0f0; }
+  & tbody tr:has(> td.sel input:checked) td, & tbody tr:has(> td.check input:checked) td { background: var(--navy); color: #fff; }
+  & tbody tr:has(> td.sel input:checked) :is(a, .muted, .entry, td.nowrap), & tbody tr:has(> td.check input:checked) :is(a, .muted, td.nowrap) { color: #fff; }
+
+  /* ─── Tabs: property sheet tabs ─── */
+  & .view-tabs, & .editor-tabs { box-shadow: inset 0 -1px var(--hilite); gap: 2px; }
+  & .view-tabs a, & .editor-tabs button { color: #000; border: 0; border-radius: 3px 3px 0 0; margin: 4px 0 0; background: var(--face);
+    box-shadow: inset 1px 1px var(--hilite), inset -1px 0 var(--dark), inset -2px 0 var(--shade); font-weight: 400; }
+  & .view-tabs a:hover, & .editor-tabs button:hover:not(:disabled) { color: #000; background: var(--face); }
+  & .view-tabs a[aria-current], & .editor-tabs button.active { margin-top: 0; padding-bottom: calc(.5rem + 4px); font-weight: 700; position: relative; z-index: 1;
+    box-shadow: inset 1px 1px var(--hilite), inset -1px 0 var(--dark), inset -2px 0 var(--shade); }
+  & .editor-tabs button.active .i { color: var(--navy); }
+  & .view-tabs a[aria-current] .tab-count { background: var(--navy); color: #fff; }
+
+  /* ─── Settings: the page list is a list box, the current page selected ─── */
+  & .side a { color: #000; font-weight: 400; }
+  & .side a:hover { background: transparent; text-decoration: underline; color: #000; }
+  & .side a[aria-current] { background: var(--navy); color: #fff; box-shadow: none; }
+  & .seg { border: 0; border-radius: 0; background: transparent; gap: 2px; overflow: visible; }
+  & .seg span { color: #000; background: var(--face); box-shadow: var(--out); font-weight: 400; }
+  & .seg label + label span { border-left: 0; }
+  & .seg input:checked + span { background: repeating-conic-gradient(var(--face) 0 25%, var(--hilite) 0 50%) 0 0 / 2px 2px; box-shadow: var(--pressed); color: #000; }
+  & .mod-dot { border-radius: 0; background: var(--navy); }
+  & .theme-card { background: var(--face); border: 0; box-shadow: var(--out); }
+  & .theme-card:has(input:checked) { box-shadow: var(--out), 0 0 0 2px var(--navy); }
+  & form.dirty .settings-save { border-color: var(--shade); box-shadow: var(--out); }
+
+  /* ─── Files: a tree view with [+]/[-] boxes ─── */
+  & .tree details.dir { background: #fff; border: 0; border-radius: 0; box-shadow: var(--in); }
+  & .tree summary { border-radius: 0; }
+  & .tree summary:hover { background: #f0f0f0; }
+  & .tree summary::before { width: 9px; height: 9px; border: 1px solid var(--shade); transform: none; margin: 0;
+    background: #fff no-repeat center url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='7'%3E%3Cpath d='M1 3.5h5M3.5 1v5' stroke='%23000'/%3E%3C/svg%3E"); }
+  & .tree details[open] > summary::before { transform: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='7'%3E%3Cpath d='M1 3.5h5' stroke='%23000'/%3E%3C/svg%3E"); }
+  & .fp-opt { border-radius: 0; }
+  & .fp-opt:has(input:checked) { background: var(--navy); color: #fff; }
+  & .fp-opt:has(input:checked) .fp-n { color: #fff; }
+
+  /* ─── Windows: dialogs, ⓘ panels and menus get a title bar ─── */
+  & .replace-dialog, & .info-pop, & .col-menu-panel, & .multi-menu { background: var(--face); border: 0; border-radius: 0; box-shadow: var(--out), var(--shadow-pop); }
+  & .replace-dialog { padding: 1.4rem 1.5rem; }
+  & .replace-dialog::backdrop { background: rgba(0, 0, 0, .25); -webkit-backdrop-filter: none; backdrop-filter: none; }
+  & .replace-dialog > form > h2:first-of-type, & .replace-dialog > h2:first-child { margin: calc(-1.4rem + 3px) calc(-1.5rem + 3px) 1rem; padding: .3rem .55rem;
+    background: var(--title); color: #fff; font-size: .9rem; }
+  & .info-pop-head { margin: calc(-.75rem + 3px) calc(-.9rem + 3px) .5rem; padding: .2rem .25rem .2rem .5rem; background: var(--title); color: #fff; }
+  & .info-pop-head .icon-btn { margin: 0; width: 1.15rem; height: 1rem; color: #000; background: var(--face); box-shadow: var(--out); }
+  & .col-menu > summary { border-radius: 0; border: 0; background: var(--face); box-shadow: var(--out); }
+
+  /* ─── Stats: charts like an old office program: framed bars, black axes ─── */
+  & .hbar-fill .bar-seg, & .col-fill .bar-seg { outline: 1px solid #000; outline-offset: -1px; }
+  & .hbar-fill .bar-seg:last-child, & .col-fill .bar-seg:first-child { border-radius: 0; }
+  & .col-plot { background: #fff; box-shadow: var(--thin-in); border-left: 1px solid #000; }
+  & .swatch { border-radius: 0; outline: 1px solid #000; outline-offset: -1px; }
+
+  /* ─── Sign-in and offline pages: a window in the middle of the desktop ─── */
+  & .auth-page, & .offline-page { min-height: 0; margin: 12vh auto 2rem; padding: 1.5rem 1.75rem; background: var(--face); box-shadow: var(--out); }
+}
+
+/* Phones: the window fills the screen, the tab bar is a taskbar */
+@media (max-width: 720px) {
+  :where(:root[data-style="retro"]) {
+    & main { margin: 0; box-shadow: none; }
+    & .tabbar { background: var(--face); border-top: 0; box-shadow: inset 0 1px var(--light), inset 0 2px var(--hilite); gap: 3px; padding-top: 4px;
+      -webkit-backdrop-filter: none; backdrop-filter: none; }
+    & .tabbar a { color: #000; background: var(--face); box-shadow: var(--out); margin: 0 0 4px; font-weight: 400; }
+    & .tabbar a[aria-current] { color: #000; font-weight: 700; box-shadow: var(--pressed);
+      background: repeating-conic-gradient(var(--face) 0 25%, var(--hilite) 0 50%) 0 0 / 2px 2px; }
+    & .sel-actions, & .bulk-sel { background: var(--face); }
+    & .auth-page, & .offline-page { margin: 0; min-height: 100vh; min-height: 100dvh; box-shadow: none; }
+  }
+}
+/* Firefox has no scroll bar parts to draw, only colors */
+@supports (-moz-appearance: none) {
+  :root[data-style="retro"] { scrollbar-color: var(--face) #e8e6e0; }
+}

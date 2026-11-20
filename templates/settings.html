@@ -31,7 +31,7 @@
 {# "Default: …" text of a setting #}
 {% macro default_text(s) -%}
   {%- if s.kind == 'bool' -%}{{ 'on' if s.default == '1' else 'off' }}
-  {%- elif s.kind in ('choice', 'accent') -%}{{ dict(s.choices).get(s.default, s.default) }}
+  {%- elif s.kind in ('choice', 'accent', 'style') -%}{{ dict(s.choices).get(s.default, s.default) }}
   {%- elif s.kind == 'event_groups' -%}all
   {%- elif s.default == '' -%}empty
   {%- else -%}{{ s.default }}{%- endif -%}
@@ -46,11 +46,23 @@
   {% endcall %}
 {% endmacro %}
 
+{# A small window in the look of a theme, for the theme picker (colors in static/style.css, .tp-*) #}
+{% macro theme_preview(name) %}
+  <span class="tp tp-{{ name }}" aria-hidden="true">
+    <span class="tp-title"><span class="tp-dot"></span><span class="tp-text">Handlebreaks</span><span class="tp-ctl"><i></i><i></i><i class="tp-x"></i></span></span>
+    <span class="tp-body">
+      <span class="tp-bars"><i style="--h:55%"></i><i class="tp-other" style="--h:80%"></i><i style="--h:40%"></i><i class="tp-other" style="--h:65%"></i><i style="--h:90%"></i></span>
+      <span class="tp-meter"><i></i></span>
+      <span class="tp-row"><span class="tp-input"></span><span class="tp-btn">OK</span></span>
+    </span>
+  </span>
+{% endmacro %}
+
 {# One setting: label with its ⓘ (details, config.env key, default), the control, a short hint, problems #}
 {% macro field(s) %}
   {% set key = s.key %}{% set kind = s.kind %}{% set locked = key in env_overrides or key in locks %}{% set value = cfg.get(key, '') %}
   {% set iid = uid('set') %}
-  <div class="field" data-field="{{ key }}" data-kind="{{ kind }}" {% if s.default is not none and not locked %}data-default="{{ s.default }}"{% endif %}{% if locked %} data-locked{% endif %}>
+  <div class="field" data-field="{{ key }}" data-kind="{{ kind }}" {% if s.default is not none and not locked %}data-default="{{ s.default }}"{% endif %}{% if locked %} data-locked{% endif %}{% if s.modern_only %} data-modern-only{% endif %}>
     {% if kind == 'bool' %}
       <div class="check-line"><label class="check"><input type="checkbox" name="{{ key }}" value="1" {% if value == '1' %}checked{% endif %} {% if locked %}disabled{% endif %}>
         <span>{{ s.label }}<span class="mod-dot" aria-hidden="true"></span></span></label>{{ info_button(iid, s.label) }}</div>{{ field_info(s, iid) }}
@@ -62,6 +74,20 @@
           <label class="check"><input type="checkbox" name="{{ key }}" value="{{ group }}" {% if group in picked %}checked{% endif %}> {{ glabel }}</label>
         {% endfor %}
       </fieldset>
+    {% elif kind == 'style' %}
+      <fieldset class="theme-picker">
+        <legend>{{ s.label }}<span class="mod-dot" aria-hidden="true"></span>{{ info_button(iid, s.label) }}</legend>{{ field_info(s, iid) }}
+        <span class="theme-cards">{% for v, l in s.choices %}
+          <label class="theme-card"><input type="radio" name="{{ key }}" value="{{ v }}" {% if (value or s.default) == v %}checked{% endif %} {% if locked %}disabled{% endif %}>
+            {% if v == 'modern' %}<span class="tp-pair">{{ theme_preview('modern') }}{{ theme_preview('modern-dark') }}</span>{% else %}{{ theme_preview(v) }}{% endif %}
+            <span class="tp-name">{{ l }}</span>
+            <span class="tp-desc">{{ {'modern': 'Light and dark, your accent color', 'retro': 'Inspired by Windows ME', 'millennium': 'Inspired by Windows XP'}.get(v, '') }}</span>
+          </label>
+        {% endfor %}</span>
+      </fieldset>
+      <p class="theme-device"><button type="button" class="link-btn" data-style-device-set>Use the chosen theme in this browser only</button></p>
+      <p class="flash info" data-style-device hidden>This browser uses its own theme (<span></span>).
+        <button type="button" class="link-btn" data-style-follow>Follow this setting</button></p>
     {% elif kind == 'accent' %}
       <fieldset class="swatches">
         <legend>{{ s.label }}<span class="mod-dot" aria-hidden="true"></span>{{ info_button(iid, s.label) }}</legend>{{ field_info(s, iid) }}

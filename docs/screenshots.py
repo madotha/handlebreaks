@@ -205,6 +205,20 @@ class Shots:
         pg.wait_for_timeout(300)
         pg.screenshot(path=out)
 
+    # Wiki: Web-UI, the themes (this browser's choice in localStorage, like "Use in this browser only")
+    def theme(self, out, style):
+        pg = self.page(**DESKTOP)
+        pg.evaluate(f"localStorage.setItem('style', '{style}')")
+        self.go(pg, "/status?view=review", 1200)
+        self.settle(pg)
+        pg.screenshot(path=out)
+
+    def theme_retro(self, out):
+        self.theme(out, "retro")
+
+    def theme_millennium(self, out):
+        self.theme(out, "millennium")
+
     # Wiki: Presets
     def preset_editor(self, out):
         pg = self.page(**DESKTOP)
@@ -265,6 +279,8 @@ SHOTS = {
     "status": ("status", "wiki", "web-ui-status.png"),
     "stats": ("stats", "wiki", "web-ui-stats.png"),
     "settings": ("settings", "wiki", "web-ui-settings.png"),
+    "theme-retro": ("theme_retro", "wiki", "web-ui-theme-retro.png"),
+    "theme-millennium": ("theme_millennium", "wiki", "web-ui-theme-millennium.png"),
     "preset-editor": ("preset_editor", "wiki", "preset-editor.png"),
     "replace-dialog": ("replace_dialog", "wiki", "replace-dialog.png"),
     "scan-progress": ("scan_progress", "wiki", "scan-progress.png"),
