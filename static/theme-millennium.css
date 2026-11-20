@@ -19,7 +19,7 @@
   --xp-progress: repeating-linear-gradient(90deg, transparent 0 8px, #fff 8px 10px),
     linear-gradient(180deg, #acedad 0%, #7be47d 20%, #4cda50 40%, #2ed330 60%, #42d845 80%, #76e37a 100%);
   --bg: #ece9d8; --surface: #ffffff; --surface-2: #f3f2ea; --surface-3: #e2dfd0;
-  --text: #000000; --muted: #4f4f4f; --border: #d0d0bf; --border-strong: #7f9db9;
+  --text: #000000; --muted: #646464; --border: #d0d0bf; --border-strong: #7f9db9;
   --accent: #316ac5; --accent-hover: #3c78d8; --accent-text: #ffffff;
   --accent-soft: rgba(49, 106, 197, .15); --link: #0049c7; --focus: rgba(49, 106, 197, .7);
   --ok: #1d6b1d; --ok-bg: #e2f3d8; --warn: #865300; --warn-bg: #fff3c8; --err: #b00e0e; --err-bg: #fde3df;
@@ -79,13 +79,13 @@
   & .pill.busy::before { background: #4cda50; }
 
   /* ─── Buttons: rounded, orange glow on hover, blue glow for the main action ─── */
-  & button, & a.button { background: var(--xp-btn); color: #000; border: 1px solid #003c74; border-radius: 3px; font-weight: 400; transition: none; }
-  & button { box-shadow: var(--xp-default); }
+  & button, & a.button { background: var(--xp-btn); color: #000; border: 1px solid #003c74; border-radius: 3px; transition: none; }
+  & button { box-shadow: var(--xp-default); font-weight: 700; }
   & button:hover:not(:disabled), & a.button:hover { background: var(--xp-btn); box-shadow: var(--xp-hover); }
   & button:active:not(:disabled), & a.button:active { background: var(--xp-btn-down); box-shadow: none; }
   & button.secondary, & a.button { background: var(--xp-btn); color: #000; border-color: #003c74; box-shadow: none; font-weight: 400; }
   & button.secondary:hover:not(:disabled) { background: var(--xp-btn); box-shadow: var(--xp-hover); }
-  & button.danger { background: var(--xp-btn); color: var(--err); border-color: #003c74; box-shadow: none; }
+  & button.danger { background: var(--xp-btn); color: var(--err); border-color: #003c74; box-shadow: none; font-weight: 700; }
   & button.danger:hover:not(:disabled) { background: var(--xp-btn); border-color: #003c74; box-shadow: var(--xp-hover); }
   & button:disabled:not(.icon-btn):not(.link-btn) { background: #f5f4ea; color: #aca899; border-color: #c9c7ba; box-shadow: none; }
   & .icon-btn { border: 1px solid transparent; border-radius: 3px; background: transparent; box-shadow: none; color: #000; }
@@ -145,7 +145,7 @@
 
   /* ─── Tables: list headers with an orange line on hover, blue selection ─── */
   & .table-wrap, & .bulk-list { background: #fff; border: 1px solid var(--field); border-radius: 0; }
-  & th { color: #000; font-weight: 400; font-size: .8rem; background: linear-gradient(180deg, #fff, #f1efe2 85%, #ebeadb);
+  & th { color: #000; font-weight: 700; font-size: .8rem; background: linear-gradient(180deg, #fff, #f1efe2 85%, #ebeadb);
     box-shadow: inset -1px 0 #d5d2c3, inset 0 -3px #e2decd; border-bottom: 0; }
   & thead th { border-bottom: 0; }
   & th.sortable-th:hover, & th:has(a.sort-link:hover) { box-shadow: inset -1px 0 #d5d2c3, inset 0 -3px #f9b119; }
@@ -168,7 +168,7 @@
   /* ─── Settings: page list like a task pane ─── */
   & .side a { color: var(--pane); font-weight: 400; border-radius: 0; }
   & .side a:hover { color: #428eff; background: transparent; text-decoration: underline; }
-  & .side a[aria-current] { background: var(--sel); color: #fff; box-shadow: none; }
+  & .side a[aria-current] { background: var(--sel); color: #fff; box-shadow: none; font-weight: 700; }
   & .seg { border: 1px solid #003c74; border-radius: 3px; background: var(--xp-btn); }
   & .seg span { color: #000; font-weight: 400; }
   & .seg label + label span { border-left: 1px solid #b9b7a6; }

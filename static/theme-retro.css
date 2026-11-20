@@ -18,7 +18,7 @@
   --thin-in: inset 1px 1px var(--shade), inset -1px -1px var(--hilite);
   --etched: inset 1px 1px var(--hilite), 1px 1px var(--hilite);
   --bg: #d4d0c8; --surface: #d4d0c8; --surface-2: #e4e1da; --surface-3: #c8c4bb;   /* lists and fields are white below */
-  --text: #000000; --muted: #404040; --border: #808080; --border-strong: #404040;
+  --text: #000000; --muted: #555555; --border: #808080; --border-strong: #404040;
   --accent: #0a246a; --accent-hover: #0a246a; --accent-text: #ffffff;
   --accent-soft: rgba(10, 36, 106, .14); --link: #0000ee; --focus: #000000;
   --ok: #006000; --ok-bg: #d8f0d8; --warn: #7a4000; --warn-bg: #ffffe1; --err: #a00000; --err-bg: #ffe0e0;
@@ -75,14 +75,14 @@
   & main { background: var(--face); box-shadow: var(--out); margin: .9rem auto 1.25rem; }
 
   /* ─── Buttons: raised, pressed while clicked; the main action has the black frame of a default button ─── */
-  & button, & a.button { background: var(--face); color: #000; border: 0; border-radius: 0; box-shadow: var(--out); font-weight: 400;
+  & button, & a.button { background: var(--face); color: #000; border: 0; border-radius: 0; box-shadow: var(--out);
     transition: none; text-shadow: none; }
-  & button { box-shadow: 0 0 0 1px #000, var(--out); }
+  & button { box-shadow: 0 0 0 1px #000, var(--out); font-weight: 700; }
   & button:hover:not(:disabled) { background: var(--face); }
   & button:active:not(:disabled), & a.button:active { box-shadow: var(--pressed); }
   & button.secondary, & a.button { background: var(--face); color: #000; box-shadow: var(--out); font-weight: 400; }
   & button.secondary:hover:not(:disabled), & a.button:hover { background: var(--face); }
-  & button.danger { background: var(--face); color: var(--err); box-shadow: var(--out); }
+  & button.danger { background: var(--face); color: var(--err); box-shadow: var(--out); font-weight: 700; }
   & button.danger:hover:not(:disabled) { background: var(--face); }
   & button:disabled:not(.icon-btn):not(.link-btn) { background: var(--face); color: var(--shade); text-shadow: 1px 1px var(--hilite); box-shadow: var(--out); }
   & .icon-btn { border: 0; border-radius: 0; background: transparent; box-shadow: none; color: #000; }
@@ -148,7 +148,7 @@
 
   /* ─── Tables: white list views, column headers are buttons, ticked rows highlighted ─── */
   & .table-wrap, & .bulk-list { background: #fff; box-shadow: var(--in); padding: 2px; border: 0; border-radius: 0; }
-  & th { color: #000; font-weight: 400; font-size: .8rem; background: var(--face); box-shadow: var(--out); border-bottom: 0; }
+  & th { color: #000; font-weight: 700; font-size: .8rem; background: var(--face); box-shadow: var(--out); border-bottom: 0; }
   & thead th { border-bottom: 0; }
   & td { border-bottom: 1px dotted #c0c0c0; }
   & tbody tr:hover td { background: #f0f0f0; }
@@ -168,11 +168,11 @@
   /* ─── Settings: the page list is a list box, the current page selected ─── */
   & .side a { color: #000; font-weight: 400; }
   & .side a:hover { background: transparent; text-decoration: underline; color: #000; }
-  & .side a[aria-current] { background: var(--navy); color: #fff; box-shadow: none; }
+  & .side a[aria-current] { background: var(--navy); color: #fff; box-shadow: none; font-weight: 700; }
   & .seg { border: 0; border-radius: 0; background: transparent; gap: 2px; overflow: visible; }
   & .seg span { color: #000; background: var(--face); box-shadow: var(--out); font-weight: 400; }
   & .seg label + label span { border-left: 0; }
-  & .seg input:checked + span { background: repeating-conic-gradient(var(--face) 0 25%, var(--hilite) 0 50%) 0 0 / 2px 2px; box-shadow: var(--pressed); color: #000; }
+  & .seg input:checked + span { background: repeating-conic-gradient(var(--face) 0 25%, var(--hilite) 0 50%) 0 0 / 2px 2px; box-shadow: var(--pressed); color: #000; font-weight: 700; }
   & .mod-dot { border-radius: 0; background: var(--navy); }
   & .theme-card { background: var(--face); border: 0; box-shadow: var(--out); }
   & .theme-card:has(input:checked) { box-shadow: var(--out), 0 0 0 2px var(--navy); }
