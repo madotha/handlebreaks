@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [4.9.0] - 2026-11-20
+
 ### Added
 - Themes for the web UI under Settings → Appearance → **Theme**, each with a small preview: **Modern** (the existing look, light or dark), **Retro** (inspired by Windows ME: grey 3D buttons and frames, navy title bars, classic scroll bars, segmented progress bars) and **Millennium** (inspired by Windows XP: blue title bar, soft rounded buttons, green progress bars, blue scroll bars). Retro and Millennium are light only and use their own colors, also in the Stats charts. **Use the chosen theme in this browser only** keeps a theme for one browser. New setting `UI_STYLE`; the former **Theme** setting is now called **Mode**.
 
