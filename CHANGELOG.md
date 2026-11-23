@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [4.10.0] - 2026-11-23
+
 ### Added
 - **Free space** on the Files and Stats pages: the free space of the disks holding your shares and the output folder, with a line per disk when there are several. A disk with less than 10 % free is marked. In Docker Desktop, whose shared folders report made-up sizes, the card shows what a worker on the host last saw (with its time), and is hidden without one.
 - API: `GET /api/v1/system` lists the free space of every disk (`disks`), and `output_folder` and `disks` carry `measured_at` when the numbers come from the host's worker. In Docker Desktop, `output_folder` used to report the made-up size of Docker's shared folder.
