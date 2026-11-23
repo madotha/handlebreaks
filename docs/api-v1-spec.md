@@ -344,11 +344,15 @@ The notification feed (the same events as the web UI's popups, kept 7 days).
  "mode": "docker-ui-native-worker",
  "handbrake": {"here": "1.11.2", "worker": "1.11.2", "worker_platform": "macOS"},
  "ffprobe": true, "python": "3.13.5",
- "output_folder": {"reachable": true, "free_bytes": 1294018101248, "total_bytes": 7999995002880},
+ "output_folder": {"reachable": true, "free_bytes": 1294018101248, "total_bytes": 7999995002880, "measured_at": null},
+ "disks": {"measured_at": null,
+           "items": [{"names": ["Movies", "Shows", "Output folder"], "free_bytes": 1294018101248, "total_bytes": 7999995002880}]},
  "shares": [{"number": 2, "name": "Shows", "reachable": true}],
  "uptime_seconds": 61234}
 ```
 - `mode`: `native`, `docker`, `docker-ui-native-worker`. No paths, no settings values, no environment variables.
+- `disks`: the free space of the disks holding the shares and the output folder, one item per disk (places on the same disk are listed together by name), as on the Files and Stats pages. `output_folder` is the output folder's disk.
+- `measured_at` is `null` when the numbers were just read. Docker Desktop (macOS, Windows) reports made-up sizes for the folders it shares, so there the numbers come from a worker encoding on the host (written when it starts and every 10 minutes while encoding), and `measured_at` is when it read them. Without such a worker, `free_bytes` and `total_bytes` are `null` and `disks.items` is empty.
 
 ---
 

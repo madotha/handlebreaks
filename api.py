@@ -1024,10 +1024,13 @@ def failure_log(log_id):
     return Response(data.decode("utf-8", "replace"), mimetype="text/plain")
 
 
-@route("GET", "/system", "system:read", "Versions, HandBrakeCLI, free space in the output folder (no paths or settings)",
+@route("GET", "/system", "system:read", "Versions, HandBrakeCLI, free space of the disks and the output folder (no paths or settings)",
        response={"handlebreaks_version": "4.2.0", "api_version": "1.0", "mode": "docker-ui-native-worker",
                  "handbrake": {"here": "1.11.2", "worker": "1.11.2", "worker_platform": "macOS"}, "ffprobe": True,
-                 "python": "3.13.5", "output_folder": {"reachable": True, "free_bytes": 1294018101248, "total_bytes": 7999995002880},
+                 "python": "3.13.5", "output_folder": {"reachable": True, "free_bytes": 1294018101248, "total_bytes": 7999995002880,
+                                                       "measured_at": None},
+                 "disks": {"measured_at": None, "items": [{"names": ["Movies", "Shows", "Output folder"],
+                                                           "free_bytes": 1294018101248, "total_bytes": 7999995002880}]},
                  "shares": [{"number": 2, "name": "Shows", "reachable": True}], "uptime_seconds": 61234})
 def system():
     here = presets.capabilities()
@@ -1036,12 +1039,20 @@ def system():
     mode = "docker" if docker and ui.encodes_here() else "docker-ui-native-worker" if docker else "native"
     out_dir = enc.first_existing(enc.ENCODED_CANDIDATES)
     disk = None
-    if out_dir:
-        try:
-            du = shutil.disk_usage(out_dir)
-            disk = {"reachable": True, "free_bytes": du.free, "total_bytes": du.total}
-        except OSError:
-            pass
+    if out_dir and out_dir.is_dir():
+        disk = {"reachable": True, "free_bytes": None, "total_bytes": None, "measured_at": None}
+        if enc.fs_type(out_dir) not in enc.UNRELIABLE_FS:
+            try:
+                du = shutil.disk_usage(out_dir)
+                disk.update(free_bytes=du.free, total_bytes=du.total)
+            except OSError:
+                pass
+        else:                                   # Docker Desktop: what the worker on the host saw
+            pub = enc.published_disk_space()
+            d = next((d for d in (pub or {}).get("disks", []) if "Output folder" in d["names"]), None)
+            if d:
+                disk.update(free_bytes=d["free"], total_bytes=d["total"], measured_at=iso(pub["at"]))
+    view = ui.disk_view()
     offline = set(ui.offline_now())
     cfg = enc.parse_config(enc.CONFIG_FILE) if enc.CONFIG_FILE.exists() else {}
     hb = lambda c: c.get("handbrake") if c and c.get("available") else None
@@ -1049,7 +1060,10 @@ def system():
             "handbrake": {"here": hb(here), "worker": hb(worker) if worker else hb(here),
                           "worker_platform": (worker or here or {}).get("platform")},
             "ffprobe": bool(getattr(enc, "FFPROBE", None)), "python": sys.version.split()[0],
-            "output_folder": disk or {"reachable": False, "free_bytes": None, "total_bytes": None},
+            "output_folder": disk or {"reachable": False, "free_bytes": None, "total_bytes": None, "measured_at": None},
+            "disks": {"measured_at": iso(view["at"]) if view and view.get("at") else None,
+                      "items": [{"names": d["names"], "free_bytes": d["free"], "total_bytes": d["total"]}
+                                for d in (view or {}).get("disks", [])]},
             "shares": [{"number": sh["n"], "name": sh["name"], "reachable": sh["name"] not in offline} for sh in enc.shares(cfg)],
             "uptime_seconds": int(time.time() - ui.STARTED)}
 

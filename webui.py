@@ -1602,7 +1602,7 @@ DISK_LOW = 0.10                                 # a disk with less free space th
 def disk_view():
     """Free space of the disks with the shares and the output folder (enc.disk_space()) for
     the Files and Stats cards, read at most every 60 s: {"free", "total", "used_pct", "low",
-    "disks": [{"label", "free", "total", "low"}], "at"}, or None if no place could be read. free and
+    "disks": [{"label", "names", "free", "total", "low"}], "at"}, or None if no place could be read. free and
     total add up the disks. at is set when the numbers come from the worker's
     logs/disk-space.json (the time it wrote them), because this process couldn't read them."""
     key = (tuple(sorted((p, tuple(c)) for p, c in enc.ROOT_CANDIDATES.items())), tuple(enc.ENCODED_CANDIDATES))
@@ -1615,7 +1615,7 @@ def disk_view():
         view = None
         if disks:
             free, total = sum(d["free"] for d in disks), sum(d["total"] for d in disks)
-            rows = [{"label": ", ".join(d["names"]), "free": d["free"], "total": d["total"],
+            rows = [{"label": ", ".join(d["names"]), "names": d["names"], "free": d["free"], "total": d["total"],
                      "low": d["total"] > 0 and d["free"] < d["total"] * DISK_LOW} for d in disks]
             view = {"free": free, "total": total, "used_pct": (total - free) / total * 100 if total else 0,
                     "low": any(r["low"] for r in rows), "disks": rows, "at": at}
