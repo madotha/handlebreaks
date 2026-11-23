@@ -311,6 +311,11 @@ replace_jobs
 # (that takes ~20 s once), so it runs in the background and encoding doesn't wait for it.
 python3 "$BASE/encoding.py" handbrake-caps >> "$LOGS/encode.log" 2>&1 &!
 
+# The free space of the shares' disks, for a web UI that can't read it itself (Docker
+# Desktop reports made-up sizes for folders it shares). Again every 10 minutes of encoding.
+disk_space() { python3 "$BASE/encoding.py" disk-space >> "$LOGS/encode.log" 2>&1 &! }
+disk_space; disk_at=$SECONDS
+
 # ── Paused by "Stop all" in the web UI: wait for "Resume" ────────────────────
 # Replace jobs still run. After 10 minutes the worker exits; launchd or the Docker
 # loop start it again as long as batches are waiting.
@@ -420,6 +425,7 @@ print("avg%d" % int(p.get("VideoAvgBitrate") or 0) if p.get("VideoQualityType", 
     while kill -0 $hbpid 2>/dev/null; do     # every minute: status note, replace jobs
       write_status
       replace_jobs
+      (( SECONDS - disk_at >= 600 )) && { disk_space; disk_at=$SECONDS }
       for s in {1..12}; do                    # every 5 s: still running, stop requested?
         kill -0 $hbpid 2>/dev/null || break
         if stop_mode=$(stop_request "$key"); then break 2; fi

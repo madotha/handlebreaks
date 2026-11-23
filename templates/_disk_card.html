@@ -10,6 +10,7 @@
   {% else %}
     {% for d in disk.disks %}<span class="sub disk-line{% if d.low %} low{% endif %}">{{ d.label }}: {{ d.free|size }} of {{ d.total|size }}</span>{% endfor %}
   {% endif %}
+  {% if disk.at %}<span class="sub">as of {{ disk.at|localtime }}</span>{% endif %}
 </div>
 {% endif %}
 {% endmacro %}

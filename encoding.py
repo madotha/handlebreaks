@@ -63,6 +63,7 @@ Examples
     python3 encoding.py replace-jobs          # run pending replace jobs (normally done by encode.sh)
     python3 encoding.py purge-originals [N]   # delete kept originals older than N days (default KEEP_ORIGINALS_DAYS)
     python3 encoding.py handbrake-caps        # publish this machine's HandBrakeCLI capabilities (encode.sh)
+    python3 encoding.py disk-space            # publish the free space of the shares' disks (encode.sh)
     python3 encoding.py preset-check [--worker]   # editor/preset compatibility with this (or the worker's) HandBrakeCLI
     python3 encoding.py stop-rest <n> [--no-pause] [--shutdown]   # requeue the run after entry n and pause, or not (encode.sh)
     python3 encoding.py version
@@ -388,6 +389,29 @@ def offline_shares():
 
 
 SAME_DISK_SLACK = 256 * 1024 * 1024   # free space of one disk may change this much between two reads
+# Shared-folder file systems of Docker Desktop (macOS, Windows): they report made-up sizes
+# instead of those of the disk behind the folder, e.g. of a NAS mounted on the host.
+UNRELIABLE_FS = {"virtiofs", "fakeowner", "osxfs", "fuse.osxfs", "grpcfuse", "fuse.grpcfuse", "9p"}
+DISK_FILE_FRESH = 30 * 86400   # a published disk-space.json older than this is ignored
+
+
+def fs_type(path):
+    """File system type of the mount holding path (Linux: /proc/self/mountinfo), or None."""
+    try:
+        lines = Path("/proc/self/mountinfo").read_text().splitlines()
+        target = os.path.realpath(path)
+    except OSError:
+        return None
+    best, kind = "", None
+    for line in lines:
+        left, _, right = line.partition(" - ")
+        fields = left.split()
+        if len(fields) < 5 or not right:
+            continue
+        mnt = fields[4].replace("\\040", " ")
+        if (target == mnt or target.startswith(mnt.rstrip("/") + "/")) and len(mnt) >= len(best):
+            best, kind = mnt, right.split()[0]
+    return kind
 
 
 def disk_space():
@@ -406,6 +430,8 @@ def disk_space():
         places.append(("Output folder", out_dir))
     disks = []
     for name, path in places:
+        if fs_type(path) in UNRELIABLE_FS:
+            continue
         try:
             du = shutil.disk_usage(path)
         except OSError:
@@ -416,6 +442,30 @@ def disk_space():
         else:
             disks.append({"names": [name], "free": du.free, "total": du.total})
     return disks
+
+
+def publish_disk_space():
+    """encode.sh: write this machine's disk_space() to logs/disk-space.json for a web UI that
+    can't read the disks itself (Docker Desktop while the Mac encodes). True if written."""
+    disks = disk_space()
+    if not disks:
+        return False
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    write_text_atomic(LOG_DIR / "disk-space.json", json.dumps({"at": now_str(), "disks": disks}))
+    return True
+
+
+def published_disk_space():
+    """The disks the worker published ({"at", "disks"}), or None if missing, unreadable or old."""
+    f = LOG_DIR / "disk-space.json"
+    try:
+        if time.time() - f.stat().st_mtime > DISK_FILE_FRESH:
+            return None
+        data = json.loads(f.read_text())
+        disks = [d for d in data["disks"] if d.get("total") and isinstance(d.get("names"), list)]
+        return {"at": str(data.get("at") or ""), "disks": disks} if disks else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 WORKER_WAIT_FRESH = 15 * 60   # encode.sh rewrites worker-wait.txt every ~5.5 min while it waits (stuck: every minute)
@@ -2810,6 +2860,9 @@ def main():
         # encode.sh passes on a stop signal: finish the job in progress, start no new one
         signal.signal(signal.SIGTERM, lambda *_: REPLACE_STOP.set())
         run_replace_jobs()
+        return
+    if cmd == "disk-space":                     # encode.sh: publish the free space this worker sees
+        publish_disk_space()
         return
     if cmd == "purge-originals":                # delete kept originals older than N days (default KEEP_ORIGINALS_DAYS)
         n, freed, held = purge_kept(int(rest[0]) if rest and rest[0].isdigit() else None)
