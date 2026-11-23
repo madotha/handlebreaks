@@ -702,6 +702,8 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
 .viz-unknown { background: var(--viz-unknown); }
 .viz-single { background: var(--viz-single); }
 .meter > span.viz-good { background: var(--viz-good); }
+.meter > span.viz-single { background: var(--viz-single); }
+.meter > span.viz-other { background: var(--viz-other); }
 .legend { list-style: none; display: flex; flex-wrap: wrap; gap: .3rem 1rem; padding: 0; margin: 0 0 .8rem; font-size: .84rem; color: var(--muted); }
 .legend li { display: flex; align-items: center; gap: .4rem; }
 .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
@@ -759,6 +761,7 @@ input[type=file] { min-height: 0; padding: .35rem; max-width: 100%; font-size: .
   .tabbar a[aria-current] { color: var(--accent); }
 
   .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .6rem; margin-bottom: 1.1rem; }
+  .cards > .card:last-child:nth-child(odd) { grid-column: 1 / -1; }   /* a lone last card (Stats: Free space) */
   .card { padding: .8rem .9rem; }
   .card .value { font-size: 1.3rem; }
   .card .value.small { font-size: .92rem; }
@@ -1331,3 +1334,8 @@ html[data-text="large"] body { font-size: 17px; }
 .tp-millennium .tp-input { border: 1px solid #7f9db9; border-radius: 0; background: #fff; }
 .tp-millennium .tp-btn { border-radius: 3px; color: #000; font-weight: 400; border: 1px solid #003c74;
   background: linear-gradient(180deg, #fff, #ece9d8 85%, #d6d0c5); box-shadow: inset 0 -1px #ffc83c, inset 0 1px #ffe7a2; }
+
+/* ─── Free space card (Files, Stats; _disk_card.html) ─── */
+.disk-card .disk-line { margin-top: .15rem; overflow-wrap: anywhere; }
+.disk-card .disk-line:first-of-type { margin-top: .3rem; }
+.disk-card .disk-line.low, .disk-card.disk-low > .sub:not(.disk-line) { color: var(--warn); font-weight: 600; }

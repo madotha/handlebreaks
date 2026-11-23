@@ -2,6 +2,7 @@
 {% from "_icons.html" import icon %}
 {% from "_file_head.html" import file_head %}
 {% from "_info.html" import info %}
+{% from "_disk_card.html" import disk_card %}
 {% block title %}Files{% endblock %}
 
 {% block content %}
@@ -29,9 +30,10 @@
     <div class="card"><span class="label">Total size</span><span class="value">{{ total_size|size }}</span></div>
     <div class="card"><span class="label">Optimized (by size)</span><span class="value">{{ '%.0f'|format(optimized_share) }} %</span>
       <span class="meter"><span class="viz-good" style="width: {{ '%.1f'|format(optimized_share) }}%"></span></span></div>
+    {{ disk_card(disk) }}
     <div class="card"><span class="label">Last scan</span><span class="value small">{{ last_scan|localtime }}</span></div>
   </section>
-  <p class="files-summary">{{ total|count }} videos · {{ total_size|size }} · {{ '%.0f'|format(optimized_share) }} % optimized (by size) · scanned {{ last_scan|localtime }}</p>{# phones, instead of the cards #}
+  <p class="files-summary">{{ total|count }} videos · {{ total_size|size }} · {{ '%.0f'|format(optimized_share) }} % optimized (by size){% if disk %} · {{ disk.free|size }} free{% endif %} · scanned {{ last_scan|localtime }}</p>{# phones, instead of the cards #}
   {% if unscanned %}<p class="flash info">Not scanned yet: {{ unscanned|join(', ') }}. <a href="{{ url_for('settings', section='library') }}">Start their first scan</a>, or scan all shares.</p>{% endif %}
   {% if not ffprobe %}<p class="flash info">ffprobe isn't installed, so codec, resolution and bitrate stay empty. Install ffmpeg to get them.</p>{% endif %}
 

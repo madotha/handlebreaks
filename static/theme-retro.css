@@ -143,6 +143,8 @@
   & .meter, & .meter.big { height: 16px; padding: 3px; background: #fff; border-radius: 0; box-shadow: var(--thin-in); }
   & .meter > span { border-radius: 0; background: repeating-linear-gradient(90deg, var(--navy) 0 8px, transparent 8px 10px); }
   & .meter > span.viz-good, & .now-step.done .meter > span { background: repeating-linear-gradient(90deg, var(--viz-good) 0 8px, transparent 8px 10px); }
+  & .meter > span.viz-single { background: repeating-linear-gradient(90deg, var(--navy) 0 8px, transparent 8px 10px); }
+  & .meter > span.viz-other { background: repeating-linear-gradient(90deg, #c00000 0 8px, transparent 8px 10px); }
   & .now-step .meter { height: 14px; }
   & .opt-bar, & .rp-bar { border-radius: 0; height: 9px; box-shadow: var(--thin-in); padding: 1px; background: #fff; }
 

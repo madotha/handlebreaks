@@ -7,6 +7,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+- **Free space** on the Files and Stats pages: the free space of the disks holding your shares and the output folder, with a line per disk when there are several. A disk with less than 10 % free is marked.
+- More fun facts on the Stats page: how many more files your free space holds and how long it lasts at the pace of the last 30 days, your longest video, average episode and movie runtimes, your biggest show, your favourite decade and year, the share of 4K files, the oldest file on your disks, and your encoder's busiest day and last 7 days.
+
 ## [4.9.0] - 2026-11-20
 
 ### Added

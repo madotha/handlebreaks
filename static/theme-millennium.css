@@ -140,6 +140,9 @@
   /* Progress: green blocks in a rounded well */
   & .meter, & .meter.big { height: 14px; padding: 2px; background: #fff; border: 1px solid #686868; border-radius: 3px; }
   & .meter > span, & .meter > span.viz-good, & .now-step.done .meter > span { border-radius: 0; background: var(--xp-progress); }
+  & .meter > span.viz-single { border-radius: 0; background: var(--xp-progress); }
+  & .meter > span.viz-other { border-radius: 0; background: repeating-linear-gradient(90deg, transparent 0 8px, #fff 8px 10px),
+    linear-gradient(180deg, #ffd9a8 0%, #f8b45c 30%, #f39c12 60%, #f5ad3c 100%); }
   & .now-step .meter { height: 12px; }
   & .opt-bar, & .rp-bar { border-radius: 2px; border: 1px solid #8a8a7c; height: 8px; }
 

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_icons.html" import icon %}
+{% from "_disk_card.html" import disk_card %}
 {% block title %}Stats{% endblock %}
 
 {% macro legend(c) %}
@@ -80,6 +81,7 @@
       <span class="sub">{{ tiles.other_count|count }} files in other codecs</span></div>
     <div class="card"><span class="label">Median bitrate</span><span class="value">{{ tiles.median_other|bitrate }}</span>
       <span class="sub">other codecs · optimized: {{ tiles.median_good|bitrate }}</span></div>
+    {{ disk_card(disk) }}
   </section>
 
   <div class="chart-grid">

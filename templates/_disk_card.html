@@ -1,0 +1,15 @@
+{# Free space of the disks with the shares and the output folder (webui.disk_view()), a card of
+   the Files and Stats pages. One disk: its free space and size; several: their sum plus one line each. #}
+{% macro disk_card(disk) %}
+{% if disk %}
+<div class="card disk-card{% if disk.low %} disk-low{% endif %}"><span class="label">Free space</span>
+  <span class="value">{{ disk.free|size }}</span>
+  <span class="meter" role="img" aria-label="{{ '%.0f'|format(disk.used_pct) }} % used"><span class="{{ 'viz-other' if disk.low else 'viz-single' }}" style="width: {{ '%.1f'|format(disk.used_pct) }}%"></span></span>
+  {% if disk.disks|length == 1 %}
+    <span class="sub">of {{ disk.total|size }}{% if disk.low %} · almost full{% endif %}</span>
+  {% else %}
+    {% for d in disk.disks %}<span class="sub disk-line{% if d.low %} low{% endif %}">{{ d.label }}: {{ d.free|size }} of {{ d.total|size }}</span>{% endfor %}
+  {% endif %}
+</div>
+{% endif %}
+{% endmacro %}

@@ -31,7 +31,7 @@ Handlebreaks converts movies and TV episodes in a Plex library from H.264 (and o
 - **Every HandBrake setting:** presets per share, edited in the web UI with every setting of the newest HandBrake app, or imported from it.
 - **Login:** every page needs a user name and password (optionally with two-factor codes from an authenticator app), or single sign-on with your OpenID Connect provider (Pocket ID, Authelia, Authentik, Keycloak …); a one-time setup code from the log creates the first account, so nobody who merely reaches the page can claim it.
 - **API for dashboards and scripts:** scoped tokens for Homepage and other tools: read everything, queue, scan and review, and (opt-in) replace; nothing is reachable without a token ([API](https://github.com/madotha/handlebreaks/wiki/API)).
-- **Live status:** queue with drag-and-drop order, encode and scan progress, history, statistics and notifications when encodes, replaces and scans finish.
+- **Live status:** queue with drag-and-drop order, encode and scan progress, history, statistics, free disk space and notifications when encodes, replaces and scans finish.
 - **On your phone:** a layout made for phones, and it installs as an app on the home screen.
 - **Looks the way you like:** light or dark, six accent colors, two retro themes inspired by Windows ME and XP, text size, a compact layout and more contrast.
 - **Built for a NAS:** scans resume after an interruption, a share that goes offline only holds back its own files instead of failing them, and automatic rescans find new files.

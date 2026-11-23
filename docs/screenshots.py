@@ -109,6 +109,21 @@ def opaque_bars(pg):
 
 # ─── Screenshots ──────────────────────────────────────────────────────────────
 
+# The demo's shares are temporary folders, so the Free space card would show this machine's
+# disk: made-up numbers instead (a NAS of 8 TB with 2.3 TB free)
+DEMO_DISK = """() => {
+  for (const c of document.querySelectorAll('.disk-card')) {
+    c.classList.remove('disk-low');
+    c.querySelector('.value').textContent = '2.30 TB';
+    const bar = c.querySelector('.meter > span');
+    bar.className = 'viz-single'; bar.style.width = '71.3%';
+    c.querySelectorAll('.sub').forEach((s, i) => i ? s.remove() : (s.className = 'sub', s.textContent = 'of 8.00 TB'));
+  }
+  const sum = document.querySelector('.files-summary');
+  if (sum) sum.textContent = sum.textContent.replace(/· [^·]+ free ·/, '· 2.30 TB free ·');
+}"""
+
+
 class Shots:
     def __init__(self, play, base, data, pid):
         self.play, self.base, self.data, self.pid = play, base, data, pid
@@ -129,6 +144,7 @@ class Shots:
     def go(self, pg, path, wait=600):
         pg.goto(self.base + path)
         pg.wait_for_load_state("networkidle")
+        pg.evaluate(DEMO_DISK)
         pg.wait_for_timeout(wait)
 
     def settle(self, pg):
@@ -194,6 +210,10 @@ class Shots:
     def stats(self, out):
         pg = self.page(**DESKTOP)
         self.go(pg, "/stats")
+        for _ in range(20):                     # facts about free space would show this machine's disk
+            if "free space" not in (pg.locator(".fun-fact").text_content() or ""):
+                break
+            self.go(pg, "/stats")
         self.settle(pg)
         pg.screenshot(path=out)
 

@@ -1595,6 +1595,29 @@ def compress(resp):
     return resp
 
 
+_DISK = [0.0, None, None]                       # [checked at, config, result] for disk_view()
+DISK_LOW = 0.10                                 # a disk with less free space than this share is marked
+
+
+def disk_view():
+    """Free space of the disks with the shares and the output folder (enc.disk_space()) for
+    the Files and Stats cards, read at most every 60 s: {"free", "total", "used_pct", "low",
+    "disks": [{"label", "free", "total", "low"}]}, or None if no place could be read. free and
+    total add up the disks."""
+    key = (tuple(sorted((p, tuple(c)) for p, c in enc.ROOT_CANDIDATES.items())), tuple(enc.ENCODED_CANDIDATES))
+    if time.monotonic() - _DISK[0] > 60 or _DISK[1] != key:
+        disks = enc.disk_space()
+        view = None
+        if disks:
+            free, total = sum(d["free"] for d in disks), sum(d["total"] for d in disks)
+            rows = [{"label": ", ".join(d["names"]), "free": d["free"], "total": d["total"],
+                     "low": d["total"] > 0 and d["free"] < d["total"] * DISK_LOW} for d in disks]
+            view = {"free": free, "total": total, "used_pct": (total - free) / total * 100 if total else 0,
+                    "low": any(r["low"] for r in rows), "disks": rows}
+        _DISK[:] = [time.monotonic(), key, view]
+    return _DISK[2]
+
+
 _OFFLINE = [0.0, []]                            # [checked at, names] for offline_now()
 
 
@@ -2379,7 +2402,7 @@ def files():
         added_ranges=ranges, added_error=added_problem(request.args),
         has_defaults=bool(defaults), at_defaults=same_filters(filters, defaults), codec_groups=CODEC_GROUPS,
         last_scan=enc.last_scan(), ffprobe=bool(enc.FFPROBE), preset_list=preset_choices(),
-        unscanned=unscanned, folder_version=version, **level)
+        unscanned=unscanned, folder_version=version, disk=disk_view(), **level)
 
 
 @app.route("/files/folder")
@@ -3391,10 +3414,11 @@ RES_CASE = ("CASE WHEN width IS NULL OR height IS NULL THEN 'Unknown' "
             "WHEN width >= 1200 OR height >= 700 THEN '720p' ELSE 'SD' END")
 
 
-def fun_fact():
+def fun_fact(disk=None):
     """One fun fact about the library (funfacts.py), a different one on every page view. The
     numbers are gathered once and kept until the database or the replace results change
-    (and at least once a day: some facts count from today)."""
+    (and at least once a day: some facts count from today); the sentences are made per view,
+    because the facts about free space (disk = disk_view()) change without the database."""
     def compute():
         sizes = []
         for f in enc.REPLACE_DONE.glob("*.json") if enc.REPLACE_DONE.exists() else []:
@@ -3406,13 +3430,13 @@ def fun_fact():
                 sizes.append(job["sizes"])
         with closing(db()) as con:
             encoded = con.execute("SELECT COUNT(DISTINCT key) FROM results WHERE status = 'OK'").fetchone()[0]
-            numbers = funfacts.gather(con, enc.OPTIMIZED_CODECS, enc.SHARE_NAMES, encoded, sizes)
-        return funfacts.facts(numbers, fmt_size)
+            return funfacts.gather(con, enc.OPTIMIZED_CODECS, enc.SHARE_NAMES, encoded, sizes)
     try:
         done_version = enc.REPLACE_DONE.stat().st_mtime_ns
     except OSError:
         done_version = 0
-    facts = cached("funfacts", (enc.db_version(), done_version, datetime.now().date()), compute)
+    numbers = cached("funfacts", (enc.db_version(), done_version, datetime.now().date()), compute)
+    facts = funfacts.facts(numbers, fmt_size, disk)
     if not facts:
         return None
     last = session.get("fact")
@@ -3430,7 +3454,9 @@ def stats():
     charts, tiles = cached("stats", (enc.db_version(), tuple(sorted(enc.SHARE_NAMES.items()))), stats_data)
     if tiles is None:
         return render_template("stats.html", charts=[], tiles=None)
-    return render_template("stats.html", charts=charts, tiles=tiles, last_scan=enc.last_scan(), fact=fun_fact())
+    disk = disk_view()
+    return render_template("stats.html", charts=charts, tiles=tiles, last_scan=enc.last_scan(), disk=disk,
+                           fact=fun_fact(disk))
 
 
 def stats_data():

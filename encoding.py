@@ -387,7 +387,38 @@ def offline_shares():
     return names
 
 
-WORKER_WAIT_FRESH = 15 * 60    # encode.sh rewrites worker-wait.txt every ~5.5 min while it waits (stuck: every minute)
+SAME_DISK_SLACK = 256 * 1024 * 1024   # free space of one disk may change this much between two reads
+
+
+def disk_space():
+    """Free and total bytes of the disks holding the shares and the output folder, one entry
+    per disk: [{"names": [...], "free", "total"}], shares in config order, the output folder
+    last. Unreachable places are left out, because an empty mount point would report the local
+    disk. Mounts of one NAS volume get different device ids, so places reporting the same
+    total and (nearly) the same free space count as one disk."""
+    places = []
+    for p, cands in ROOT_CANDIDATES.items():
+        root = next((c for c in cands if reachable(c)), None)
+        if root:
+            places.append((SHARE_NAMES.get(p, p), root))
+    out_dir = first_existing(ENCODED_CANDIDATES)
+    if out_dir and out_dir.is_dir():
+        places.append(("Output folder", out_dir))
+    disks = []
+    for name, path in places:
+        try:
+            du = shutil.disk_usage(path)
+        except OSError:
+            continue
+        same = next((d for d in disks if d["total"] == du.total and abs(d["free"] - du.free) <= SAME_DISK_SLACK), None)
+        if same:
+            same["names"].append(name)
+        else:
+            disks.append({"names": [name], "free": du.free, "total": du.total})
+    return disks
+
+
+WORKER_WAIT_FRESH = 15 * 60   # encode.sh rewrites worker-wait.txt every ~5.5 min while it waits (stuck: every minute)
 
 
 def worker_wait():
