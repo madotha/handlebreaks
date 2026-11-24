@@ -2823,6 +2823,7 @@ def live_status():
         "paused": held is not None,
         "paused_held": held or 0,
         "can_stop": enc.worker_can_stop(),
+        "can_hold": enc.worker_can_hold(),
         "counts": {"encoding": states["encoding"], "waiting": states["waiting"],
                    "queue": states["encoding"] + states["waiting"],
                    "review": len(awaiting_review()), "history": len(enc.history_entries()),
@@ -3143,6 +3144,7 @@ def status():
     cur = enc.current_progress()
     stop = enc.stop_requested()
     return render_template("status.html", cur=cur, paused=enc.settle_pause(), can_stop=enc.worker_can_stop(),
+                           can_hold=enc.worker_can_hold(),
                            stopping=stop[0] if stop and cur and stop[1] == cur["key"] else None,
                            q=queue_view(view, state, sort=sort_state(request.args, f"queue:{view}", VIEW_SORT[view]),
                                         q=request.args.get("q", "")),
@@ -3305,6 +3307,19 @@ def encode_stop():
     else:
         flash(f"Stopping {enc.short(key)} …" + (" The rest of the queue will be paused." if mode == "all" else
               " The worker goes on with the next file.") + " This takes a few seconds.", "ok")
+    return redirect(url_for("status"))
+
+
+@app.route("/encode/hold", methods=["POST"])
+def encode_hold():
+    """Pause (hold=1) or continue (hold=0) the running encode; json=1 answers {"ok", "message"}."""
+    key, hold = request.form.get("key", ""), request.form.get("hold") == "1"
+    problem = enc.request_hold(key, hold)
+    msg = (f"Nothing {'paused' if hold else 'continued'}: {problem}" if problem else
+           f"{'Pausing' if hold else 'Continuing'} {enc.short(key)} … this takes a few seconds.")
+    if request.form.get("json"):
+        return {"ok": not problem, "message": msg}, 409 if problem else 200
+    flash(msg, "error" if problem else "ok")
     return redirect(url_for("status"))
 
 

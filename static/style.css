@@ -408,6 +408,9 @@ th.sel, td.sel { width: 2rem; padding-right: 0; }
 .entry .entry-file { display: block; line-height: 1.3; }
 @media (min-width: 721px) { .queue-table tr:has(> td.entry) > td { padding-top: .35rem; padding-bottom: .35rem; } }
 .now-stats { margin: .55rem 0 0; font-variant-numeric: tabular-nums; }
+/* A paused encode: the bars stand still in a muted color */
+[data-current].held .meter > span { background: var(--muted); }
+.now-held { font-weight: 600; color: var(--text); }
 .now-overall { font-size: .9rem; font-weight: 500; letter-spacing: 0; }
 /* Encodes in several steps: one row per step (label, bar, info) instead of the big bar */
 [data-current]:has(.now-steps:not([hidden])) > .meter.big { display: none; }
@@ -1083,7 +1086,8 @@ input.medium { max-width: 26rem; }
   /* Status: the current encode is one line that stays below the header; the chevron opens it */
   [data-current-panel]:has([data-current]:not([hidden])) { position: sticky; top: var(--header-h); z-index: 15; box-shadow: var(--shadow-pop); }
   [data-current-panel]:not(.open) { padding: .6rem .8rem; }
-  [data-current-panel]:not(.open) > .page-head, [data-current-panel]:not(.open) [data-no-stop] { display: none; }
+  [data-current-panel]:not(.open) > .page-head, [data-current-panel]:not(.open) [data-no-stop],
+  [data-current-panel]:not(.open) [data-held] { display: none; }
   [data-current-panel]:not(.open) [data-idle] { margin: 0; color: var(--muted); font-size: .9rem; }
   [data-current-panel]:not(.open) [data-current]:not([hidden]) { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto;
     align-items: center; gap: .3rem .6rem; }

@@ -212,7 +212,8 @@ One flat object for dashboards (Homepage's `customapi` widget maps fields by dot
 ```json
 {"encoding": {"active": true, "file": "Northwind.Station.S02E03.mkv", "percent": 41.2, "fps": 38.5,
               "eta_seconds": 1260, "position": 3, "of": 12, "step": 2, "step_count": 2,
-              "step_label": "Pass 2 · Encoding", "step_percent": 17.6, "eta_estimated": false},
+              "step_label": "Pass 2 · Encoding", "step_percent": 17.6, "eta_estimated": false,
+              "held": false, "held_since": null, "hold_requested": false},
  "worker": {"state": "encoding", "paused": false},
  "queue": {"waiting": 9, "next_run": 4},
  "review": {"waiting": 5, "saved_bytes": 9126805504},
@@ -223,15 +224,17 @@ One flat object for dashboards (Homepage's `customapi` widget maps fields by dot
 ```
 - Encodes in several steps (2-pass with average bitrate: analysis + encoding; a foreign-audio subtitle scan), since 4.7.0: `percent` and `eta_seconds` are for the whole file, `step`/`step_count` say which step runs, `step_label` names it and `step_percent` is its own progress. `eta_estimated` is true while a later step's length is only estimated (during the analysis pass it counts as long as the analysis). For single-step encodes (RF) the step fields are `null` and `eta_estimated` is false.
 - `worker.state`: `encoding`, `idle`, `paused` (after Stop all, batches waiting), `waiting` (share offline, HandBrakeCLI missing or not readable: see `/status`), `off` (Docker with `WORKER_ENABLED=0` and no native worker running).
+- A paused encode (**Pause**, since 4.11.0): `held` is true and `held_since` says since when; `hold_requested` is what was asked for, so it differs from `held` for the few seconds until the worker follows. `fps`, `eta_seconds` and step durations leave out the pause. `worker.state` stays `encoding`; `worker.paused` is only the queue pause after **Stop all**.
 
 ### 5.3 `GET /api/v1/status`: `status:read`
 ```json
 {"current": {"file": {…File…}, "position": 3, "of": 12, "percent": 41.2, "fps": 38.5, "eta_seconds": 1260,
              "started": "2026-11-05T14:02:00+01:00", "preset": {…},
              "step": 2, "step_count": 2, "step_label": "Pass 2 · Encoding", "step_percent": 17.6, "eta_estimated": false,
+             "held": false, "held_since": null, "hold_requested": false,
              "steps": [{"label": "Pass 1 · Analysis", "state": "done", "percent": 100.0, "seconds": 6643},
                        {"label": "Pass 2 · Encoding", "state": "active", "percent": 17.6, "seconds": null}]},
- "worker": {"state": "encoding", "paused": false, "stoppable": true,
+ "worker": {"state": "encoding", "paused": false, "stoppable": true, "pausable": true,
             "waiting_for": null},
  "offline": [{"share": {"number": 1, "name": "Movies"}, "since": "…"}],
  "scan": {"running": false, "label": null, "started": null, "last_finished": "…"},
@@ -375,6 +378,7 @@ A request whose every item is rejected answers **422**; partly successful reques
 
 ### 6.2 Encoding control: `queue:write`
 - `POST /api/v1/encoding/stop` `{"mode": "skip"|"all", "key": "<the current key>"}`: `skip` stops the current file and continues with the next; `all` stops and pauses (the rest goes back to the queue). `key` must match the file being encoded (409 `not_current` otherwise), so a delayed request never stops the wrong file. 409 `not_stoppable` with a worker older than the stop support.
+- `POST /api/v1/encoding/pause` `{"key": "<the current key>"}` and `POST /api/v1/encoding/continue` (same body), since 4.11.0: pause the current encode and let it go on where it stopped. The answer is `{"key", "hold_requested"}`; the worker follows within a few seconds, and `held` in `/status` and `/summary` turns true once it holds the encode. 409 `not_pausable` for a worker started by an older version.
 - `POST /api/v1/encoding/resume` `{}`: ends the pause after **Stop all**.
 
 ### 6.3 Scans: `library:scan`

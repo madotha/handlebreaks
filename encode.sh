@@ -36,6 +36,8 @@ QUEUE="$DATA/queue"; PROC="$DATA/processing"; DONE="$DATA/done"; LOGS="$DATA/log
 CANCELLED="$DATA/cancelled.txt"   # "batch<TAB>key" removed from this run in the web UI
 STOPFILE="$DATA/stop.txt"         # "skip|all<TAB>key": stop the running encode (web UI)
 PAUSED="$DATA/paused"             # queue paused by "Stop all"; removed by "Resume"
+HOLDFILE="$DATA/pause-encode.txt" # key: pause the running encode (web UI); deleted to continue
+HOLDSTATE="$LOGS/encode-pause.txt" # key, then "start<TAB>end" (epoch) per pause, end empty while paused
 mkdir -p "$QUEUE" "$PROC" "$DONE" "$LOGS"
 
 log() { print -r -- "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOGS/encode.log"; }
@@ -195,7 +197,8 @@ if ! mkdir "$LOCK" 2>/dev/null; then
 fi
 print $$ > "$LOCK/pid"
 : > "$LOCK/stoppable"                            # tells the web UI that this worker reads stop.txt
-trap 'rm -rf "$LOCK"; rm -f "$LOGS/current.txt" "$LOGS/run.txt"' EXIT
+: > "$LOCK/pausable"                             # … and pause-encode.txt
+trap 'rm -rf "$LOCK"; rm -f "$LOGS/current.txt" "$LOGS/run.txt" "$HOLDFILE" "$HOLDSTATE"' EXIT
 
 # ── Stopped from outside (docker stop, launchctl, logout, Ctrl+C) ────────────
 # Instead of dying mid-file: a replace job in progress finishes (no new one starts), the
@@ -204,7 +207,7 @@ trap 'rm -rf "$LOCK"; rm -f "$LOGS/current.txt" "$LOGS/run.txt"' EXIT
 # start picks them up again.
 # While a finished encode is moved out of .inprogress and logged (critical=1), the signal
 # only sets deferred_stop and the stop happens right after, so the encode isn't lost.
-in_run=0; i=0; done_upto=0; hbpid=""; rjpid=""; tmp=""; critical=0; deferred_stop=0
+in_run=0; i=0; done_upto=0; hbpid=""; rjpid=""; tmp=""; critical=0; deferred_stop=0; held=0; held_ever=0
 
 # An entry whose share isn't reachable: it goes back into the queue (flush_deferred, before
 # the next encode and when the run ends), so the files of other shares don't wait for it.
@@ -231,9 +234,10 @@ shutdown() {
   [[ -n "$nappid" ]] && kill $nappid 2>/dev/null
   [[ -n "$rjpid" ]] && kill -0 $rjpid 2>/dev/null && { kill -TERM $rjpid; wait $rjpid 2>/dev/null; }
   if [[ -n "$hbpid" ]] && kill -0 $hbpid 2>/dev/null; then
-    kill $hbpid 2>/dev/null; wait $hbpid 2>/dev/null
+    hb_end
     fs rm "$tmp" 2>/dev/null
   fi
+  rm -f "$HOLDFILE" "$HOLDSTATE"
   flush_deferred
   if (( in_run )); then
     n=$(python3 "$BASE/encoding.py" stop-rest $done_upto --no-pause --shutdown 2>> "$LOGS/encode.log")
@@ -331,6 +335,40 @@ if [[ -f "$PAUSED" && -n "$(print -r -- "$QUEUE"/*.txt(N) "$PROC"/*.txt(N))" ]];
   if command -v caffeinate >/dev/null; then caffeinate -is -w $$ & caf=$!; fi
 fi
 
+# Ends HandBrakeCLI. A paused (suspended) one only sees the signal once it may go on again.
+hb_end() { kill $hbpid 2>/dev/null; kill -CONT $hbpid 2>/dev/null; wait $hbpid 2>/dev/null; }
+
+# Pause or continue HandBrakeCLI as the web UI asks: pause-encode.txt holds the key of the
+# encode to pause, and is deleted to continue it. A suspended HandBrakeCLI goes on exactly
+# where it stopped. Every pause is logged in encode-pause.txt, so the web UI can leave it out
+# of the speed and time left (HandBrake counts it as encoding time). caffeinate keeps running,
+# so the Mac doesn't sleep with an encode on hold.
+hold_pauses=()
+hold_write() {
+  {
+    print -r -- "$1"
+    (( ${#hold_pauses} )) && print -rl -- $hold_pauses
+    if (( held )); then print -r -- "$held_at	"; fi
+  } > "$HOLDSTATE.tmp"
+  mv "$HOLDSTATE.tmp" "$HOLDSTATE"
+}
+hold_check() {
+  local want=0 k=""
+  if [[ -f "$HOLDFILE" ]]; then
+    k=$(<"$HOLDFILE")
+    if [[ "$k" == "$1" ]]; then want=1; else rm -f "$HOLDFILE"; fi   # meant for a file that's done
+  fi
+  if (( want && ! held )); then
+    kill -STOP $hbpid 2>/dev/null || return 0
+    held=1; held_ever=1; held_at=$(date +%s); hold_write "$1"
+    log "  paused in the web UI"
+  elif (( ! want && held )); then
+    kill -CONT $hbpid 2>/dev/null
+    hold_pauses+=("$held_at	$(date +%s)"); held=0; hold_write "$1"
+    log "  continued after $(( $(date +%s) - held_at )) s"
+  fi
+}
+
 # Prints the mode ("skip" or "all") if the web UI asked to stop the encode of key $1
 stop_request() {
   [[ -f "$STOPFILE" ]] || return 1
@@ -421,7 +459,7 @@ print("avg%d" % int(p.get("VideoAvgBitrate") or 0) if p.get("VideoQualityType", 
                  -i "$src" -o "$tmp" \
                  > "$LOGS/progress.log" 2> "$LOGS/handbrake-last.log" < /dev/null &
     hbpid=$!
-    stop_mode=""
+    stop_mode=""; held=0; held_ever=0; hold_pauses=(); rm -f "$HOLDFILE" "$HOLDSTATE"   # no request left over from before
     while kill -0 $hbpid 2>/dev/null; do     # every minute: status note, replace jobs
       write_status
       replace_jobs
@@ -429,11 +467,12 @@ print("avg%d" % int(p.get("VideoAvgBitrate") or 0) if p.get("VideoQualityType", 
       for s in {1..12}; do                    # every 5 s: still running, stop requested?
         kill -0 $hbpid 2>/dev/null || break
         if stop_mode=$(stop_request "$key"); then break 2; fi
+        hold_check "$key"
         nap 5
       done
     done
     if [[ -n "$stop_mode" ]]; then           # stopped in the web UI
-      kill $hbpid 2>/dev/null; wait $hbpid 2>/dev/null; hbpid=""
+      hb_end; hbpid=""; held=0; rm -f "$HOLDFILE" "$HOLDSTATE"
       rm -f "$STOPFILE"
       fs rm "$tmp"
       log "  STOPPED in the web UI: $key"; result STOPPED "$key"
@@ -449,6 +488,10 @@ print("avg%d" % int(p.get("VideoAvgBitrate") or 0) if p.get("VideoQualityType", 
     wait $hbpid
     rc=$?
     hbpid=""; critical=1                     # from here on, a stop signal waits (end_critical)
+    rm -f "$HOLDFILE" "$HOLDSTATE"; held=0
+    # After a pause, zsh reports the suspension (128 + SIGSTOP) instead of HandBrake's exit code;
+    # hb_finished below reads the real result from HandBrake's log.
+    (( held_ever && rc > 128 )) && log "  exit code $rc is the pause's, not HandBrake's: checking HandBrake's log"
     if (( rc != 0 )) && hb_finished "$tmp"; then
       log "  shell reported exit code $rc, but HandBrake reports success: file kept"
       rc=0
@@ -489,5 +532,5 @@ in_run=0
 flush_deferred
 end_critical                                   # went_offline left the loop in the critical part
 (( stopped_all )) || log "Queue finished"
-rm -f "$LOGS/current.txt" "$LOGS/run.txt" "$CANCELLED" "$STOPFILE"
+rm -f "$LOGS/current.txt" "$LOGS/run.txt" "$CANCELLED" "$STOPFILE" "$HOLDFILE" "$HOLDSTATE"
 write_status idle

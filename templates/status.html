@@ -21,9 +21,18 @@
   <div class="page-head">
     <div class="head-line"><h2>Encoding</h2>{% call info("Encoding", "Web-UI#status") %}
       <p>The file the worker encodes now, with its progress.</p>
-      <ul><li><strong>Stop, continue with next</strong> deletes the partly encoded file and goes on with the queue.</li>
+      <ul><li><strong>Pause</strong> holds the encode, and <strong>Continue</strong> goes on exactly where it stopped. If the worker is stopped or restarted meanwhile, the file starts over from the beginning.</li>
+        <li><strong>Stop, continue with next</strong> deletes the partly encoded file and goes on with the queue.</li>
         <li><strong>Stop all</strong> also pauses the queue until you click Resume. Replace jobs still run.</li></ul>
     {% endcall %}</div>
+    <div class="row-actions">
+    {%- set hold = cur and cur.hold %}
+    <form method="post" action="{{ url_for('encode_hold') }}" data-hold-form {% if not cur or stopping or not can_hold %}hidden{% endif %}>
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="key" value="{{ cur.key if cur else '' }}" data-hold-key>
+      <input type="hidden" name="hold" value="{{ '0' if hold else '1' }}" data-hold-value>
+      <button class="secondary" data-hold-button>{{ 'Continue' if hold else 'Pause' }}</button>
+    </form>
     <form class="row-actions" method="post" action="{{ url_for('encode_stop') }}" data-stop-form {% if not cur or stopping or not can_stop %}hidden{% endif %}>
       <input type="hidden" name="csrf" value="{{ csrf_token() }}">
       <input type="hidden" name="key" value="{{ cur.key if cur else '' }}" data-stop-key>
@@ -32,6 +41,7 @@
       <button class="danger" name="mode" value="all"
               onclick="return confirm('Stop this encode and pause the queue? The remaining files stay queued until you click Resume. If none are left, nothing is paused.')">Stop all</button>
     </form>
+    </div>
   </div>
   <div class="flash info paused-bar" data-paused {% if paused is none %}hidden{% endif %}>
     <span><strong>Queue paused</strong> after "Stop all": <span data-paused-held>{{ paused or 0 }}</span> stopped file(s) wait, and so does anything queued now.</span>
@@ -41,8 +51,10 @@
     </form>
   </div>
   <p class="muted small" data-no-stop {% if not cur or can_stop %}hidden{% endif %}>Started by an older worker: it can be stopped from its next run on.</p>
+  {%- set held = cur and cur.held_since %}
+  <p class="flash info held-bar" data-held {% if not cur or not (held or cur.hold) %}hidden{% endif %}><span data-held-text>{% if held and cur.hold %}<strong>Paused</strong> since <span data-held-since="{{ cur.held_since }}">{{ cur.held_since|added }}</span>. The worker keeps it in memory: Continue goes on where it stopped.{% elif held %}Continuing…{% elif cur and cur.hold %}Pausing… the worker holds the encode within a few seconds.{% endif %}</span></p>
   <p class="flash info" data-stopping {% if not stopping %}hidden{% endif %}>Stopping <span data-stopping-mode>{{ 'all' if stopping == 'all' else '' }}</span>… the worker ends the encode within a few seconds.</p>
-  <div data-current {% if not cur %}hidden{% endif %}>
+  <div data-current {% if not cur %}hidden{% endif %} {% if held %}class="held"{% endif %}>
     <div class="now-head">
       <span class="now-pct"><span data-cur-pct>{{ (cur.pct if cur else '0') or '0' }}</span> %<span class="now-overall muted" data-cur-overall {% if not (cur and cur.steps) %}hidden{% endif %}> overall</span></span>
       <span class="muted small">File <span data-cur-i>{{ cur.i if cur }}</span> of <span data-cur-n>{{ cur.n if cur }}</span></span>
@@ -57,7 +69,7 @@
       {%- endfor %}
     </div>
     {%- set act = (cur.steps|selectattr('state', 'equalto', 'active')|first) if cur and cur.steps else none %}
-    <p class="muted small now-stats"><span class="now-step-short" data-cur-step-short {% if not act %}hidden{% endif %}>{% if act %}{{ cur.step_short }} · {{ '%.0f' % act.pct }} % · {% endif %}</span><span class="now-fps"><span data-cur-fps>{{ (cur.fps if cur else '–') or '–' }}</span> fps · </span><span data-cur-about {% if not (cur and cur.eta_about) %}hidden{% endif %}>about </span><span data-cur-eta>{{ (cur.eta if cur else '–') or '–' }}</span> left</p>
+    <p class="muted small now-stats"><span class="now-step-short" data-cur-step-short {% if not act %}hidden{% endif %}>{% if act %}{{ cur.step_short }} · {{ '%.0f' % act.pct }} % · {% endif %}</span><span class="now-held" data-cur-held {% if not held %}hidden{% endif %}>Paused · </span><span class="now-fps"><span data-cur-fps>{{ (cur.fps if cur else '–') or '–' }}</span> fps · </span><span data-cur-about {% if not (cur and cur.eta_about) %}hidden{% endif %}>about </span><span data-cur-eta>{{ (cur.eta if cur else '–') or '–' }}</span> left</p>
     {#- Phones: the encode is one line at the top; this shows the whole panel #}
     <button type="button" class="icon-btn cur-toggle" data-cur-toggle aria-expanded="false" aria-label="Show the encode's details and Stop" data-tip="Details and Stop">{{ icon('chevron') }}</button>
   </div>

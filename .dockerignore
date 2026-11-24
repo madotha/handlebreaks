@@ -36,6 +36,7 @@ docker-compose*.yml
 local.plex-encoding*.plist
 cancelled.txt
 stop.txt
+pause-encode.txt
 paused
 .queue-edit/
 docs/

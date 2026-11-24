@@ -337,6 +337,54 @@
     }));
   }
 
+  // When the encode was paused (epoch seconds): today only the time
+  function heldSince(epoch) {
+    const d = new Date(epoch * 1000);
+    if (d.toDateString() !== new Date().toDateString()) return window.formatLocalTime(d.toISOString());
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+  const heldEl = $("[data-held-since]");
+  if (heldEl) heldEl.textContent = heldSince(Number(heldEl.dataset.heldSince));
+
+  // Pause / Continue: the button shows what the web UI asked for, the note what the worker did
+  function renderHold(cur, s) {
+    const form = $("[data-hold-form]");
+    if (!form) return;
+    const want = !!(cur && cur.hold), held = !!(cur && cur.held_since);
+    form.hidden = !cur || !!s.stopping || !s.can_hold;
+    $("[data-hold-key]").value = cur ? cur.key : "";
+    $("[data-hold-value]").value = want ? "0" : "1";
+    $("[data-hold-button]").textContent = want ? "Continue" : "Pause";
+    const bar = $("[data-held]");
+    bar.hidden = !cur || !(want || held);
+    const text = $("[data-held-text]");
+    if (held && want) {
+      const strong = document.createElement("strong");
+      strong.textContent = "Paused";
+      text.replaceChildren(strong, ` since ${heldSince(cur.held_since)}. The worker keeps it in memory: Continue goes on where it stopped.`);
+    } else {
+      text.textContent = held ? "Continuing…" : want ? "Pausing… the worker holds the encode within a few seconds." : "";
+    }
+    $("[data-cur-held]").hidden = !held;
+    $("[data-current]").classList.toggle("held", held);
+  }
+  const holdForm = $("[data-hold-form]");
+  if (holdForm) holdForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = $("[data-hold-button]");
+    btn.disabled = true;
+    try {
+      const body = new URLSearchParams(new FormData(holdForm));
+      body.set("json", "1");
+      const r = await fetch(holdForm.action, { method: "POST", body });
+      const answer = await r.json().catch(() => null);
+      if (!answer || !answer.ok) alert(answer ? answer.message : "Couldn't reach the server.");
+      await poll(true);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
   let lastCounts = null;                        // tab counts of the previous poll: a kept tab whose count changed is dropped
   async function poll(force) {
     if (running) { if (force) again = true; return; }
@@ -351,6 +399,7 @@
       $("[data-stop-form]").hidden = !cur || !!s.stopping || !s.can_stop;
       $("[data-no-stop]").hidden = !cur || s.can_stop;
       $("[data-stop-key]").value = cur ? cur.key : "";        // stop exactly the file shown
+      renderHold(cur, s);
       $("[data-stopping]").hidden = !s.stopping;
       setText("[data-stopping-mode]", s.stopping === "all" ? "all" : "");
       $("[data-paused]").hidden = !s.paused;

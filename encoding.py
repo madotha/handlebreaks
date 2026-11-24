@@ -124,6 +124,7 @@ CANCEL_FILE  = DATA_DIR / "cancelled.txt" # "batch<TAB>key" removed from the cur
 QUEUE_EDIT   = DATA_DIR / ".queue-edit"   # batches from queue/ while they are rewritten
 STOP_FILE    = DATA_DIR / "stop.txt"      # "skip|all<TAB>key": stop the running encode (checked by encode.sh)
 PAUSE_FILE   = DATA_DIR / "paused"        # queue paused by "Stop all": encode.sh starts nothing until it's gone
+HOLD_FILE    = DATA_DIR / "pause-encode.txt"  # key: hold the running encode (Pause); deleted to continue
 WORKER_LOCK  = DATA_DIR / ".lock"         # encode.sh's lock; holds "stoppable" if the worker reads STOP_FILE
 REPLACE_DIR  = DATA_DIR / "replace"       # replace jobs from the web UI (run by encode.sh)
 REPLACE_DONE = DATA_DIR / "replace-done"  # their results (outside replace/, which must be empty when
@@ -137,6 +138,7 @@ CURRENT_FILE = LOG_DIR / "current.txt"
 RUN_FILE     = LOG_DIR / "run.txt"            # batch file names of the worker's current run, in order
 ENCODES_FILE = LOG_DIR / "encodes.tsv"        # date, key, preset id, quality of every finished encode
 PROGRESS_LOG = LOG_DIR / "progress.log"
+HOLD_STATE   = LOG_DIR / "encode-pause.txt"   # encode.sh: key, then "start<TAB>end" (epoch) per pause of it
 HANDBRAKE_LOG = LOG_DIR / "handbrake-last.log"   # HandBrakeCLI's log (stderr) of the current or last encode
 SCAN_PROGRESS = LOG_DIR / "scan.json"        # progress of the running scan (ScanProgress), gone when it ends
 
@@ -2298,18 +2300,101 @@ def current_progress():
         return None
     cur = {"key": parts[0], "i": parts[1], "n": parts[2], "pct": None, "eta": None, "fps": None,
            "steps": None, "step": None, "step_short": None, "pass_pct": None, "pass_eta": None, "eta_about": False}
-    if PROGRESS_LOG.exists():
+    pauses = encode_pauses(cur["key"])
+    cur["held_since"] = pauses[-1][0] if pauses and pauses[-1][1] is None else None
+    cur["hold"] = hold_requested(cur["key"])  # what the web UI asked for (the worker follows within 5 s)
+    try:
         raw = PROGRESS_LOG.read_bytes()[-2000:].decode("utf-8", "replace")
-        chunks = [c for c in re.split(r"[\r\n]", raw) if "Encoding:" in c]
-        if chunks:
-            for name, rx in (("pct", r"([\d.]+) %"), ("eta", r"ETA (\d+h\d+m\d+s)"),
-                             ("fps", r"avg ([\d.]+) fps")):
-                m = re.search(rx, chunks[-1])
-                cur[name] = m.group(1) if m else None
-            m = re.search(r"task (\d+) of (\d+)", chunks[-1])
-            if m and int(m.group(2)) > 1:
-                task_progress(cur, int(m.group(1)), int(m.group(2)))
+        ref = PROGRESS_LOG.stat().st_mtime    # when HandBrake last wrote: the pct, ETA and fps are of then
+    except OSError:
+        raw = ""
+    chunks = [c for c in re.split(r"[\r\n]", raw) if "Encoding:" in c]
+    if chunks:
+        for name, rx in (("pct", r"([\d.]+) %"), ("eta", r"ETA (\d+h\d+m\d+s)"),
+                         ("fps", r"avg ([\d.]+) fps")):
+            m = re.search(rx, chunks[-1])
+            cur[name] = m.group(1) if m else None
+        start = unpause(cur, pauses, ref)
+        m = re.search(r"task (\d+) of (\d+)", chunks[-1])
+        if m and int(m.group(2)) > 1:
+            task_progress(cur, int(m.group(1)), int(m.group(2)), pauses, start)
     return cur
+
+
+def eta_seconds(eta):
+    m = re.fullmatch(r"(\d+)h(\d+)m(\d+)s", eta or "")
+    return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3)) if m else None
+
+
+def paused_between(pauses, start, end):
+    """Seconds of the pauses [(start, end or None = still paused)] within start..end (epoch)."""
+    return sum(max(0.0, min(e if e is not None else end, end) - max(s, start)) for s, e in pauses)
+
+
+def unpause(cur, pauses, ref):
+    """HandBrake's average fps and ETA of the running task count a pause as encoding time (it
+    doesn't know it was held), so both are corrected here with the pauses since the task began.
+    Returns the task's start (epoch), or None when it can't be told yet (no ETA)."""
+    eta, pct = eta_seconds(cur["eta"]), float(cur["pct"] or 0)
+    if eta is None or not 0 < pct < 100:
+        return None
+    wall = eta * pct / (100 - pct)              # how HandBrake computes the ETA: remaining / average rate
+    start = ref - wall
+    held = paused_between(pauses, start, ref)
+    if held > 0 and wall - held > 1:
+        work = wall - held
+        cur["eta"] = hms(eta * work / wall)
+        if cur["fps"]:
+            cur["fps"] = f"{float(cur['fps']) * wall / work:.2f}"
+    return start
+
+
+def encode_pauses(key):
+    """The pauses of key's running encode from encode.sh's logs/encode-pause.txt: [(start, end)],
+    end None while it is paused. [] for another key or no file."""
+    try:
+        lines = HOLD_STATE.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    if not lines or lines[0] != key:
+        return []
+    out = []
+    for line in lines[1:]:
+        a, _, b = line.partition("\t")
+        try:
+            out.append((float(a), float(b) if b.strip() else None))
+        except ValueError:
+            continue
+    return out
+
+
+def hold_requested(key):
+    """True if the web UI asked to pause key's encode (pause-encode.txt)."""
+    try:
+        return HOLD_FILE.read_text(encoding="utf-8").strip() == key
+    except OSError:
+        return False
+
+
+def worker_can_hold():
+    """True if the running worker pauses encodes on request (older encode.sh doesn't)."""
+    return (WORKER_LOCK / "pausable").exists()
+
+
+def request_hold(key, hold):
+    """Pause (hold True) or continue the encode of key. encode.sh suspends HandBrakeCLI within
+    a few seconds, or lets it go on where it stopped. Returns None, or why nothing happened."""
+    cur = current_progress()
+    if not cur or cur["key"] != key:
+        return "that file isn't being encoded any more."
+    if hold and not worker_can_hold():
+        return ("the running worker was started by an older version, which can't pause an encode. "
+                "Pausing works from its next run.")
+    if hold:
+        write_text_atomic(HOLD_FILE, key + "\n")
+    else:
+        HOLD_FILE.unlink(missing_ok=True)
+    return None
 
 
 TASK_START_RE = re.compile(r"^\[(\d\d):(\d\d):(\d\d)\] Starting Task: (.+?)\s*$", re.M)
@@ -2355,14 +2440,15 @@ def took(seconds):
     return f"{seconds // 3600} h {seconds // 60 % 60} min"
 
 
-def task_progress(cur, task, total):
+def task_progress(cur, task, total, pauses=(), start=None):
     """Turn the running task's progress in cur into the whole file's (task of total tasks).
 
     Finished tasks count with their real duration (from HandBrake's log), the running one with
     its elapsed time (from its percentage and ETA), and tasks still to come as long as the running
     one: the analysis pass takes about as long as the encoding pass. Until that can be computed
     (no ETA yet, durations unknown, or a subtitle scan whose length says nothing about the
-    encode) every task counts the same and the whole file's time left stays unknown."""
+    encode) every task counts the same and the whole file's time left stays unknown.
+    Pauses don't count in the finished tasks' durations (start: the running task's start)."""
     starts = task_starts()
     if len(starts) > task:                      # a log from another encode
         starts = []
@@ -2375,11 +2461,12 @@ def task_progress(cur, task, total):
         names = (labels + [None] * total)[:total]
     passes = [k for k, n in enumerate(names) if n in ("Analysis", "Encoding")]
     pct = min(max(float(cur["pct"] or 0), 0.0), 100.0)
-    eta = None
-    m = re.fullmatch(r"(\d+)h(\d+)m(\d+)s", cur["eta"] or "")
-    if m:
-        eta = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
+    eta = eta_seconds(cur["eta"])
     done = [starts[k + 1][1] - starts[k][1] for k in range(task - 1)] if len(starts) == task else None
+    if done and pauses and start is not None:  # the finished tasks lie back to back before this one
+        end = start
+        for k in reversed(range(task - 1)):
+            done[k], end = max(0.0, done[k] - paused_between(pauses, end - done[k], end)), end - done[k]
     elapsed = eta * pct / (100 - pct) if eta is not None and 0 < pct < 100 else None
     steps = []
     for k in range(total):
@@ -2420,6 +2507,9 @@ def progress_text(cur, markdown=False):
     else:
         lines = [f"{bar_text(cur['pct'])}  {cur['pct'] or 0} %" + ("  overall" if cur["steps"] else ""),
                  f"Speed: {cur['fps'] or '–'} fps   Time left for this file: {left or '–'}"]
+    if cur.get("held_since"):
+        since = datetime.fromtimestamp(cur["held_since"]).strftime("%H:%M")
+        lines.insert(0, f"**Paused** since {since}" if markdown else f"PAUSED since {since}")
     for s in cur["steps"] or []:
         info = {"done": f"done · {s['took']}" if s.get("took") else "done",
                 "active": f"{s['pct']:.2f} %" + (f" · {s['eta']} left" if s.get("eta") else ""),

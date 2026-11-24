@@ -524,9 +524,17 @@ def current_obj(cur=None):
     return {"file": files_for([cur["key"]])[cur["key"]], "position": int(cur["i"]) if cur["i"].isdigit() else None,
             "of": int(cur["n"]) if cur["n"].isdigit() else None, "percent": num(cur.get("pct")),
             "fps": num(cur.get("fps")), "eta_seconds": eta_seconds(cur.get("eta")),
-            "started": started, "preset": preset_ref(preset), **step_fields(cur),
+            "started": started, "preset": preset_ref(preset), **step_fields(cur), **hold_fields(cur),
             "steps": [{"label": s["label"], "state": s["state"], "percent": round(s["pct"], 2),
                        "seconds": s["seconds"]} for s in cur["steps"]] if cur.get("steps") else None}
+
+
+def hold_fields(cur):
+    """A paused encode: held (the worker holds it now), held_since, and hold_requested (the
+    pause asked for; differs from held for the few seconds until the worker follows)."""
+    since = cur.get("held_since") if cur else None
+    return {"held": bool(since), "held_since": iso(datetime.fromtimestamp(since)) if since else None,
+            "hold_requested": bool(cur and cur.get("hold"))}
 
 
 def step_fields(cur):
@@ -573,7 +581,8 @@ def info():
        "Flat numbers for dashboards; fields of scopes the token lacks are null",
        response={"encoding": {"active": True, "file": "Northwind.Station.S02E03.mkv", "percent": 41.2, "fps": 38.5,
                               "eta_seconds": 1260, "position": 3, "of": 12, "step": 2, "step_count": 2,
-                              "step_label": "Pass 2 · Encoding", "step_percent": 17.6, "eta_estimated": False},
+                              "step_label": "Pass 2 · Encoding", "step_percent": 17.6, "eta_estimated": False,
+                              "held": False, "held_since": None, "hold_requested": False},
                  "worker": {"state": "encoding", "paused": False}, "queue": {"waiting": 9, "next_run": 4},
                  "review": {"waiting": 5, "saved_bytes": 9126805504}, "history": {"done_24h": 7, "failed_24h": 1},
                  "library": {"files": 70312, "optimized_percent": 38.4, "to_encode": 41022},
@@ -585,7 +594,8 @@ def summary():
                         "percent": num(cur.get("pct")) if cur else None, "fps": num(cur.get("fps")) if cur else None,
                         "eta_seconds": eta_seconds(cur.get("eta")) if cur else None,
                         "position": int(cur["i"]) if cur and cur["i"].isdigit() else None,
-                        "of": int(cur["n"]) if cur and cur["n"].isdigit() else None, **step_fields(cur)},
+                        "of": int(cur["n"]) if cur and cur["n"].isdigit() else None, **step_fields(cur),
+                        **hold_fields(cur)},
            "worker": {"state": worker_state(), "paused": enc.is_paused()},
            "queue": None, "review": None, "history": None, "library": None, "saved": None,
            "offline": ui.offline_now(), "scanning": bool(ui.SCAN["running"] or enc.scan_progress())}
@@ -609,7 +619,8 @@ def summary():
 
 
 @route("GET", "/status", "status:read", "Current encode, worker, offline shares, scans and replaces",
-       response={"current": None, "worker": {"state": "idle", "paused": False, "stoppable": False, "waiting_for": None},
+       response={"current": None, "worker": {"state": "idle", "paused": False, "stoppable": False, "pausable": False,
+                                              "waiting_for": None},
                  "offline": [], "scan": {"running": True, "label": "Scan of all shares", "started": "2026-11-06T09:00+01:00",
                                          "phase": "Reading files", "percent": 42.0, "detail": "1,204 of 2,866 files read",
                                          "time_left": "about 6 min", "last_finished": None},
@@ -623,6 +634,7 @@ def status():
     rp = ui.replace_progress()
     return {"current": current_obj(),
             "worker": {"state": worker_state(), "paused": enc.is_paused(), "stoppable": enc.worker_can_stop(),
+                       "pausable": enc.worker_can_hold(),
                        "waiting_for": {"kind": wait["kind"], "share": share_ref(wait["prefix"]) if wait.get("prefix") else None,
                                        "error": wait.get("error") or None} if wait else None},
             "offline": offline,
@@ -1340,6 +1352,36 @@ def encoding_stop():
         raise APIError(409, "conflict", problem, reason="not_stoppable")
     audit("stopped the encode" + (" and paused the queue" if mode == "all" else ""))
     return {"stopping": key, "mode": mode}
+
+
+def hold(on):
+    key = body().get("key")
+    cur = enc.current_progress()
+    if not cur:
+        raise APIError(409, "conflict", "Nothing is being encoded.", reason="not_encoding")
+    if key != cur["key"]:
+        raise APIError(409, "conflict", "That file isn't the one being encoded.", reason="not_current", current=cur["key"])
+    problem = enc.request_hold(key, on)
+    if problem:
+        raise APIError(409, "conflict", problem, reason="not_pausable")
+    audit("paused the encode" if on else "continued the encode")
+    return {"key": key, "hold_requested": on}
+
+
+@route("POST", "/encoding/pause", "queue:write", "Pause the current encode; it goes on where it stopped with /encoding/continue",
+       params=[("key", "body: string", "The key of the file being encoded (required)")],
+       response={"key": "share2/…S02E03.mkv", "hold_requested": True})
+@idempotent
+def encoding_pause():
+    return hold(True)
+
+
+@route("POST", "/encoding/continue", "queue:write", "Continue the paused encode where it stopped",
+       params=[("key", "body: string", "The key of the file being encoded (required)")],
+       response={"key": "share2/…S02E03.mkv", "hold_requested": False})
+@idempotent
+def encoding_continue():
+    return hold(False)
 
 
 @route("POST", "/encoding/resume", "queue:write", "End the pause after stopping everything",

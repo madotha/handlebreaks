@@ -19,6 +19,7 @@ queue/
 processing/
 cancelled.txt
 stop.txt
+pause-encode.txt
 paused
 .queue-edit/
 replace/
