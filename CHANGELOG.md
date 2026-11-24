@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [4.11.0] - 2026-11-24
+
 ### Added
 - **Pause and Continue** for the running encode on the Status page: the worker holds HandBrakeCLI and lets it go on exactly where it stopped, without losing progress. The speed and time left leave out the pause. A worker stop or restart while paused starts the file over, like any interrupted encode. Needs a worker started by this version. API: `POST /api/v1/encoding/pause` and `/encoding/continue`, `held`, `held_since` and `hold_requested` on the current encode, `worker.pausable`.
 
